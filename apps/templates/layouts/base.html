@@ -3,15 +3,9 @@
 * Argon Dashboard - v1.2.0
 =========================================================
 * Product Page: https://www.creative-tim.com/product/argon-dashboard
-
-
 * Copyright  Creative Tim (http://www.creative-tim.com)
 * Coded by www.creative-tim.com
-
-
-
 =========================================================
-* The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 -->
 <!DOCTYPE html>
 <html lang="en">
@@ -22,11 +16,11 @@
   <link rel="canonical" href="https://appseed.us/admin-dashboards/flask-boilerplate-dashboard-argon">
   
   <title>
-    Flask Argon Dashboard - {% block title %} Open-Source Admin Panel {% endblock %} | AppSeed
+    AirtFast - {% block title %} Dashboard {% endblock %}
   </title>
 
   <!-- Favicon - loaded as static -->
-  <link rel="icon" href="/static/assets/img/brand/favicon.png" type="image/png">
+  <link rel="icon" href="/static/assets/img/brand/favicon.ico" type="image/ico">
   <!-- Fonts -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,600,700">
   <!-- Icons -->
@@ -36,6 +30,7 @@
   <!-- Argon CSS -->
   <link rel="stylesheet" href="/static/assets/css/argon.css?v=1.2.0" type="text/css">
 
+
   <!-- Specific CSS goes HERE -->
   {% block stylesheets %}{% endblock stylesheets %}
 
@@ -44,19 +39,35 @@
 <body class="">
 
   {% include "includes/sidenav.html" %}
+  {% from 'includes/_messages.html' import render_messages %}
 
   <div class="main-content" id="panel">
 
     {% include "includes/navigation.html" %}
-
     {% block content %}{% endblock content %}
-
+    
   </div>
+  {{ render_messages() }} 
 
   {% include "includes/scripts.html" %}
 
   <!-- Specific JS goes HERE --> 
-  {% block javascripts %}{% endblock javascripts %}
+  {% block javascripts %}
+      <script>
+        // JavaScript to auto-hide alerts
+        $(document).ready(function() {
+            // Find all alerts with the 'fade show' classes that are currently visible
+            $('.alert.fade.show').each(function() {
+                var $alert = $(this);
+                // Set a timeout to fade out and remove the alert
+                // The duration here is 5000 milliseconds (5 seconds)
+                setTimeout(function() {
+                    $alert.alert('close'); // Bootstrap's way to close an alert
+                }, 5000); // Adjust time here (in milliseconds)
+            });
+        });
+    </script>
+  {% endblock javascripts %}
 
   <script src="/static/assets/js/argon.js?v=1.2.0"></script>
 

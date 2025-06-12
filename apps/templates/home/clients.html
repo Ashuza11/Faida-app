@@ -1,0 +1,172 @@
+{% extends 'layouts/base.html' %}
+
+{% block title %} Gestion de utilisateurs {% endblock title %}
+
+{% block content %}
+  <div class="header bg-primary pb-6">
+    <div class="container-fluid">
+      <div class="header-body">
+        <div class="row align-items-center py-4">
+          <div class="col-lg-6 col-7">
+            <h6 class="h2 text-white d-inline-block mb-0">Tables</h6>
+            <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
+              <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
+                <li class="breadcrumb-item"><a href="#"><i class="fas fa-home"></i></a></li>
+                <li class="breadcrumb-item"><a href="#">Tables</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Tables</li>
+              </ol>
+            </nav>
+          </div>
+          <div class="col-lg-6 col-5 text-right">
+            <a href="#" class="btn btn-sm btn-neutral">Filters</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<div class="container-fluid mt--6">
+  <div class="row">
+    <div class="col">
+      <div class="card">
+        <!-- Card header -->
+        <div class="card-header border-0">
+          <div class="row align-items-center">
+            <div class="col">
+              <h3 class="mb-0">Gestion de utilisateurs</h3>
+            </div>
+            <div class="col text-right">
+              <button class="btn btn-sm btn-primary" data-toggle="modal" data-target="#addStockerModal">
+                <i class="fas fa-plus"></i> Add Stocker
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Stockers Table -->
+        <div class="table-responsive">
+          <table class="table align-items-center table-flush">
+            <thead class="thead-light">
+              <tr>
+                <th scope="col">Username</th>
+                <th scope="col">Email</th>
+                <th scope="col">Status</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for user in users %}
+                <tr>
+                    <td>{{ user.username }}</td>
+                    <td>{{ user.email }}</td>
+                    <td>
+                    <span class="badge badge-dot mr-4 status ">
+                        <span class="status">
+                            <i class="{{ 'bg-success' if user.is_active else 'bg-success' }}"></i>
+                            {{ 'Active' if user.is_active else 'Inactive' }}
+                        </span>
+                    </span>
+                    </td>
+                    <td class="text-right">
+                    <div class="dropdown">
+                        <a class="btn btn-sm btn-icon-only text-light" href="#" role="button" data-toggle="dropdown">
+                        <i class="fas fa-ellipsis-v"></i>
+                        </a>
+                        <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
+                        <a class="dropdown-item" href="#">Edit</a>
+                        <a class="dropdown-item" href="#">Deactivate</a>
+                        </div>
+                    </div>
+                    </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Stocker Modal -->
+<div class="modal fade" id="addStockerModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add New Stocker</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <form id="addStockerForm">
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="usersUsername">Username</label>
+            <input type="text" class="form-control" id="usersUsername" required>
+          </div>
+          <div class="form-group">
+            <label for="usersEmail">Email</label>
+            <input type="email" class="form-control" id="usersEmail" required>
+          </div>
+          <div class="form-group">
+            <label for="usersPassword">Password</label>
+            <input type="password" class="form-control" id="usersPassword" required>
+          </div>
+          <div class="form-group">
+            <label for="usersConfirmPassword">Confirm Password</label>
+            <input type="password" class="form-control" id="usersConfirmPassword" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary">Save changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block javascripts %}
+<script>
+$(document).ready(function() {
+  // Handle form submission
+  $('#addStockerForm').submit(function(e) {
+    e.preventDefault();
+    
+    const username = $('#usersUsername').val();
+    const email = $('#usersEmail').val();
+    const password = $('#usersPassword').val();
+    const confirmPassword = $('#usersConfirmPassword').val();
+    
+    if (password !== confirmPassword) {
+      alert('Passwords do not match!');
+      return;
+    }
+    
+    $.ajax({
+      url: '/api/add_users',
+      method: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify({
+        username: username,
+        email: email,
+        password: password
+      }),
+      success: function(response) {
+        if (response.success) {
+          $('#addStockerModal').modal('hide');
+          // Refresh the page or update table dynamically
+          location.reload();
+        } else {
+          alert('Error: ' + response.message);
+        }
+      },
+      error: function(xhr) {
+        alert('An error occurred: ' + xhr.responseText);
+      }
+    });
+  });
+});
+</script>
+{% endblock %}
