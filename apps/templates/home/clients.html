@@ -1,172 +1,243 @@
 {% extends 'layouts/base.html' %}
 
-{% block title %} Gestion de utilisateurs {% endblock title %}
+{% block title %} Gestion des Clients {% endblock title %}
 
 {% block content %}
-  <div class="header bg-primary pb-6">
-    <div class="container-fluid">
-      <div class="header-body">
-        <div class="row align-items-center py-4">
-          <div class="col-lg-6 col-7">
-            <h6 class="h2 text-white d-inline-block mb-0">Tables</h6>
-            <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
-              <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
-                <li class="breadcrumb-item"><a href="#"><i class="fas fa-home"></i></a></li>
-                <li class="breadcrumb-item"><a href="#">Tables</a></li>
-                <li class="breadcrumb-item active" aria-current="page">Tables</li>
-              </ol>
-            </nav>
-          </div>
-          <div class="col-lg-6 col-5 text-right">
-            <a href="#" class="btn btn-sm btn-neutral">Filters</a>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+  {# Render the Page Header #}
+  {% set page_title = 'Gestion des Clients' %}
+  {% set breadcrumb_items = [
+    {'text': 'Admin', 'url': url_for('home_blueprint.index')}, 
+    {'text': 'Clients', 'url': url_for('home_blueprint.client_management')}
+  ] %}
+  {% include 'includes/page_header.html' %}
 
-<div class="container-fluid mt--6">
-  <div class="row">
-    <div class="col">
-      <div class="card">
-        <!-- Card header -->
-        <div class="card-header border-0">
-          <div class="row align-items-center">
-            <div class="col">
-              <h3 class="mb-0">Gestion de utilisateurs</h3>
-            </div>
-            <div class="col text-right">
-              <button class="btn btn-sm btn-primary" data-toggle="modal" data-target="#addStockerModal">
-                <i class="fas fa-plus"></i> Add Stocker
-              </button>
+  <div class="container-fluid mt--6">
+    <div class="row">
+      <div class="col">
+        <div class="card">
+          <div class="card-header border-0">
+            <div class="row align-items-center">
+              <div class="col">
+                <h3 class="mb-0">Clients</h3>
+              </div>
+              <div class="col text-right">
+                {# "Ajouter Client" button with role check #}
+                {% if current_user.is_authenticated and (current_user.role.value == 'superadmin' or current_user.role.value == 'vendeur') %}
+                  <button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#addClientModal">
+                    <i class="fas fa-plus"></i> Ajouter Client
+                  </button>
+                {% endif %}
+              </div>
             </div>
           </div>
-        </div>
-        
-        <!-- Stockers Table -->
-        <div class="table-responsive">
-          <table class="table align-items-center table-flush">
-            <thead class="thead-light">
-              <tr>
-                <th scope="col">Username</th>
-                <th scope="col">Email</th>
-                <th scope="col">Status</th>
-                <th scope="col">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for user in users %}
+          
+          <div class="table-responsive">
+            <table class="table align-items-center table-flush">
+              <thead class="thead-light">
                 <tr>
-                    <td>{{ user.username }}</td>
-                    <td>{{ user.email }}</td>
+                  <th scope="col">Nom</th>
+                  <th scope="col">Num Airtel</th>
+                  <th scope="col">Num Africell</th>
+                  <th scope="col">Num Orange</th>
+                  <th scope="col">Num Vodacom</th>
+                  <th scope="col">Adresse</th>
+                  <th scope="col">Remise (%)</th>
+                  <th scope="col">Statut</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for client in clients %}
+                  <tr>
+                    <td>{{ client.name }}</td>
+                    <td>{{ client.phone_airtel if client.phone_airtel else 'N/A' }}</td>
+                    <td>{{ client.phone_africel if client.phone_africel else 'N/A' }}</td>
+                    <td>{{ client.phone_orange if client.phone_orange else 'N/A' }}</td>
+                    <td>{{ client.phone_vodacom if client.phone_vodacom else 'N/A' }}</td>
+                    <td>{{ client.address if client.address else 'N/A' }}</td>
+                    <td>{{ client.discount_rate | default(0.0) }}%</td>
                     <td>
-                    <span class="badge badge-dot mr-4 status ">
+                      <span class="badge badge-dot mr-4">
                         <span class="status">
-                            <i class="{{ 'bg-success' if user.is_active else 'bg-success' }}"></i>
-                            {{ 'Active' if user.is_active else 'Inactive' }}
+                          <i class="{{ 'bg-success' if client.is_active else 'bg-warning' }}"></i>
+                          {{ 'Actif' if client.is_active else 'Inactif' }}
                         </span>
-                    </span>
+                      </span>
                     </td>
                     <td class="text-right">
-                    <div class="dropdown">
-                        <a class="btn btn-sm btn-icon-only text-light" href="#" role="button" data-toggle="dropdown">
-                        <i class="fas fa-ellipsis-v"></i>
+                      <div class="dropdown">
+                        <a class="btn btn-sm btn-icon-only text-light" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                          <i class="fas fa-ellipsis-v"></i>
                         </a>
                         <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
-                        <a class="dropdown-item" href="#">Edit</a>
-                        <a class="dropdown-item" href="#">Deactivate</a>
+                          {% if current_user.role.value == 'superadmin' or current_user.id == client.vendeur_id %}
+                            <a class="dropdown-item edit-client-btn" href="#"
+                               data-toggle="modal" data-target="#editClientModal"
+                               data-id="{{ client.id }}"
+                               data-name="{{ client.name }}"
+                               data-email="{{ client.email }}"
+                               data-phone-airtel="{{ client.phone_airtel }}"
+                               data-phone-africel="{{ client.phone_africel }}"
+                               data-phone-orange="{{ client.phone_orange }}"
+                               data-phone-vodacom="{{ client.phone_vodacom }}"
+                               data-address="{{ client.address }}"
+                               data-gps-lat="{{ client.gps_lat }}"
+                               data-gps-long="{{ client.gps_long }}"
+                               data-discount-rate="{{ client.discount_rate }}"
+                               data-is-active="{{ 'true' if client.is_active else 'false' }}">
+                                Editer
+                            </a>
+                            <form action="{{ url_for('home_blueprint.client_toggle_active', client_id=client.id) }}" method="post" class="d-inline">
+                              <button type="submit" class="dropdown-item">
+                                {% if client.is_active %}
+                                  Désactiver
+                                {% else %}
+                                  Activer
+                                {% endif %}
+                              </button>
+                            </form>
+                          {% else %}
+                            <span class="dropdown-item text-muted">Pas d'actions disponible</span>
+                          {% endif %}
                         </div>
-                    </div>
+                      </div>
                     </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
   </div>
-</div>
 
-<!-- Add Stocker Modal -->
-<div class="modal fade" id="addStockerModal" tabindex="-1" role="dialog" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered" role="document">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Add New Stocker</h5>
-        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-          <span aria-hidden="true">&times;</span>
-        </button>
+  {# Include the "Add Client" Modal #}
+  {% set modal_id = 'addClientModal' %}
+  {% set modal_title = 'Ajouter un nouveau Client' %}
+  {% set form = client_form %} {# Pass the client_form #}
+  {# Add hidden fields for GPS coordinates inside the form for Add Client #}
+  <div class="modal fade" id="{{ modal_id }}" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">{{ modal_title }}</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        {# The form itself #}
+        <form method="post" action="{{ url_for('home_blueprint.client_management') }}">
+          <div class="modal-body">
+            {# Render all form fields from client_form #}
+            {% for field in form %}
+              {% if field.widget.input_type != 'hidden' and field.name not in ['csrf_token', 'submit'] %}
+                <div class="form-group{% if field.errors %} has-danger{% endif %}">
+                  {{ field.label(class="form-control-label") }}
+                  {{ field(class="form-control" + (" is-invalid" if field.errors else ""), placeholder=field.label.text) }}
+                  {% for error in field.errors %}
+                    <div class="invalid-feedback d-block">{{ error }}</div>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            {% endfor %}
+
+            {# Hidden fields for GPS coordinates - These will be populated by JavaScript #}
+            <input type="hidden" id="add_gps_lat" name="gps_lat">
+            <input type="hidden" id="add_gps_long" name="gps_long">
+
+            {# CSRF token for security #}
+            {{ form.csrf_token }} 
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Annuler</button>
+            <button type="submit" class="btn btn-primary">Ajouter</button>
+          </div>
+        </form>
       </div>
-      <form id="addStockerForm">
-        <div class="modal-body">
-          <div class="form-group">
-            <label for="usersUsername">Username</label>
-            <input type="text" class="form-control" id="usersUsername" required>
-          </div>
-          <div class="form-group">
-            <label for="usersEmail">Email</label>
-            <input type="email" class="form-control" id="usersEmail" required>
-          </div>
-          <div class="form-group">
-            <label for="usersPassword">Password</label>
-            <input type="password" class="form-control" id="usersPassword" required>
-          </div>
-          <div class="form-group">
-            <label for="usersConfirmPassword">Confirm Password</label>
-            <input type="password" class="form-control" id="usersConfirmPassword" required>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-          <button type="submit" class="btn btn-primary">Save changes</button>
-        </div>
-      </form>
     </div>
   </div>
-</div>
-{% endblock %}
+
+  {# Include the "Edit Client" Modal (Using the existing modal_form include) #}
+  {% set modal_id = 'editClientModal' %}
+  {% set modal_title = 'Editer le client' %}
+  {% set form = client_edit_form %}
+  {% include 'includes/modal_form.html' %} 
+
+{% endblock content %}
 
 {% block javascripts %}
-<script>
-$(document).ready(function() {
-  // Handle form submission
-  $('#addStockerForm').submit(function(e) {
-    e.preventDefault();
-    
-    const username = $('#usersUsername').val();
-    const email = $('#usersEmail').val();
-    const password = $('#usersPassword').val();
-    const confirmPassword = $('#usersConfirmPassword').val();
-    
-    if (password !== confirmPassword) {
-      alert('Passwords do not match!');
-      return;
-    }
-    
-    $.ajax({
-      url: '/api/add_users',
-      method: 'POST',
-      contentType: 'application/json',
-      data: JSON.stringify({
-        username: username,
-        email: email,
-        password: password
-      }),
-      success: function(response) {
-        if (response.success) {
-          $('#addStockerModal').modal('hide');
-          // Refresh the page or update table dynamically
-          location.reload();
-        } else {
-          alert('Error: ' + response.message);
-        }
-      },
-      error: function(xhr) {
-        alert('An error occurred: ' + xhr.responseText);
-      }
+  {{ super() }}
+  <script>
+    $(document).ready(function() {
+      // // --- Geolocation for Add Client Modal ---
+      // $('#addClientModal').on('show.bs.modal', function (e) {
+      //   // Only attempt to get location if the fields are empty or not set
+      //   if (!($('#add_gps_lat').val() && $('#add_gps_long').val())) {
+      //     if (navigator.geolocation) {
+      //       navigator.geolocation.getCurrentPosition(function(position) {
+      //         $('#add_gps_lat').val(position.coords.latitude);
+      //         $('#add_gps_long').val(position.coords.longitude);
+      //         console.log("GPS coordinates populated:", position.coords.latitude, position.coords.longitude);
+      //       }, function(error) {
+      //         console.warn('ERROR(' + error.code + '): ' + error.message);
+      //         // Inform the user, but don't prevent form submission
+      //         // Optionally, you could show a message to the user that location could not be obtained
+      //         alert("Impossible d'obtenir la localisation actuelle. Veuillez l'entrer manuellement si nécessaire.");
+      //       }, {
+      //         enableHighAccuracy: true,
+      //         timeout: 10000, // 10 seconds
+      //         maximumAge: 0 // No cached location
+      //       });
+      //     } else {
+      //       console.log("Geolocation is not supported by this browser.");
+      //       alert("Votre navigateur ne prend pas en charge la géolocalisation.");
+      //     }
+      //   }
+      // });
+
+      // Show add client modal if there are form errors on initial load
+      {% if client_form.errors %}
+        $('#addClientModal').modal('show');
+      {% endif %}
+
+      // JavaScript to populate the edit modal when 'Editer' is clicked
+      $('.edit-client-btn').on('click', function() {
+        var clientId = $(this).data('id');
+        var name = $(this).data('name');
+        var email = $(this).data('email');
+        var phoneAirtel = $(this).data('phone-airtel');
+        var phoneAfricell = $(this).data('phone-africell');
+        var phoneOrange = $(this).data('phone-orange');
+        var phoneVodacom = $(this).data('phone-vodacom');
+        var address = $(this).data('address');
+        var gpsLat = $(this).data('gps-lat');
+        var gpsLong = $(this).data('gps-long');
+        var discountRate = $(this).data('discount-rate');
+        var isActive = $(this).data('is-active') === true; 
+
+        var $modalForm = $('#editClientModal form');
+
+        $modalForm.attr('action', '{{ url_for("home_blueprint.client_edit", client_id=0) }}'.replace('0', clientId));
+
+        // Populate the form fields inside the modal
+        $modalForm.find('#name').val(name); 
+        $modalForm.find('#email').val(email);
+        $modalForm.find('#phone_airtel').val(phoneAirtel);
+        $modalForm.find('#phone_africel').val(phoneAfricell);
+        $modalForm.find('#phone_orange').val(phoneOrange);
+        $modalForm.find('#phone_vodacom').val(phoneVodacom);
+        $modalForm.find('#address').val(address);
+        $modalForm.find('#gps_lat').val(gpsLat);
+        $modalForm.find('#gps_long').val(gpsLong);
+        $modalForm.find('#discount_rate').val(discountRate);
+        $modalForm.find('#is_active').prop('checked', isActive); 
+      });
+
+      // Optional: If the edit form had errors on submission, re-open the modal
+      {% if client_edit_form.errors %}
+        $('#editClientModal').modal('show');
+      {% endif %}
     });
-  });
-});
-</script>
-{% endblock %}
+  </script>
+{% endblock javascripts %}

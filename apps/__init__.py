@@ -12,7 +12,7 @@ def register_extensions(app):
     db.init_app(app)
     login_manager.init_app(app)
 
-    from apps.authentication.models import User
+    from apps.authentication.models import User  # Import here for user_loader
 
     @login_manager.user_loader
     def load_user(user_id):
@@ -47,12 +47,17 @@ def create_app(config):
         from apps.authentication.models import User, RoleType
         from apps.authentication.util import create_superadmin
 
+        # Register Errors handlers here, AFTER app and db are defined
+        from apps.errors import register_error_handlers
+
+        register_error_handlers(app, db)
+
         try:
             if not User.query.filter_by(role=RoleType.SUPERADMIN).first():
                 if create_superadmin():
                     app.logger.info("Superadmin created successfully")
         except Exception as e:
             app.logger.error(f"Error during superadmin creation: {e}")
-            raise  # Re-raise the exception during app creation
+            raise
 
     return app

@@ -11,20 +11,29 @@
         <form role="form" method="post" action="">
           {{ form.hidden_tag() }}
 
-          {% for field in form if field.widget.input_type != 'hidden' and field.widget.input_type != 'submit' %}
+          {# Iterate through form fields, excluding hidden and submit fields #}
+          {% for field in form if field.widget.input_type != 'hidden' and field.type != 'SubmitField' %}
             <div class="form-group mb-3">
-              <label>{{ field.label }}</label>
-              <div class="input-group">
-                <div class="input-group-prepend">
-                  <!-- You can add icons here if you wish -->
+              {# Special handling for BooleanField (checkbox) to apply custom styles #}
+              {% if field.type == 'BooleanField' %}
+                <div class="custom-control custom-control-alternative custom-checkbox">
+                  {{ field(class="custom-control-input") }} {# Render the checkbox input #}
+                  <label class="custom-control-label" for="{{ field.id }}"> {# Label for the checkbox #}
+                    <span class="text-muted">{{ field.label }}</span>
+                  </label>
                 </div>
-                <!-- Logic to render either a standard input or a select dropdown -->
-                {% if field.type == 'SelectField' %}
+              {% else %}
+                {# Regular fields (StringField, SelectField, etc.) #}
+                <label for="{{ field.id }}">{{ field.label }}</label>
+                <div class="input-group">
+                  <div class="input-group-prepend">
+                    </div>
+                  {# Render the field, applying 'form-control' class #}
                   {{ field(class="form-control") }}
-                {% else %}
-                  {{ field(class="form-control") }}
-                {% endif %}
-              </div>
+                </div>
+              {% endif %}
+
+              {# Display field errors if any #}
               {% if field.errors %}
                 <div class="text-danger mt-2">
                   {% for error in field.errors %}

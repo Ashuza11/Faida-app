@@ -50,25 +50,26 @@
             </a>
             <div class="collapse {% if segment == 'admin' %}show{% endif %}" id="navbar-admin">
               <ul class="nav nav-sm flex-column">
-                <!-- Stocker Sub-Item -->
-                <li class="nav-item">
-                  <a class="nav-link {% if sub_segment == 'stocker' %}active{% endif %}" href="{{ url_for('home_blueprint.stocker_management') }}">
-                    <i class="fas fa-user-tie"></i>
-                    <span class="nav-link-text">Stocker</span>
-                  </a>
-                </li>
-
-                <!-- Client Sub-Item -->
-                <li class="nav-item">
-                  <a class="nav-link {% if sub_segment == 'client' %}active{% endif %}" href="{{ url_for('home_blueprint.client_management') }}">
-                    <i class="fas fa-user"></i>
-                    <span class="nav-link-text">Client</span>
-                  </a>
-                </li>
+                {% if current_user.is_authenticated and current_user.role.value == 'superadmin' %}
+                  <li class="nav-item">
+                    <a class="nav-link {% if sub_segment == 'stocker' %}active{% endif %}" href="{{ url_for('home_blueprint.stocker_management') }}">
+                      <i class="fas fa-user-tie"></i>
+                      <span class="nav-link-text">Stocker</span>
+                    </a>
+                  </li>
+                {% endif %}
+                {% if current_user.is_authenticated and (current_user.role.value == 'superadmin' or current_user.role.value == 'vendeur') %}
+                  <li class="nav-item">
+                    <a class="nav-link {% if sub_segment == 'client' %}active{% endif %}" href="{{ url_for('home_blueprint.client_management') }}">
+                      <i class="fas fa-user"></i>
+                      <span class="nav-link-text">Client</span>
+                    </a>
+                  </li>
+                {% endif %}
 
               </ul>
             </div>
-          </li>   
+          </li>
         </ul>
         <!-- Divider -->
         <hr class="my-3">
