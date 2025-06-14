@@ -1,11 +1,24 @@
 from apps.home import blueprint
-from flask import render_template, request, flash, redirect, url_for, abort
+from flask import render_template, request, flash, redirect, url_for, abort, current_app
 from flask_login import login_required, current_user
 from jinja2 import TemplateNotFound
 from apps.decorators import superadmin_required, vendeur_required
 from apps import db
-from apps.authentication.models import User, RoleType, Client
-from apps.home.forms import StockerForm, UserEditForm, ClientForm, ClientEditForm
+from apps.authentication.models import (
+    User,
+    RoleType,
+    Client,
+    StockPurchase,
+    NetworkType,
+    Stock,
+)
+from apps.home.forms import (
+    StockerForm,
+    UserEditForm,
+    ClientForm,
+    ClientEditForm,
+    StockPurchaseForm,
+)
 
 
 @blueprint.route("/index")
@@ -285,7 +298,7 @@ def client_edit(client_id):
 
 @blueprint.route("/admin/clients/toggle-active/<int:client_id>", methods=["POST"])
 @login_required
-@vendeur_required  # Vendeurs can toggle their own clients, superadmins can toggle all
+@vendeur_required
 def client_toggle_active(client_id):
     """
     Toggles the active status of a client.
@@ -305,3 +318,76 @@ def client_toggle_active(client_id):
     status_message = "activé" if client.is_active else "désactivé"
     flash(f"Client {client.name} {status_message} avec succès!", "success")
     return redirect(url_for("home_blueprint.client_management"))
+
+
+@blueprint.route("/achat_stock", methods=["GET", "POST"])
+@login_required
+@superadmin_required
+def Achat_stock():
+    segment = "stock"
+    sub_segment = "Achat_stock"
+
+    form = StockPurchaseForm()
+
+    if form.validate_on_submit():
+        network = NetworkType(form.network.data)
+        amount_purchased = form.amount_purchased.data
+
+        try:
+            # --- FIX STARTS HERE ---
+
+            # Find or create the Stock item for the given network
+            stock_item = Stock.query.filter_by(network=network).first()
+            if not stock_item:
+                # If for some reason it doesn't exist (e.g., initial_stock_items didn't run,
+                # or new network added after app creation without restart)
+                stock_item = Stock(
+                    network=network,
+                    balance=0.00,  # Start with 0 balance
+                    selling_price_per_unit=1.00,
+                    reduction_rate=0.00,
+                )
+                db.session.add(stock_item)
+                # It's important to flush here so stock_item gets an ID before StockPurchase uses it
+                db.session.flush()
+
+            # Record the StockPurchase and link it directly to the stock_item object
+            new_purchase = StockPurchase(
+                network=network,  # Denormalized
+                amount_purchased=amount_purchased,
+                purchased_by=current_user,
+                stock_item=stock_item,  # <-- Assign the Stock object directly here!
+            )
+            db.session.add(new_purchase)
+
+            # Now update the balance of the existing (or newly created) stock_item
+            stock_item.balance += amount_purchased
+
+            # Commit both the new purchase and the updated stock_item
+            db.session.commit()
+            flash(
+                f"Successfully registered {amount_purchased} FC of {network.value} stock.",
+                "success",
+            )
+            return redirect(url_for("home_blueprint.Achat_stock"))
+
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error registering stock purchase: {e}")
+            flash(
+                f"An error occurred while registering the purchase: {e}. Please try again.",
+                "danger",
+            )  # Show more specific error for debug
+
+    # Fetch existing stock purchases for display
+    stock_purchases = StockPurchase.query.order_by(
+        StockPurchase.created_at.desc()
+    ).all()
+
+    return render_template(
+        "home/achat_stock.html",
+        form=form,
+        stock_purchases=stock_purchases,
+        segment=segment,
+        sub_segment=sub_segment,
+    )

@@ -1,0 +1,114 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} Achat Stock {% endblock %}
+
+{% block stylesheets %}{% endblock stylesheets %}
+
+{% block content %}
+
+  {# Render the Page Header #}
+  {% set page_title = 'Gestion des Stock' %}
+  {% set breadcrumb_items = [
+    {'text': 'Stock', 'url': url_for('home_blueprint.Achat_stock')}, 
+    {'text': 'Achat stock', 'url': url_for('home_blueprint.Achat_stock')}
+  ] %}
+  {% include 'includes/page_header.html' %}
+
+
+  <div class="container-fluid mt--6">
+    <div class="row">
+      <div class="col-xl-12 order-xl-1">
+        <div class="card">
+          <div class="card-header">
+            <div class="row align-items-center">
+              <div class="col-8">
+                <h3 class="mb-0">Enregistrer un Achat Stock</h3>
+              </div>
+            </div>
+          </div>
+          <div class="card-body">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                {% for category, message in messages %}
+                  <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    <span class="alert-icon"><i class="ni ni-bell-55"></i></span>
+                    <span class="alert-text">{{ message }}</span>
+                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                      <span aria-hidden="true">&times;</span>
+                    </button>
+                  </div>
+                {% endfor %}
+              {% endif %}
+            {% endwith %}
+
+            <form method="POST">
+                {{ form.hidden_tag() }} {# CSRF token #}
+
+                <div class="form-group">
+                    {{ form.network.label }}
+                    {{ form.network() }}
+                    {% for error in form.network.errors %}
+                        <small class="text-danger">{{ error }}</small>
+                    {% endfor %}
+                </div>
+
+                <div class="form-group">
+                    {{ form.amount_purchased.label }}
+                    {{ form.amount_purchased() }}
+                    {% for error in form.amount_purchased.errors %}
+                        <small class="text-danger">{{ error }}</small>
+                    {% endfor %}
+                </div>
+
+                {{ form.submit() }}
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row mt-5">
+      <div class="col">
+        <div class="card">
+          <div class="card-header border-0">
+            <h3 class="mb-0">Historique des Achats Stock</h3>
+          </div>
+          <div class="table-responsive">
+            <table class="table align-items-center table-flush">
+              <thead class="thead-light">
+                <tr>
+                  <th scope="col" class="sort">ID</th>
+                  <th scope="col" class="sort">Network</th>
+                  <th scope="col" class="sort">Amount (FC)</th>
+                  <th scope="col" class="sort">Purchased By</th>
+                  <th scope="col" class="sort">Date</th>
+                </tr>
+              </thead>
+              <tbody class="list">
+                {% for purchase in stock_purchases %}
+                <tr>
+                  <td>{{ purchase.id }}</td>
+                  <td>{{ purchase.network.value|capitalize }}</td>
+                  <td>{{ "%.2f"|format(purchase.amount_purchased) }} FC</td>
+                  <td>{{ purchase.purchased_by.username }}</td>
+                  <td>{{ purchase.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="5" class="text-center">No stock purchases recorded yet.</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% include "includes/footer.html" %}
+
+  </div>
+
+{% endblock content %}
+
+{% block javascripts %}{% endblock javascripts %}

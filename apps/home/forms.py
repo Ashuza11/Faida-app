@@ -8,6 +8,7 @@ from wtforms import (
     DecimalField,
 )
 from wtforms.validators import Email, DataRequired, Optional, Length, NumberRange
+from apps.authentication.models import NetworkType
 import enum
 
 
@@ -167,3 +168,31 @@ class ClientEditForm(FlaskForm):
         default=0.0,
     )
     submit = SubmitField("Mettre à jour")
+
+
+class StockPurchaseForm(FlaskForm):
+    """
+    Form for registering a new stock purchase.
+    """
+
+    network = SelectField(
+        "Network",
+        choices=[(tag.value, tag.value.capitalize()) for tag in NetworkType],
+        validators=[DataRequired()],
+        render_kw={"class": "form-control"},
+    )
+    amount_purchased = DecimalField(
+        "Amount Purchased (FC)",
+        validators=[
+            DataRequired(),
+            NumberRange(min=0.01, message="Le montant doit etre positive"),
+        ],
+        render_kw={
+            "placeholder": "e.g., 50000",
+            "class": "form-control",
+        },
+    )
+    submit = SubmitField(
+        "Register Purchase",
+        render_kw={"class": "btn btn-primary mt-3"},
+    )
