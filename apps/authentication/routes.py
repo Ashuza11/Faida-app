@@ -29,7 +29,7 @@ def login():
             return redirect(url_for("home_blueprint.index"))
 
         return render_template(
-            "accounts/login.html", msg="Wrong username or password", form=login_form
+            "accounts/login.html", msg="Identifiants invalides", form=login_form
         )
 
     if not current_user.is_authenticated:
@@ -41,7 +41,7 @@ def login():
 def register():
     return render_template(
         "accounts/register.html",
-        msg="Please contact administrator for account creation",
+        msg="Contacter l'admin pour créer votre compte",
         form=CreateAccountForm(request.form),
         disabled=True,
     )
@@ -51,26 +51,3 @@ def register():
 def logout():
     logout_user()
     return redirect(url_for("authentication_blueprint.login"))
-
-
-# Errors
-
-
-@login_manager.unauthorized_handler
-def unauthorized_handler():
-    return render_template("home/page-403.html"), 403
-
-
-@blueprint.errorhandler(403)
-def access_forbidden(error):
-    return render_template("home/page-403.html"), 403
-
-
-@blueprint.errorhandler(404)
-def not_found_error(error):
-    return render_template("home/page-404.html"), 404
-
-
-@blueprint.errorhandler(500)
-def internal_error(error):
-    return render_template("home/page-500.html"), 500

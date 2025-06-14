@@ -46,11 +46,15 @@ def create_app(config):
         # Import models ONLY after db is initialized
         from apps.authentication.models import User, RoleType
         from apps.authentication.util import create_superadmin
+        from apps.home.utils import initialize_stock_items
 
         # Register Errors handlers here, AFTER app and db are defined
         from apps.errors import register_error_handlers
 
         register_error_handlers(app, db)
+
+        # Call the stock initialization function
+        initialize_stock_items(app)  # <-- NEW LINE
 
         try:
             if not User.query.filter_by(role=RoleType.SUPERADMIN).first():

@@ -109,6 +109,84 @@ class Client(db.Model):
         return f"<Client {self.name}>"
 
 
+# New Models for Stock Management
+
+
+class Stock(db.Model):
+    __tablename__ = "stock"
+
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+    network: so.Mapped[NetworkType] = so.mapped_column(
+        sa.Enum(NetworkType), unique=True, nullable=False
+    )
+    # The current balance of airtime for this network
+    balance: so.Mapped[sa.Numeric(precision=10, scale=2)] = so.mapped_column(
+        sa.Numeric(10, 2), default=0.00, nullable=False
+    )
+
+    # "Prix de vente stock" - The selling price for airtime on this network
+    # This is a critical setting for calculations in Vente Stock
+    selling_price_per_unit: so.Mapped[sa.Numeric(precision=10, scale=2)] = (
+        so.mapped_column(sa.Numeric(10, 2), default=1.00, nullable=False)
+    )
+
+    # Reduction rate for this network (e.g., 0.05 for 5% reduction)
+    # This will be used in Vente Stock calculation
+    reduction_rate: so.Mapped[sa.Numeric(precision=5, scale=4)] = so.mapped_column(
+        sa.Numeric(5, 4), default=0.00, nullable=False
+    )
+
+    updated_at: so.Mapped[datetime] = so.mapped_column(
+        default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    purchases: so.Mapped[List["StockPurchase"]] = so.relationship(
+        back_populates="stock_item", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Stock {self.network.value}: {self.balance} units>"
+
+
+class StockPurchase(db.Model):
+    __tablename__ = "stock_purchases"
+
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+
+    stock_item_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("stock.id"), nullable=False
+    )
+    stock_item: so.Mapped[Stock] = so.relationship(back_populates="purchases")
+
+    # Network is denormalized here for easier querying, but also linked via stock_item
+    network: so.Mapped[NetworkType] = so.mapped_column(
+        sa.Enum(NetworkType), nullable=False
+    )
+
+    # Amount of airtime purchased in this transaction (e.g., 50000 FC worth of airtime)
+    # Type hint should be float or Decimal
+    amount_purchased: so.Mapped[float] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False
+    )
+
+    # Optional: Actual cost if different from face value or if there's a purchase discount
+    # Type hint should be Optional[float] or Optional[Decimal]
+    cost: so.Mapped[Optional[float]] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=True
+    )  # <-- Changed here: Optional[float] and nullable=True
+
+    purchased_by_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=False
+    )
+    purchased_by: so.Mapped[User] = so.relationship(backref="stock_purchases_made")
+
+    created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<StockPurchase {self.network.value} - {self.amount_purchased}FC by User {self.purchased_by_id}>"
+
+
+# Sales
 class Sale(db.Model):
     __tablename__ = "sales"
 
@@ -126,7 +204,6 @@ class Sale(db.Model):
     vendeur: so.Mapped[User] = so.relationship(back_populates="sales")
     client: so.Mapped[Client] = so.relationship(back_populates="sales")
 
-    # Example Sale fields (adjust to your real use case)
     network: so.Mapped[NetworkType] = so.mapped_column(
         sa.Enum(NetworkType), nullable=False
     )
