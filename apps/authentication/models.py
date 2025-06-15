@@ -6,6 +6,7 @@ from apps import db
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlalchemy as sa
 import sqlalchemy.orm as so
+from decimal import Decimal
 
 
 # Enum for user roles
@@ -27,14 +28,12 @@ class NetworkType(PyEnum):
 class User(db.Model, UserMixin):
     __tablename__ = "users"
 
-    # Common fields that were in Base
     id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
     created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
     updated_at: so.Mapped[datetime] = so.mapped_column(
         default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
-    # User-specific fields
     username: so.Mapped[str] = so.mapped_column(
         sa.String(64), index=True, unique=True, nullable=False
     )
@@ -52,7 +51,6 @@ class User(db.Model, UserMixin):
     last_login: so.Mapped[Optional[datetime]] = so.mapped_column(nullable=True)
     is_active: so.Mapped[bool] = so.mapped_column(default=True)
 
-    # Relationships
     creator = so.relationship(
         "User",
         remote_side=[id],
@@ -63,6 +61,11 @@ class User(db.Model, UserMixin):
     )
     sales: so.Mapped[List["Sale"]] = so.relationship(
         back_populates="vendeur", cascade="all, delete-orphan"
+    )
+    stock_purchases_made: so.Mapped[List["StockPurchase"]] = so.relationship(
+        back_populates="purchased_by",
+        lazy="dynamic",
+        cascade="all, delete-orphan",
     )
 
     def set_password(self, password: str) -> None:
@@ -79,14 +82,12 @@ class User(db.Model, UserMixin):
 class Client(db.Model):
     __tablename__ = "clients"
 
-    # Common fields
     id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
     created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
     updated_at: so.Mapped[datetime] = so.mapped_column(
         default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
-    # Client-specific fields
     name: so.Mapped[str] = so.mapped_column(sa.String(128), nullable=False)
     phone_airtel: so.Mapped[Optional[str]] = so.mapped_column(sa.String(20))
     phone_africel: so.Mapped[Optional[str]] = so.mapped_column(sa.String(20))
@@ -96,7 +97,10 @@ class Client(db.Model):
     gps_lat: so.Mapped[Optional[float]] = so.mapped_column()
     gps_long: so.Mapped[Optional[float]] = so.mapped_column()
     is_active: so.Mapped[bool] = so.mapped_column(default=True)
-    discount_rate: so.Mapped[Optional[float]] = so.mapped_column(default=0.0)
+    # Client-specific discount, separate from network's reduction rate
+    discount_rate: so.Mapped[sa.Numeric(precision=5, scale=4)] = so.mapped_column(
+        sa.Numeric(5, 4), default=0.00
+    )
 
     vendeur_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey("users.id"))
     vendeur: so.Mapped[User] = so.relationship(back_populates="clients")
@@ -109,9 +113,7 @@ class Client(db.Model):
         return f"<Client {self.name}>"
 
 
-# New Models for Stock Management
-
-
+# Stock Model
 class Stock(db.Model):
     __tablename__ = "stock"
 
@@ -119,19 +121,16 @@ class Stock(db.Model):
     network: so.Mapped[NetworkType] = so.mapped_column(
         sa.Enum(NetworkType), unique=True, nullable=False
     )
-    # The current balance of airtime for this network
     balance: so.Mapped[int] = so.mapped_column(sa.Integer, default=0, nullable=False)
 
-    # "Prix de vente stock" - The selling price for airtime on this network
-    # This is a critical setting for calculations in Vente Stock
     selling_price_per_unit: so.Mapped[sa.Numeric(precision=10, scale=2)] = (
         so.mapped_column(sa.Numeric(10, 2), default=1.00, nullable=False)
     )
 
-    # Reduction rate for this network (e.g., 0.05 for 5% reduction)
-    # This will be used in Vente Stock calculation
     reduction_rate: so.Mapped[sa.Numeric(precision=5, scale=4)] = so.mapped_column(
-        sa.Numeric(5, 4), default=0.00, nullable=False
+        sa.Numeric(5, 4),
+        default=0.00,
+        nullable=False,
     )
 
     updated_at: so.Mapped[datetime] = so.mapped_column(
@@ -146,6 +145,7 @@ class Stock(db.Model):
         return f"<Stock {self.network.value}: {self.balance} units>"
 
 
+# StockPurchase Model
 class StockPurchase(db.Model):
     __tablename__ = "stock_purchases"
 
@@ -156,24 +156,24 @@ class StockPurchase(db.Model):
     )
     stock_item: so.Mapped[Stock] = so.relationship(back_populates="purchases")
 
-    # Network is denormalized here for easier querying, but also linked via stock_item
     network: so.Mapped[NetworkType] = so.mapped_column(
         sa.Enum(NetworkType), nullable=False
     )
-
-    # This now represents the face value/units of airtime
+    selling_price_at_purchase: so.Mapped[sa.Numeric(precision=10, scale=2)] = (
+        so.mapped_column(sa.Numeric(10, 2), nullable=False)
+    )
     amount_purchased: so.Mapped[int] = so.mapped_column(sa.Integer, nullable=False)
 
-    # Optional: Actual cost if different from face value or if there's a purchase discount
-    # Type hint should be Optional[float] or Optional[Decimal]
-    cost: so.Mapped[Optional[float]] = so.mapped_column(
+    cost: so.Mapped[Optional[Decimal]] = so.mapped_column(
         sa.Numeric(12, 2), nullable=True
-    )  # <-- Changed here: Optional[float] and nullable=True
+    )
 
     purchased_by_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False
     )
-    purchased_by: so.Mapped[User] = so.relationship(backref="stock_purchases_made")
+    purchased_by: so.Mapped[User] = so.relationship(
+        back_populates="stock_purchases_made"
+    )
 
     created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
 
@@ -181,7 +181,7 @@ class StockPurchase(db.Model):
         return f"<StockPurchase {self.network.value} - {self.amount_purchased}FC by User {self.purchased_by_id}>"
 
 
-# Sales
+# New Sale Model
 class Sale(db.Model):
     __tablename__ = "sales"
 
@@ -191,19 +191,81 @@ class Sale(db.Model):
         default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
-    # Foreign Keys
-    vendeur_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey("users.id"))
-    client_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey("clients.id"))
-
-    # Relationships
+    vendeur_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=False
+    )
     vendeur: so.Mapped[User] = so.relationship(back_populates="sales")
-    client: so.Mapped[Client] = so.relationship(back_populates="sales")
+
+    client_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("clients.id"), nullable=True
+    )
+    # The client for this sale. Can be null if it's an unregistered (adhoc) client.
+    client: so.Mapped[Optional[Client]] = so.relationship(back_populates="sales")
+
+    # If client is not registered, their name can be captured here.
+    # This ensures a name is always associated with a sale, even if not a registered client.
+    client_name_adhoc: so.Mapped[Optional[str]] = so.mapped_column(
+        sa.String(128), nullable=True
+    )
+
+    # Total amount due for this entire sale (sum of all SaleItems)
+    total_amount_due: so.Mapped[sa.Numeric(precision=12, scale=2)] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
+    # Amount of cash paid by the client
+    cash_paid: so.Mapped[sa.Numeric(precision=12, scale=2)] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
+    # Debt remaining for this sale (total_amount_due - cash_paid)
+    debt_amount: so.Mapped[sa.Numeric(precision=12, scale=2)] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
+
+    # Relationship to individual SaleItems
+    sale_items: so.Mapped[List["SaleItem"]] = so.relationship(
+        back_populates="sale", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        client_info = self.client.name if self.client else self.client_name_adhoc
+        return f"<Sale ID:{self.id} to {client_info} by {self.vendeur.username}>"
+
+
+# New SaleItem Model (One Sale can have multiple SaleItems for different networks)
+class SaleItem(db.Model):
+    __tablename__ = "sale_items"
+
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+    created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
+
+    sale_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("sales.id"), nullable=False
+    )
+    sale: so.Mapped[Sale] = so.relationship(back_populates="sale_items")
 
     network: so.Mapped[NetworkType] = so.mapped_column(
         sa.Enum(NetworkType), nullable=False
     )
-    quantity: so.Mapped[float] = so.mapped_column(nullable=False)
-    total_price: so.Mapped[float] = so.mapped_column(nullable=False)
+    quantity: so.Mapped[int] = so.mapped_column(
+        sa.Integer, nullable=False
+    )  # Amount of airtime sold for this network
+
+    # Price per unit for this specific sale item (after network reduction)
+    # This is effectively the final selling price per unit applied to this quantity
+    price_per_unit_applied: so.Mapped[sa.Numeric(precision=10, scale=2)] = (
+        so.mapped_column(sa.Numeric(10, 2), nullable=False)
+    )
+
+    # The reduction rate applied to this specific sale item
+    # This could come from Stock.reduction_rate at the time of sale.
+    reduction_rate_applied: so.Mapped[sa.Numeric(precision=5, scale=4)] = (
+        so.mapped_column(sa.Numeric(5, 4), nullable=False, default=Decimal("0.00"))
+    )
+
+    # Subtotal for this specific SaleItem (quantity * price_per_unit_applied)
+    subtotal: so.Mapped[sa.Numeric(precision=12, scale=2)] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False
+    )
 
     def __repr__(self) -> str:
-        return f"<Sale to {self.client.name} by {self.vendeur.username}>"
+        return f"<SaleItem for Sale {self.sale_id}: {self.quantity} units of {self.network.value} at {self.price_per_unit_applied} FC/unit>"

@@ -324,71 +324,91 @@ def client_toggle_active(client_id):
 @login_required
 @superadmin_required
 def Achat_stock():
-    segment = "stock"
-    sub_segment = "Achat_stock"
-
-    form = StockPurchaseForm()
+    form = (
+        StockPurchaseForm()
+    )  # Initialize form without request.form for GET requests initially
 
     if form.validate_on_submit():
-        network = NetworkType(form.network.data)
+        network_enum_value = form.network.data  # This will be like 'airtel', 'orange'
+        network_enum = NetworkType(network_enum_value)  # Convert to Enum instance
         amount_purchased = form.amount_purchased.data
+        selling_price_at_purchase = None  # Initialize to None
+
+        # Determine selling_price_at_purchase based on user's choice
+        if form.selling_price_choice.data == "custom":
+            selling_price_at_purchase = form.custom_selling_price.data
+        elif form.selling_price_choice.data in ["27.5", "28.0"]:
+            selling_price_at_purchase = float(form.selling_price_choice.data)
+        else:
+            # Fallback: if somehow no choice is made or it's an unrecognized value,
+            # use the default selling_price_per_unit from the Stock table for this network.
+            # This should ideally be caught by form validation if DataRequired is used.
+            stock_item = Stock.query.filter_by(network=network_enum).first()
+            if stock_item:
+                selling_price_at_purchase = stock_item.selling_price_per_unit
+            else:
+                flash(
+                    "Impossible de déterminer le prix de vente. Veuillez réessayer.",
+                    "danger",
+                )
+                # Re-fetch purchases to display in template on error
+                stock_purchases = StockPurchase.query.order_by(
+                    StockPurchase.created_at.desc()
+                ).all()
+                return render_template(
+                    "home/achat_stock.html",
+                    segment="achat_stock",
+                    stock_purchases=stock_purchases,
+                    form=form,
+                )
+
+        # Retrieve the Stock item for the chosen network
+        stock_item = Stock.query.filter_by(network=network_enum).first()
+        if not stock_item:
+            flash(
+                f"Erreur: Aucun stock trouvé pour le réseau {network_enum_value.capitalize()}.",
+                "danger",
+            )
+            # Re-fetch purchases to display in template on error
+            stock_purchases = StockPurchase.query.order_by(
+                StockPurchase.created_at.desc()
+            ).all()
+            return render_template(
+                "home/achat_stock.html",
+                segment="achat_stock",
+                stock_purchases=stock_purchases,
+                form=form,
+            )
 
         try:
-            # 1. Find or create the Stock item for the given network
-            stock_item = Stock.query.filter_by(network=network).first()
-
-            if not stock_item:
-                # If it doesn't exist, create it
-                current_app.logger.info(
-                    f"Creating new Stock item for {network.value} during purchase."
-                )
-                stock_item = Stock(
-                    network=network,
-                    balance=0,  # Start with 0 units
-                    selling_price_per_unit=1.00,
-                    reduction_rate=0.00,
-                )
-                db.session.add(stock_item)
-                # Flush the session immediately to get an ID for the new stock_item
-                # This ensures stock_item.id is populated before being used by StockPurchase
-                db.session.flush()
-
-            # 2. Record the StockPurchase, linking it directly to the stock_item object
-            # By assigning the 'stock_item' object, SQLAlchemy will automatically
-            # use its ID for 'stock_item_id' when flushing.
-            new_purchase = StockPurchase(
-                network=network,  # Denormalized for easier querying
-                amount_purchased=amount_purchased,
-                purchased_by=current_user,
-                stock_item=stock_item,
-            )
-            db.session.add(new_purchase)
-
-            # 3. Update the Stock balance for the specific network
+            # Update the stock balance
             stock_item.balance += amount_purchased
 
-            # 4. Commit all changes (new purchase and updated stock balance)
-            db.session.commit()
-            flash(
-                f"Enregistrement réussi de {amount_purchased} Uniés {network.value}.",
-                "success",
+            new_purchase = StockPurchase(
+                stock_item_id=stock_item.id,
+                network=network_enum,
+                amount_purchased=amount_purchased,
+                selling_price_at_purchase=selling_price_at_purchase,
+                purchased_by=current_user,
             )
+            db.session.add(new_purchase)
+            db.session.commit()
+            flash("Achat de stock enregistré avec succès!", "success")
             return redirect(url_for("home_blueprint.Achat_stock"))
-
         except Exception as e:
             db.session.rollback()
-            current_app.logger.error(f"Error registering stock purchase: {e}")
-            flash(f"Une erreur s'est produite{e}. Veuillez réessayer", "danger")
+            flash(
+                f"Erreur lors de l'enregistrement de l'achat de stock: {str(e)}",
+                "danger",
+            )
 
-    # Fetch existing stock purchases for display
+    # For GET request or if form validation fails
     stock_purchases = StockPurchase.query.order_by(
         StockPurchase.created_at.desc()
     ).all()
-
     return render_template(
         "home/achat_stock.html",
-        form=form,
+        segment="achat_stock",
         stock_purchases=stock_purchases,
-        segment=segment,
-        sub_segment=sub_segment,
+        form=form,
     )
