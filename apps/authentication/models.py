@@ -120,9 +120,7 @@ class Stock(db.Model):
         sa.Enum(NetworkType), unique=True, nullable=False
     )
     # The current balance of airtime for this network
-    balance: so.Mapped[sa.Numeric(precision=10, scale=2)] = so.mapped_column(
-        sa.Numeric(10, 2), default=0.00, nullable=False
-    )
+    balance: so.Mapped[int] = so.mapped_column(sa.Integer, default=0, nullable=False)
 
     # "Prix de vente stock" - The selling price for airtime on this network
     # This is a critical setting for calculations in Vente Stock
@@ -163,11 +161,8 @@ class StockPurchase(db.Model):
         sa.Enum(NetworkType), nullable=False
     )
 
-    # Amount of airtime purchased in this transaction (e.g., 50000 FC worth of airtime)
-    # Type hint should be float or Decimal
-    amount_purchased: so.Mapped[float] = so.mapped_column(
-        sa.Numeric(12, 2), nullable=False
-    )
+    # This now represents the face value/units of airtime
+    amount_purchased: so.Mapped[int] = so.mapped_column(sa.Integer, nullable=False)
 
     # Optional: Actual cost if different from face value or if there's a purchase discount
     # Type hint should be Optional[float] or Optional[Decimal]

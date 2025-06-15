@@ -6,109 +6,134 @@
 
 {% block content %}
 
-  {# Render the Page Header #}
-  {% set page_title = 'Gestion des Stock' %}
-  {% set breadcrumb_items = [
-    {'text': 'Stock', 'url': url_for('home_blueprint.Achat_stock')}, 
-    {'text': 'Achat stock', 'url': url_for('home_blueprint.Achat_stock')}
-  ] %}
-  {% include 'includes/page_header.html' %}
+    {# Render the Page Header #}
+    {% set page_title = 'Gestion des Stock' %}
+    {% set breadcrumb_items = [
+        {'text': 'Stock', 'url': url_for('home_blueprint.Achat_stock')}, 
+        {'text': 'Achat stock', 'url': url_for('home_blueprint.Achat_stock')}
+    ] %}
+    {% include 'includes/page_header.html' %}
 
-
-  <div class="container-fluid mt--6">
-    <div class="row">
-      <div class="col-xl-12 order-xl-1">
-        <div class="card">
-          <div class="card-header">
-            <div class="row align-items-center">
-              <div class="col-8">
-                <h3 class="mb-0">Enregistrer un Achat Stock</h3>
-              </div>
+    <div class="container-fluid mt--6">
+        <div class="row">
+            <div class="col">
+                <div class="card">
+                    <div class="card-header border-0">
+                        <div class="row align-items-center">
+                            <div class="col">
+                                <h3 class="mb-0">Historique des Achats Stock</h3>
+                            </div>
+                            <div class="col text-right">
+                                {# "Ajouter Achat" button to open the modal #}
+                                {% if current_user.is_authenticated and (current_user.role.value == 'superadmin' or current_user.role.value == 'vendeur') %}
+                                    <button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#addStockPurchaseModal">
+                                        <i class="fas fa-plus"></i> Ajouter Achat
+                                    </button>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="table-responsive">
+                        <table class="table align-items-center table-flush">
+                            <thead class="thead-light">
+                                <tr>
+                                    <th scope="col" class="sort">ID</th>
+                                    <th scope="col" class="sort">Reseaux</th>
+                                    <th scope="col" class="sort">Nombre</th>
+                                    <th scope="col" class="sort">Acheter par</th>
+                                    <th scope="col" class="sort">Date</th>
+                                    {# Add actions column if you want to edit/delete purchases later #}
+                                    <th scope="col">Actions</th> 
+                                </tr>
+                            </thead>
+                            <tbody class="list">
+                                {% for purchase in stock_purchases %}
+                                <tr>
+                                    <td>{{ purchase.id }}</td>
+                                    <td>{{ purchase.network.value|capitalize }}</td>
+                                    <td>{{ purchase.amount_purchased }} unités</td>
+                                    <td>{{ purchase.purchased_by.username }}</td>
+                                    <td>{{ purchase.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                    <td class="text-right">
+                                        <div class="dropdown">
+                                            <a class="btn btn-sm btn-icon-only text-light" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                                              <i class="fas fa-ellipsis-v"></i>
+                                            </a>
+                                            <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
+                                                {# Example: You can add edit/delete purchase actions here #}
+                                                <a class="dropdown-item" href="#">Editer</a>
+                                                <a class="dropdown-item text-danger" href="#">Supprimer</a>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="6" class="text-center">Aucun achat de stock enregistré pour le moment.</td> {# Adjusted colspan #}
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
-          </div>
-          <div class="card-body">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-              {% if messages %}
-                {% for category, message in messages %}
-                  <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                    <span class="alert-icon"><i class="ni ni-bell-55"></i></span>
-                    <span class="alert-text">{{ message }}</span>
-                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-                      <span aria-hidden="true">&times;</span>
+        </div>
+
+        {% include "includes/footer.html" %}
+
+    </div>
+
+    {# Include the "Add Stock Purchase" Modal #}
+    <div class="modal fade" id="addStockPurchaseModal" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Enregistrer un nouvel Achat Stock</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
                     </button>
-                  </div>
-                {% endfor %}
-              {% endif %}
-            {% endwith %}
-
-            <form method="POST">
-                {{ form.hidden_tag() }} {# CSRF token #}
-
-                <div class="form-group">
-                    {{ form.network.label }}
-                    {{ form.network() }}
-                    {% for error in form.network.errors %}
-                        <small class="text-danger">{{ error }}</small>
-                    {% endfor %}
                 </div>
+                {# The form itself for Stock Purchase #}
+                <form method="post" action="{{ url_for('home_blueprint.Achat_stock') }}">
+                    <div class="modal-body">
+                        {{ form.hidden_tag() }} {# CSRF token #}
 
-                <div class="form-group">
-                    {{ form.amount_purchased.label }}
-                    {{ form.amount_purchased() }}
-                    {% for error in form.amount_purchased.errors %}
-                        <small class="text-danger">{{ error }}</small>
-                    {% endfor %}
-                </div>
+                        <div class="form-group{% if form.network.errors %} has-danger{% endif %}">
+                            {{ form.network.label(class="form-control-label") }}
+                            {{ form.network(class="form-control" + (" is-invalid" if form.network.errors else "")) }}
+                            {% for error in form.network.errors %}
+                                <div class="invalid-feedback d-block">{{ error }}</div>
+                            {% endfor %}
+                        </div>
 
-                {{ form.submit() }}
-            </form>
-          </div>
+                        <div class="form-group{% if form.amount_purchased.errors %} has-danger{% endif %}">
+                            {{ form.amount_purchased.label(class="form-control-label") }}
+                            {{ form.amount_purchased(class="form-control" + (" is-invalid" if form.amount_purchased.errors else ""), placeholder=form.amount_purchased.label.text) }}
+                            {% for error in form.amount_purchased.errors %}
+                                <div class="invalid-feedback d-block">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Annuler</button>
+                        <button type="submit" class="btn btn-primary">Enregistrer Achat</button>
+                    </div>
+                </form>
+            </div>
         </div>
-      </div>
     </div>
-
-    <div class="row mt-5">
-      <div class="col">
-        <div class="card">
-          <div class="card-header border-0">
-            <h3 class="mb-0">Historique des Achats Stock</h3>
-          </div>
-          <div class="table-responsive">
-            <table class="table align-items-center table-flush">
-              <thead class="thead-light">
-                <tr>
-                  <th scope="col" class="sort">ID</th>
-                  <th scope="col" class="sort">Network</th>
-                  <th scope="col" class="sort">Amount (FC)</th>
-                  <th scope="col" class="sort">Purchased By</th>
-                  <th scope="col" class="sort">Date</th>
-                </tr>
-              </thead>
-              <tbody class="list">
-                {% for purchase in stock_purchases %}
-                <tr>
-                  <td>{{ purchase.id }}</td>
-                  <td>{{ purchase.network.value|capitalize }}</td>
-                  <td>{{ "%.2f"|format(purchase.amount_purchased) }} FC</td>
-                  <td>{{ purchase.purchased_by.username }}</td>
-                  <td>{{ purchase.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                </tr>
-                {% else %}
-                <tr>
-                  <td colspan="5" class="text-center">No stock purchases recorded yet.</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    {% include "includes/footer.html" %}
-
-  </div>
 
 {% endblock content %}
 
-{% block javascripts %}{% endblock javascripts %}
+{% block javascripts %}
+    {{ super() }}
+    <script>
+        $(document).ready(function() {
+            // Show the add stock purchase modal if there are form errors on initial load
+            {% if form.errors %} {# 'form' here refers to StockPurchaseForm passed from route #}
+                $('#addStockPurchaseModal').modal('show');
+            {% endif %}
+        });
+    </script>
+{% endblock javascripts %}

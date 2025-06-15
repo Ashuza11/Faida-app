@@ -1,8 +1,8 @@
-"""Fix StockPurchase cost type hint
+"""Initial migration with integer stock units
 
-Revision ID: f05c42d85d69
-Revises: 481e195d332f
-Create Date: 2025-06-14 15:44:57.990625
+Revision ID: 2e07089eecc1
+Revises: 
+Create Date: 2025-06-15 10:49:49.945330
 
 """
 from alembic import op
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'f05c42d85d69'
-down_revision = '481e195d332f'
+revision = '2e07089eecc1'
+down_revision = None
 branch_labels = None
 depends_on = None
 

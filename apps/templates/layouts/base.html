@@ -42,30 +42,27 @@
   {% from 'includes/_messages.html' import render_messages %}
 
   <div class="main-content" id="panel">
-
     {% include "includes/navigation.html" %}
     {% block content %}{% endblock content %}
-    
   </div>
-  {{ render_messages() }} 
+  {{ render_messages() }}
 
   {% include "includes/scripts.html" %}
 
   <!-- Specific JS goes HERE --> 
   {% block javascripts %}
-      <script>
-        // JavaScript to auto-hide alerts
-        $(document).ready(function() {
-            // Find all alerts with the 'fade show' classes that are currently visible
-            $('.alert.fade.show').each(function() {
-                var $alert = $(this);
-                // Set a timeout to fade out and remove the alert
-                // The duration here is 5000 milliseconds (5 seconds)
-                setTimeout(function() {
-                    $alert.alert('close'); // Bootstrap's way to close an alert
-                }, 5000); // Adjust time here (in milliseconds)
-            });
-        });
+    <script>
+      // JavaScript to auto-hide alerts
+      $(document).ready(function() {
+          // Find all alerts with the 'fade show' classes that are currently visible
+          $('.alert.fade.show').each(function() {
+              var $alert = $(this);
+              // Set a timeout to fade out and remove the alert
+              setTimeout(function() {
+                  $alert.alert('close'); // Bootstrap's way to close an alert
+              }, 5000); // Adjust time here (in milliseconds)
+          });
+      });
     </script>
   {% endblock javascripts %}
 

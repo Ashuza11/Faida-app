@@ -12,7 +12,7 @@ def initialize_stock_items(app):
             if not Stock.query.filter_by(network=network_type).first():
                 initial_stock_item = Stock(
                     network=network_type,
-                    balance=0.00,
+                    balance=0,
                     selling_price_per_unit=1.00,
                     reduction_rate=0.00,
                 )

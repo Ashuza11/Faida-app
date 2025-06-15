@@ -5,6 +5,7 @@ from wtforms import (
     SubmitField,
     SelectField,
     BooleanField,
+    IntegerField,
     DecimalField,
 )
 from wtforms.validators import Email, DataRequired, Optional, Length, NumberRange
@@ -14,7 +15,6 @@ import enum
 
 class RoleType(enum.Enum):
     SUPERADMIN = "superadmin"
-    ADMIN = "admin"
     VENDEUR = "vendeur"
 
 
@@ -91,20 +91,6 @@ class UserEditForm(FlaskForm):
     submit = SubmitField("Mettre à jour")
 
 
-# apps/home/forms.py
-
-from flask_wtf import FlaskForm
-from wtforms import StringField, DecimalField, BooleanField, SubmitField
-from wtforms.validators import (
-    DataRequired,
-    Email,
-    Length,
-    Optional,
-    Regexp,
-    NumberRange,
-)
-
-
 # Form for adding a new Client
 class ClientForm(FlaskForm):
     name = StringField(
@@ -176,23 +162,33 @@ class StockPurchaseForm(FlaskForm):
     """
 
     network = SelectField(
-        "Network",
+        "Réseaux",
         choices=[(tag.value, tag.value.capitalize()) for tag in NetworkType],
         validators=[DataRequired()],
         render_kw={"class": "form-control"},
     )
     amount_purchased = DecimalField(
-        "Amount Purchased (FC)",
+        "Montant acheté",
         validators=[
             DataRequired(),
-            NumberRange(min=0.01, message="Le montant doit etre positive"),
+            NumberRange(min=0.01, message=""),
         ],
         render_kw={
             "placeholder": "e.g., 50000",
             "class": "form-control",
         },
     )
+
+    amount_purchased = IntegerField(
+        "Montant acheté (Unités)",
+        validators=[
+            DataRequired(),
+            NumberRange(min=1, message="Le montant doit être positif"),
+        ],  # Min changed to 1
+        render_kw={"placeholder": "e.g., 50000", "class": "form-control"},
+    )
+
     submit = SubmitField(
-        "Register Purchase",
+        "Enregistrer l'achat",
         render_kw={"class": "btn btn-primary mt-3"},
     )

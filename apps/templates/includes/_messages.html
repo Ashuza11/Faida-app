@@ -1,26 +1,25 @@
 {% macro render_messages() %}
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
-            {# Changed position to bottom: 20px; left: 20px; and width to 280px #}
             <div class="messages-container" style="position: fixed; bottom: 20px; right: 20px; z-index: 1050; width: 350px;">
                 {% for category, message in messages %}
                     <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
                         <span class="alert-inner--icon">
-                            {# Updated icons for better representation #}
+                            {# Updated icons for Font Awesome 5 Free #}
                             {% if category == 'success' %}
-                                <i class="ni ni-check-bold"></i> 
+                                <i class="fas fa-check-circle"></i> {# Checkmark in a circle #}
                             {% elif category == 'danger' %}
-                                <i class="ni ni-fat-remove"></i> {# X mark for danger/error #}
+                                <i class="fas fa-exclamation-triangle"></i> {# Warning triangle for errors #}
                             {% elif category == 'warning' %}
-                                <i class="ni ni-bell-55"></i> 
+                                <i class="fas fa-exclamation-circle"></i> {# Circle with exclamation for warning #}
                             {% elif category == 'info' %}
-                                <i class="ni ni-notification-70"></i> 
+                                <i class="fas fa-info-circle"></i> {# Circle with 'i' for info #}
                             {% elif category == 'primary' %}
-                                <i class="ni ni-bulb-61"></i> 
+                                <i class="fas fa-star"></i> {# A generic star, or fa-lightbulb #}
                             {% elif category == 'secondary' %}
-                                <i class="ni ni-bullet-list-67"></i> 
+                                <i class="fas fa-ellipsis-h"></i> {# Horizontal ellipsis for generic secondary #}
                             {% else %} 
-                                <i class="ni ni-like-2"></i> 
+                                <i class="fas fa-bell"></i> {# A generic bell #}
                             {% endif %}
                         </span>
                         <span class="alert-inner--text"><strong>{{ category | capitalize }}!</strong> {{ message }}</span>

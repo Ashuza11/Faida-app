@@ -334,39 +334,43 @@ def Achat_stock():
         amount_purchased = form.amount_purchased.data
 
         try:
-            # --- FIX STARTS HERE ---
-
-            # Find or create the Stock item for the given network
+            # 1. Find or create the Stock item for the given network
             stock_item = Stock.query.filter_by(network=network).first()
+
             if not stock_item:
-                # If for some reason it doesn't exist (e.g., initial_stock_items didn't run,
-                # or new network added after app creation without restart)
+                # If it doesn't exist, create it
+                current_app.logger.info(
+                    f"Creating new Stock item for {network.value} during purchase."
+                )
                 stock_item = Stock(
                     network=network,
-                    balance=0.00,  # Start with 0 balance
+                    balance=0,  # Start with 0 units
                     selling_price_per_unit=1.00,
                     reduction_rate=0.00,
                 )
                 db.session.add(stock_item)
-                # It's important to flush here so stock_item gets an ID before StockPurchase uses it
+                # Flush the session immediately to get an ID for the new stock_item
+                # This ensures stock_item.id is populated before being used by StockPurchase
                 db.session.flush()
 
-            # Record the StockPurchase and link it directly to the stock_item object
+            # 2. Record the StockPurchase, linking it directly to the stock_item object
+            # By assigning the 'stock_item' object, SQLAlchemy will automatically
+            # use its ID for 'stock_item_id' when flushing.
             new_purchase = StockPurchase(
-                network=network,  # Denormalized
+                network=network,  # Denormalized for easier querying
                 amount_purchased=amount_purchased,
                 purchased_by=current_user,
-                stock_item=stock_item,  # <-- Assign the Stock object directly here!
+                stock_item=stock_item,
             )
             db.session.add(new_purchase)
 
-            # Now update the balance of the existing (or newly created) stock_item
+            # 3. Update the Stock balance for the specific network
             stock_item.balance += amount_purchased
 
-            # Commit both the new purchase and the updated stock_item
+            # 4. Commit all changes (new purchase and updated stock balance)
             db.session.commit()
             flash(
-                f"Successfully registered {amount_purchased} FC of {network.value} stock.",
+                f"Enregistrement réussi de {amount_purchased} Uniés {network.value}.",
                 "success",
             )
             return redirect(url_for("home_blueprint.Achat_stock"))
@@ -374,10 +378,7 @@ def Achat_stock():
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Error registering stock purchase: {e}")
-            flash(
-                f"An error occurred while registering the purchase: {e}. Please try again.",
-                "danger",
-            )  # Show more specific error for debug
+            flash(f"Une erreur s'est produite{e}. Veuillez réessayer", "danger")
 
     # Fetch existing stock purchases for display
     stock_purchases = StockPurchase.query.order_by(
