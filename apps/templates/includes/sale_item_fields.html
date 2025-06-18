@@ -1,0 +1,47 @@
+{# apps/templates/includes/sale_item_fields.html #}
+
+{# This partial renders fields for a single SaleItemForm.
+   It's designed to be used within a FieldList loop in the parent template. #}
+<div class="form-row align-items-end mb-3 sale-item-row">
+    <div class="col-md-3">
+        <div class="form-group{% if item_field.network.errors %} has-danger{% endif %}">
+            {{ item_field.network.label(class="form-control-label") }}
+            {{ item_field.network(class="form-control network-select" + (" is-invalid" if item_field.network.errors else "")) }}
+            {% for error in item_field.network.errors %}
+                <div class="invalid-feedback d-block">{{ error }}</div>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="form-group{% if item_field.quantity.errors %} has-danger{% endif %}">
+            {{ item_field.quantity.label(class="form-control-label") }}
+            {{ item_field.quantity(class="form-control quantity-input" + (" is-invalid" if item_field.quantity.errors else ""), placeholder="Ex: 1000") }}
+            {% for error in item_field.quantity.errors %}
+                <div class="invalid-feedback d-block">{{ error }}</div>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="form-group">
+            {{ item_field.price_per_unit_display.label(class="form-control-label") }}
+            {{ item_field.price_per_unit_display(class="form-control price-per-unit-display") }}
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="form-group">
+            {{ item_field.reduction_rate_display.label(class="form-control-label") }}
+            {{ item_field.reduction_rate_display(class="form-control reduction-rate-display") }}
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="form-group">
+            {{ item_field.subtotal_display.label(class="form-control-label") }}
+            {{ item_field.subtotal_display(class="form-control subtotal-display") }}
+        </div>
+    </div>
+    <div class="col-md-1">
+        <button type="button" class="btn btn-danger btn-sm remove-sale-item-btn">
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
+</div>

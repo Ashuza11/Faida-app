@@ -29,9 +29,9 @@
                           </a>
                       </li>
                       <li class="nav-item">
-                          <a class="nav-link {% if sub_segment == 'Vente_stock' %}active{% endif %}" href="#"> {# Assuming this will be 'Vente_stock' route later #}
-                              <i class="fas fa-shopping-cart"></i> {# <i class="fas fa-cash-register"></i> #} {# <i class="fas fa-hand-holding"></i> #} <span class="nav-link-text">Vente stock</span>
-                          </a>
+                        <a class="nav-link {% if sub_segment == 'vente_stock' %}active{% endif %}" href="{{ url_for('home_blueprint.vente_stock') }}">
+                            <i class="fas fa-shopping-cart"></i> <span class="nav-link-text">Vente stock</span>
+                        </a>
                       </li>
                       <li class="nav-item">
                           <a class="nav-link {% if sub_segment == 'Sorties_Cash' %}active{% endif %}" href="#">

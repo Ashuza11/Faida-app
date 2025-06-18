@@ -12,13 +12,13 @@ def register_extensions(app):
     db.init_app(app)
     login_manager.init_app(app)
 
-    from apps.authentication.models import User  # Import here for user_loader
+    from apps.authentication.models import User
 
     @login_manager.user_loader
     def load_user(user_id):
         return db.session.get(User, int(user_id))
 
-    login_manager.login_view = "auth.login"
+    login_manager.login_view = "authentication_blueprint.login"
 
 
 def register_blueprints(app):
@@ -54,7 +54,7 @@ def create_app(config):
         register_error_handlers(app, db)
 
         # Call the stock initialization function
-        initialize_stock_items(app)  # <-- NEW LINE
+        initialize_stock_items(app)
 
         try:
             if not User.query.filter_by(role=RoleType.SUPERADMIN).first():
