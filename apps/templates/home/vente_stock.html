@@ -68,7 +68,7 @@
                             </div>
 
                             <hr class="my-4" />
-                            <h6 class="heading-small text-muted mb-4">Articles à Vendre</h6>
+                            <h6 class="heading-small text-muted mb-4">Stock à Vendre</h6>
                             <div class="pl-lg-4">
                                 <div id="sale-items-container">
                                     {% for item_field in form.sale_items %}
@@ -96,12 +96,6 @@
                                                     {{ current_item_form.price_per_unit_applied(class="form-control") }}
                                                 </div>
                                             </div>
-                                            <div class="col-md-2">
-                                                <div class="form-group">
-                                                    {{ current_item_form.reduction_rate_applied.label(class="form-control-label") }}
-                                                    {{ current_item_form.reduction_rate_applied(class="form-control") }}
-                                                </div>
-                                            </div>
                                             <div class="col-md-1">
                                                 {# Placeholder for potential future display or removed entirely for simplicity #}
                                             </div>
@@ -114,7 +108,6 @@
                                             {% for error in current_item_form.network.errors %} <div class="text-danger d-block col-12">{{ error }}</div> {% endfor %}
                                             {% for error in current_item_form.quantity.errors %} <div class="text-danger d-block col-12">{{ error }}</div> {% endfor %}
                                             {% for error in current_item_form.price_per_unit_applied.errors %} <div class="text-danger d-block col-12">{{ error }}</div> {% endfor %}
-                                            {% for error in current_item_form.reduction_rate_applied.errors %} <div class="text-danger d-block col-12">{{ error }}</div> {% endfor %}
                                         </div>
                                     {% endfor %}
                                 </div>
@@ -182,9 +175,6 @@
                                             {% for item in sale.sale_items %}
                                                 <div>
                                                     <strong>{{ item.network.value|capitalize }}:</strong> {{ item.quantity }} unités @ {{ "{:,.2f}".format(item.price_per_unit_applied) }} FC
-                                                    {% if item.reduction_rate_applied > 0 %}
-                                                    (Red: {{ "{:,.2f}".format(item.reduction_rate_applied) }}%)
-                                                    {% endif %}
                                                     - Sous-total: {{ "{:,.2f}".format(item.subtotal) }} FC
                                                 </div>
                                             {% endfor %}
@@ -204,8 +194,9 @@
                                                     <i class="fas fa-ellipsis-v"></i>
                                                 </a>
                                                 <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
-                                                    <a class="dropdown-item" href="#">Détails</a> 
-                                                    {# <a class="dropdown-item text-danger" href="#">Supprimer</a> #} 
+                                                    <a class="dropdown-item" href="{{ url_for('home_blueprint.view_sale_details', sale_id=sale.id) }}">Détails</a>
+                                                    <a class="dropdown-item" href="{{ url_for('home_blueprint.edit_sale', sale_id=sale.id) }}">Modifier</a>
+                                                    <a class="dropdown-item text-danger" href="#">Supprimer</a>
                                                 </div>
                                             </div>
                                         </td>
@@ -224,6 +215,32 @@
 
         {% include "includes/footer.html" %}
 
+    </div>
+
+    <div class="modal fade" id="editCashModal" tabindex="-1" role="dialog" aria-labelledby="editCashModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editCashModalLabel">Mise à jour Paiement</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="editCashForm" method="POST" action="">
+                <div class="form-group">
+                    <label for="new_cash_input">Paiement (FC):</label>
+                    <input type="number" step="0.01" class="form-control" id="new_cash_input" name="new_cash" required>
+                </div>
+                <input type="hidden" name="sale_id_hidden" id="sale_id_hidden">
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-primary">Enregistrer</button>
+                </div>
+                </form>
+            </div>
+            </div>
+        </div>
     </div>
 
 {% endblock content %}
@@ -341,51 +358,24 @@
 
 
             // Edit Cash Paid functionality
-            $(document).on('click', '.btn-edit-cash', function() {
+            $('.btn-edit-cash').on('click', function() {
                 var saleId = $(this).data('sale-id');
                 var currentCash = $(this).data('current-cash');
 
-                Swal.fire({
-                    title: 'Modifier l\'argent donné',
-                    input: 'number',
-                    inputValue: currentCash,
-                    inputAttributes: {
-                        step: '0.01'
-                    },
-                    showCancelButton: true,
-                    confirmButtonText: 'Enregistrer',
-                    cancelButtonText: 'Annuler',
-                    showLoaderOnConfirm: true,
-                    preConfirm: (newCash) => {
-                        if (isNaN(newCash) || newCash < 0) {
-                            Swal.showValidationMessage('Veuillez entrer un montant valide.');
-                            return false;
-                        }
-                        return fetch('/update-sale-cash/' + saleId, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                                'X-CSRFToken': '{{ form.csrf_token._value if form.csrf_token else "" }}'
-                            },
-                            body: 'new_cash=' + newCash
-                        })
-                        .then(response => {
-                            if (!response.ok) {
-                                return response.json().then(err => { throw new Error(err.message || 'Quelque chose a mal tourné.') });
-                            }
-                            return response.json();
-                        })
-                        .catch(error => {
-                            Swal.showValidationMessage(`Requête échouée: ${error}`);
-                        });
-                    },
-                    allowOutsideClick: () => !Swal.isLoading()
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        // Reload the page to reflect changes
-                        window.location.reload();
-                    }
-                });
+                $('#sale_id_hidden').val(saleId); // Store sale ID in a hidden field
+                $('#new_cash_input').val(currentCash); // Populate with current cash
+                
+                // Set the form action dynamically
+                $('#editCashForm').attr('action', '/update-sale-cash/' + saleId);
+
+                $('#editCashModal').modal('show');
+            });
+
+            // You might already have this for general form submission
+            // But ensure it handles success/error messages appropriately
+            $('#editCashForm').on('submit', function(e) {
+                // You can add AJAX submission here if you don't want a full page reload
+                // For now, let's assume it submits normally and Flask flashes messages.
             });
         });
     </script>

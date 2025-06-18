@@ -51,7 +51,7 @@
 
   <!-- Specific JS goes HERE --> 
   {% block javascripts %}
-    <!-- <script>
+    <script>
       // JavaScript to auto-hide alerts
       $(document).ready(function() {
           // Find all alerts with the 'fade show' classes that are currently visible
@@ -60,10 +60,10 @@
               // Set a timeout to fade out and remove the alert
               setTimeout(function() {
                   $alert.alert('close'); // Bootstrap's way to close an alert
-              }, 9000); // Adjust time here (in milliseconds)
+              }, 5000); // Adjust time here (in milliseconds)
           });
       });
-    </script> -->
+    </script>
   {% endblock javascripts %}
 
   <script src="/static/assets/js/argon.js?v=1.2.0"></script>

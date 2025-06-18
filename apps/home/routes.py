@@ -3,8 +3,10 @@ from flask import render_template, request, flash, redirect, url_for, abort, cur
 from flask_login import login_required, current_user
 from jinja2 import TemplateNotFound
 from apps.decorators import superadmin_required, vendeur_required
+from apps.home.utils import custom_round_up
 from apps import db
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+from datetime import datetime
 from apps.authentication.models import (
     User,
     RoleType,
@@ -506,7 +508,6 @@ def vente_stock():
             network_type = NetworkType[item_data.form.network.data]
             quantity = item_data.form.quantity.data
             price_per_unit_applied = item_data.form.price_per_unit_applied.data
-            reduction_rate_applied = item_data.form.reduction_rate_applied.data
 
             # Fetch stock to ensure it exists and to calculate subtotal
             stock_item = Stock.query.filter_by(network=network_type).first()
@@ -517,6 +518,36 @@ def vente_stock():
                 )
                 continue
 
+            # Determine the price_per_unit_applied if it was not manually entered
+            # If the user has explicitly entered a price, use that.
+            # Otherwise, auto-fill from stock or latest purchase.
+            if price_per_unit_applied is None:
+                # Option 1: Use selling_price_per_unit from Stock model
+                if stock_item.selling_price_per_unit is not None:
+                    price_per_unit_applied = stock_item.selling_price_per_unit
+                else:
+                    # Option 2: Fallback to the selling_price_at_purchase from the latest StockPurchase
+                    # Ensure your StockPurchase model has a 'created_at' field for ordering.
+                    latest_purchase = (
+                        StockPurchase.query.filter_by(stock_item=stock_item)
+                        .order_by(StockPurchase.created_at.desc())
+                        .first()
+                    )
+                    if (
+                        latest_purchase
+                        and latest_purchase.selling_price_at_purchase is not None
+                    ):
+                        price_per_unit_applied = (
+                            latest_purchase.selling_price_at_purchase
+                        )
+                    else:
+                        # Fallback if no price can be determined (e.g., brand new stock with no purchase price or selling price)
+                        # You might want to flash an error here or set a default.
+                        errors_during_sale.append(
+                            f"Impossible de déterminer le prix unitaire pour '{network_type.value}'. Veuillez entrer un prix manuellement."
+                        )
+                        continue
+
             if quantity > stock_item.balance:
                 errors_during_sale.append(
                     f"Quantité insuffisante pour {network_type.value}. Disponible: {stock_item.balance}, Demandé: {quantity}."
@@ -524,20 +555,19 @@ def vente_stock():
                 continue
 
             # Calculate subtotal using the entered values
-            if reduction_rate_applied is None:
-                reduction_rate_applied = Decimal("0.00")
+            # Here instead of 27.5 as it's hardcoded i want to select the selling_price_per_unit in stock or the selling_price_per_unit_at_purchace in stock_perchases to put here.
             if price_per_unit_applied is None:
                 price_per_unit_applied = Decimal("27.5")
-            subtotal = (
-                quantity * price_per_unit_applied * (1 - (reduction_rate_applied / 100))
-            )
+            subtotal_unrounded = quantity * price_per_unit_applied
+
+            # Apply custom rounding to the subtotal
+            subtotal = custom_round_up(subtotal_unrounded)
 
             # Create SaleItem object
             new_sale_item = SaleItem(
                 network=network_type,
                 quantity=quantity,
                 price_per_unit_applied=price_per_unit_applied,
-                reduction_rate_applied=reduction_rate_applied,
                 subtotal=subtotal,
             )
             sale_items_to_add.append(new_sale_item)
@@ -616,11 +646,11 @@ def vente_stock():
         )
     else:
         # This block executes if form.validate_on_submit() is False
-        print("Form validation failed. Errors:")  # This print *should* show up
+        print("Form validation failed. Errors:")
         for field, errors in form.errors.items():
             for error in errors:
-                flash(f"Error in {field}: {error}", "error")
-                print(f"Error in {field}: {error}")  # This print *should* show up
+                flash(f"Veuillez sélectionner un client existant.", "danger")
+                print(f"Error in {field}: {error}")
 
         # Also check errors on nested FieldList forms
         for i, entry in enumerate(form.sale_items.entries):
@@ -628,9 +658,6 @@ def vente_stock():
                 print(f"Errors in Sale Item {i}:")
                 for field_name, field_errors in entry.form.errors.items():
                     for error in field_errors:
-                        flash(
-                            f"Error in Sale Item {i} - {field_name}: {error}", "danger"
-                        )
                         print(f"Error in Sale Item {i} - {field_name}: {error}")
     # Fetch existing sales for the table
     sales = Sale.query.order_by(Sale.created_at.desc()).all()
@@ -644,27 +671,28 @@ def vente_stock():
     )
 
 
-# Route to handle updating cash paid (for editing debt) - This needs to be implemented separately
 @blueprint.route("/update-sale-cash/<int:sale_id>", methods=["POST"])
 @login_required
+@superadmin_required
+@vendeur_required
 def update_sale_cash(sale_id):
     sale = Sale.query.get_or_404(sale_id)
-    # Ensure form data is handled with proper validation or try-except for Decimal conversion
     try:
+        # new_cash is directly from the input named 'new_cash'
         new_cash = Decimal(request.form.get("new_cash", "0.00"))
-    except InvalidOperation:  # From decimal module
-        flash("Montant d'argent donné invalide.", "danger")
+    except InvalidOperation:
+        flash("Paiement invalide.", "danger")
         return redirect(url_for("home_blueprint.vente_stock"))
 
     if new_cash < 0:
-        flash("L'argent donné ne peut pas être négatif.", "danger")
+        flash("Le paiement ne peut pas être négatif.", "danger")
         return redirect(url_for("home_blueprint.vente_stock"))
 
     # Calculate new debt
     new_debt = sale.total_amount_due - new_cash
 
     if new_debt < 0:
-        flash("L'argent donné ne peut pas dépasser le montant total dû.", "danger")
+        flash("Le paiement ne peut pas dépasser le montant total dû.", "danger")
         return redirect(url_for("home_blueprint.vente_stock"))
 
     sale.cash_paid = new_cash
@@ -673,14 +701,288 @@ def update_sale_cash(sale_id):
 
     try:
         db.session.commit()
-        flash("Argent donné mis à jour avec succès!", "success")
+        flash("Paiement mis à jour avec succès!", "success")
     except Exception as e:
         db.session.rollback()
         flash(f"Erreur lors de la mise à jour: {e}", "danger")
         print(f"Error updating cash: {e}")
 
-    # For AJAX requests, it's common to return a JSON response
-    # instead of redirecting directly if the update is meant to be seamless.
-    # However, for simplicity and page reload, a redirect is fine.
-    # If you want to stay on the page and update dynamically, return jsonify({"success": True, "new_cash": str(new_cash), "new_debt": str(new_debt)})
     return redirect(url_for("home_blueprint.vente_stock"))
+
+
+@blueprint.route("/edit_sale/<int:sale_id>", methods=["GET", "POST"])
+@login_required
+@superadmin_required
+def edit_sale(sale_id):
+    sale = Sale.query.get_or_404(sale_id)
+    form = SaleForm()
+
+    # Populate client choices (same as vente_stock)
+    clients = Client.query.filter_by(is_active=True).order_by(Client.name).all()
+    client_choices = [("", "Sélectionnez un client existant")]
+    client_choices.extend([(str(client.id), client.name) for client in clients])
+    form.existing_client_id.choices = client_choices
+
+    if request.method == "GET":
+        # Pre-populate the form with existing sale data
+        if sale.client:
+            form.client_choice.data = "existing"
+            form.existing_client_id.data = str(sale.client.id)
+        else:
+            form.client_choice.data = "new"
+            form.new_client_name.data = sale.client_name_adhoc
+
+        # Populate SaleItems FieldList
+        # Clear any existing empty entries that might have been appended by default
+        while len(form.sale_items) > 0:
+            form.sale_items.pop_entry()
+
+        for item in sale.sale_items:
+            # Append a new entry and populate it
+            item_form = form.sale_items.append_entry()
+            item_form.network.data = item.network.name  # Use .name for Enum
+            item_form.quantity.data = item.quantity
+            item_form.price_per_unit_applied.data = item.price_per_unit_applied
+            # If you re-introduce reduction_rate_applied, populate it here too
+
+        form.cash_paid.data = sale.cash_paid
+
+    if form.validate_on_submit():
+        # --- Start Transaction for Atomicity ---
+        # This is critical for complex updates involving multiple models and stock.
+        # If any step fails, we must revert all changes.
+        db.session.begin_nested()  # Start a nested transaction / savepoint
+
+        try:
+            # 1. Revert old stock changes:
+            # Iterate through current sale_items, add their quantities back to stock
+            for old_item in sale.sale_items:
+                old_stock_item = Stock.query.filter_by(network=old_item.network).first()
+                if old_stock_item:
+                    old_stock_item.balance += old_item.quantity
+                    db.session.add(old_stock_item)
+                    print(
+                        f"Reverted stock for {old_item.network.value}: New balance is {old_stock_item.balance}"
+                    )
+
+            # 2. Delete old SaleItems:
+            # Using cascade="all, delete-orphan" on the relationship is cleaner,
+            # but explicitly deleting ensures they are removed before new ones are added.
+            for item_to_delete in sale.sale_items:
+                db.session.delete(item_to_delete)
+            # Make sure sale.sale_items is refreshed/cleared after deletion for new items to be added clean
+            sale.sale_items = (
+                []
+            )  # Important: Clear the relationship on the parent object
+
+            # 3. Update Sale header data
+            client = None
+            client_name_adhoc = None
+            if form.client_choice.data == "existing":
+                client_id = form.existing_client_id.data
+                if client_id:
+                    client = Client.query.get(int(client_id))
+                    if not client:
+                        raise ValueError("Client existant sélectionné invalide.")
+                else:
+                    raise ValueError("Veuillez sélectionner un client existant.")
+            elif form.client_choice.data == "new":
+                client_name_adhoc = form.new_client_name.data
+                if not client_name_adhoc:
+                    raise ValueError("Veuillez entrer le nom du nouveau client.")
+
+            sale.client = client
+            sale.client_name_adhoc = client_name_adhoc if not client else None
+            sale.updated_at = datetime.utcnow()
+
+            total_amount_due = Decimal("0.00")
+            sale_items_to_add = []
+            errors_during_sale = []  # Collect errors for a single flash message later
+
+            # 4. Process new sale items (similar to original vente_stock logic)
+            for item_data in form.sale_items.entries:
+                if not item_data.form.validate():
+                    for field_name, field_errors in item_data.form.errors.items():
+                        for error in field_errors:
+                            errors_during_sale.append(
+                                f"Erreur dans l'article: {item_data.form[field_name].label.text}: {error}"
+                            )
+                    continue
+
+                network_type = NetworkType[item_data.form.network.data]
+                quantity = item_data.form.quantity.data
+                price_per_unit_applied = item_data.form.price_per_unit_applied.data
+
+                stock_item = Stock.query.filter_by(network=network_type).first()
+
+                if not stock_item:
+                    errors_during_sale.append(
+                        f"Réseau '{network_type.value}' non trouvé en stock."
+                    )
+                    continue
+
+                if quantity > stock_item.balance + (
+                    old_item.quantity if old_item.network == network_type else 0
+                ):
+                    # For edit, balance check must account for stock reverted from the same item
+                    # This is a simplified check. More robust would be to track old quantities per network.
+                    # For simplicity, if editing the same network, add back its original quantity before checking.
+                    # This logic needs careful consideration if quantities change across networks within the same sale.
+                    # A more robust approach might be to calculate net change in stock.
+                    # For now, let's assume we reverted all old quantities, so balance is correct.
+                    if (
+                        quantity > stock_item.balance
+                    ):  # This check is now after reversion
+                        errors_during_sale.append(
+                            f"Quantité insuffisante pour {network_type.value}. Disponible: {stock_item.balance}, Demandé: {quantity}."
+                        )
+                        continue
+
+                # Determine the price_per_unit_applied (from previous logic)
+                if price_per_unit_applied is None:
+                    if stock_item.selling_price_per_unit is not None:
+                        price_per_unit_applied = stock_item.selling_price_per_unit
+                    else:
+                        latest_purchase = (
+                            StockPurchase.query.filter_by(stock_item=stock_item)
+                            .order_by(StockPurchase.created_at.desc())
+                            .first()
+                        )
+                        if (
+                            latest_purchase
+                            and latest_purchase.selling_price_at_purchase is not None
+                        ):
+                            price_per_unit_applied = (
+                                latest_purchase.selling_price_at_purchase
+                            )
+                        else:
+                            errors_during_sale.append(
+                                f"Impossible de déterminer le prix unitaire pour '{network_type.value}'. Veuillez entrer un prix manuellement."
+                            )
+                            continue
+
+                if not isinstance(price_per_unit_applied, Decimal):
+                    price_per_unit_applied = Decimal(str(price_per_unit_applied))
+
+                # Calculate rounded subtotal
+                subtotal = calculate_rounded_subtotal(
+                    quantity=quantity, price_per_unit=price_per_unit_applied
+                )
+
+                new_sale_item = SaleItem(
+                    network=network_type,
+                    quantity=quantity,
+                    price_per_unit_applied=price_per_unit_applied,
+                    subtotal=subtotal,
+                    sale=sale,  # Link to the existing sale object
+                )
+                sale_items_to_add.append(new_sale_item)
+                total_amount_due += subtotal
+
+                # Update stock balance for new items
+                stock_item.balance -= quantity
+                db.session.add(stock_item)
+
+            if errors_during_sale:
+                db.session.rollback()  # Rollback transaction
+                for error in errors_during_sale:
+                    flash(error, "danger")
+                return render_template(
+                    "home/vente_stock.html",
+                    form=form,
+                    sale=sale,  # Pass sale object to re-populate form on GET (or to keep context)
+                    segment="stock",
+                    sub_segment="vente_stock",
+                )
+
+            if not sale_items_to_add:
+                db.session.rollback()  # Rollback if no items
+                flash("Veuillez ajouter au moins un article à la vente.", "danger")
+                return render_template(
+                    "home/vente_stock.html",
+                    form=form,
+                    sale=sale,
+                    segment="stock",
+                    sub_segment="vente_stock",
+                )
+
+            # Add new sale items to the sale
+            sale.sale_items.extend(sale_items_to_add)
+
+            # 5. Update total_amount_due, cash_paid, debt_amount on the Sale
+            sale.total_amount_due = total_amount_duesale
+            cash_paid = form.cash_paid.data
+            if cash_paid is None:
+                cash_paid = Decimal("0.00")
+            sale.cash_paid = cash_paid
+            sale.debt_amount = total_amount_due - cash_paid
+            if sale.debt_amount < 0:
+                raise ValueError(
+                    "L'argent donné ne peut pas dépasser le montant total dû."
+                )
+
+            db.session.add(
+                sale
+            )  # Re-add the sale object to session to ensure its state is managed
+
+            db.session.commit()  # Commit the transaction
+            flash("Vente modifiée avec succès!", "success")
+            return redirect(
+                url_for("home_blueprint.vente_stock")
+            )  # Redirect to prevent re-submission
+
+        except ValueError as e:  # Catch custom validation errors we raised
+            db.session.rollback()
+            flash(f"Erreur lors de la modification de la vente: {e}", "danger")
+            return render_template(
+                "home/vente_stock.html",
+                form=form,
+                sale=sale,
+                segment="stock",
+                sub_segment="vente_stock",
+            )
+        except Exception as e:  # Catch other potential database or unexpected errors
+            db.session.rollback()
+            flash(
+                f"Erreur inattendue lors de la modification de la vente: {e}", "danger"
+            )
+            print(f"Error during sale edit: {e}")
+            return render_template(
+                "home/vente_stock.html",
+                form=form,
+                sale=sale,
+                segment="stock",
+                sub_segment="vente_stock",
+            )
+
+    # For GET request or form validation failure
+    # Ensure form.sale_items FieldList has at least one empty entry for initial rendering
+    # if request.method == "GET" and not form.sale_items.entries:
+    #     for _ in range(3): # Or however many empty rows you want
+    #         form.sale_items.append_entry()
+    # Note: For editing, you want to populate with *existing* items, then potentially add empty ones.
+    # The GET request pre-population handles existing items. If the user wants to add more,
+    # your JS on the form itself (if any) would handle adding new empty fields.
+
+    return render_template(
+        "home/vente_stock.html",  # You might want a dedicated edit template or share carefully
+        form=form,
+        sales=Sale.query.order_by(
+            Sale.created_at.desc()
+        ).all(),  # Re-fetch sales for table
+        segment="stock",
+        sub_segment="vente_stock",
+        sale_to_edit=sale,
+    )
+
+
+@blueprint.route("/view_sale_details/<int:sale_id>", methods=["GET"])
+@login_required
+def view_sale_details(sale_id):
+    sale = Sale.query.get_or_404(sale_id)
+    return render_template(
+        "home/sale_details.html",
+        sale=sale,
+        segment="stock",
+        sub_segment="vente_stock",
+    )

@@ -1,0 +1,75 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} Détails de la Vente #{{ sale.id }} {% endblock %}
+
+{% block content %}
+
+    <div class="header bg-primary pb-6">
+      <div class="container-fluid">
+        <div class="header-body">
+          <div class="row align-items-center py-4">
+            <div class="col-lg-6 col-7">
+              <h6 class="h2 text-white d-inline-block mb-0">Détails de la Vente</h6>
+              <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
+                <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
+                  <li class="breadcrumb-item"><a href="{{ url_for('home_blueprint.index') }}"><i class="fas fa-home"></i></a></li>
+                  <li class="breadcrumb-item"><a href="{{ url_for('home_blueprint.vente_stock') }}">Vente Stock</a></li>
+                  <li class="breadcrumb-item active" aria-current="page">Détails Vente #{{ sale.id }}</li>
+                </ol>
+              </nav>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="container-fluid mt--6">
+      <div class="row">
+        <div class="col-xl-12">
+          <div class="card">
+            <div class="card-header border-0">
+              <div class="row align-items-center">
+                <div class="col">
+                  <h3 class="mb-0">Détails de la Vente #{{ sale.id }}</h3>
+                </div>
+                <div class="col text-right">
+                    <a href="{{ url_for('home_blueprint.edit_sale', sale_id=sale.id) }}" class="btn btn-sm btn-warning">Modifier la Vente</a>
+                    <a href="{{ url_for('home_blueprint.vente_stock') }}" class="btn btn-sm btn-info">Retour aux Ventes</a>
+                </div>
+              </div>
+            </div>
+            <div class="card-body">
+                <p><strong>ID Vente:</strong> {{ sale.id }}</p>
+                <p><strong>Client:</strong> {{ sale.client.name if sale.client else sale.client_name_adhoc }}</p>
+                <p><strong>Vendeur:</strong> {{ sale.vendeur.username }}</p>
+                <p><strong>Date & Heure:</strong> {{ sale.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                <p><strong>Dernière Mise à Jour:</strong> {{ sale.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                <hr>
+                <h4>Articles Vendus:</h4>
+                {% if sale.sale_items %}
+                    <ul class="list-group mb-3">
+                        {% for item in sale.sale_items %}
+                            <li class="list-group-item">
+                                <strong>Réseau:</strong> {{ item.network.value|capitalize }}<br>
+                                <strong>Quantité:</strong> {{ item.quantity }} unités<br>
+                                <strong>Prix par unité appliqué:</strong> {{ "{:,.2f}".format(item.price_per_unit_applied) }} FC<br>
+                                <strong>Sous-total:</strong> {{ "{:,.2f}".format(item.subtotal) }} FC
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p>Aucun article enregistré pour cette vente.</p>
+                {% endif %}
+                <hr>
+                <p><strong>Total Dû:</strong> {{ "{:,.2f}".format(sale.total_amount_due) }} FC</p>
+                <p><strong>Argent Donné:</strong> {{ "{:,.2f}".format(sale.cash_paid) }} FC</p>
+                <p><strong>Dette Restante:</strong> {{ "{:,.2f}".format(sale.debt_amount) }} FC</p>
+
+            </div>
+          </div>
+        </div>
+      </div>
+      {% include "includes/footer.html" %}
+    </div>
+
+{% endblock content %}

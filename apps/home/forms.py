@@ -262,19 +262,19 @@ class SaleItemForm(FlaskForm):
         ],
         render_kw={"step": "0.01"},  # Ensure HTML5 step for decimals
     )
-    reduction_rate_applied = DecimalField(
-        "Taux de Réduction (%)",
-        default=Decimal("0.00"),  # Set a default to 0.00
-        validators=[
-            Optional(),
-            NumberRange(
-                min=Decimal("0.00"),
-                max=Decimal("100.00"),
-                message="Le taux de réduction doit être entre 0 et 100.",
-            ),
-        ],
-        render_kw={"step": "0.01"},
-    )
+    # reduction_rate_applied = DecimalField(
+    #     "Taux de Réduction (%)",
+    #     default=Decimal("0.00"),  # Set a default to 0.00
+    #     validators=[
+    #         Optional(),
+    #         NumberRange(
+    #             min=Decimal("0.00"),
+    #             max=Decimal("100.00"),
+    #             message="Le taux de réduction doit être entre 0 et 100.",
+    #         ),
+    #     ],
+    #     render_kw={"step": "0.01"},
+    # )
 
 
 # Form for a single sale item (network order)

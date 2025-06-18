@@ -127,12 +127,6 @@ class Stock(db.Model):
         so.mapped_column(sa.Numeric(10, 2), default=1.00, nullable=False)
     )
 
-    reduction_rate: so.Mapped[sa.Numeric(precision=5, scale=4)] = so.mapped_column(
-        sa.Numeric(5, 4),
-        default=0.00,
-        nullable=False,
-    )
-
     updated_at: so.Mapped[datetime] = so.mapped_column(
         default=datetime.utcnow, onupdate=datetime.utcnow
     )
@@ -254,12 +248,6 @@ class SaleItem(db.Model):
     # This is effectively the final selling price per unit applied to this quantity
     price_per_unit_applied: so.Mapped[sa.Numeric(precision=10, scale=2)] = (
         so.mapped_column(sa.Numeric(10, 2), nullable=False)
-    )
-
-    # The reduction rate applied to this specific sale item
-    # This could come from Stock.reduction_rate at the time of sale.
-    reduction_rate_applied: so.Mapped[sa.Numeric(precision=5, scale=4)] = (
-        so.mapped_column(sa.Numeric(5, 4), nullable=False, default=Decimal("0.00"))
     )
 
     # Subtotal for this specific SaleItem (quantity * price_per_unit_applied)
