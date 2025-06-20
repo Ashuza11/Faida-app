@@ -34,8 +34,8 @@
                         </a>
                       </li>
                       <li class="nav-item">
-                          <a class="nav-link {% if sub_segment == 'Sorties_Cash' %}active{% endif %}" href="#">
-                              <i class="fas fa-money-bill-wave-alt"></i> {# <i class="fas fa-dollar-sign"></i> #} {# <i class="fas fa-file-invoice-dollar"></i> #} {# <i class="fas fa-file-export"></i> #} <span class="nav-link-text">Sorties Cash</span> {# Corrected "Cashk" to "Cash" #}
+                          <a class="nav-link {% if sub_segment == 'Sorties_Cash' %}active{% endif %}" href="{{url_for('home_blueprint.sorties_cash')}}">
+                              <i class="fas fa-money-bill-wave-alt"></i> {# <i class="fas fa-dollar-sign"></i> #} <span class="nav-link-text">Sorties Cash</span> 
                           </a>
                       </li>
                   </ul>

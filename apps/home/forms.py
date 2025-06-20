@@ -9,6 +9,7 @@ from wtforms import (
     DecimalField,
     FieldList,
     FormField,
+    TextAreaField,
 )
 from wtforms.validators import (
     Email,
@@ -18,9 +19,17 @@ from wtforms.validators import (
     NumberRange,
     ValidationError,
 )
-from apps.authentication.models import NetworkType, Client
+from apps.authentication.models import NetworkType, Sale
 import enum
 from decimal import Decimal
+
+
+# Define CashOutflowCategory enum if not already imported
+class CashOutflowCategory(enum.Enum):
+    ACHAT = "Achat de stock"
+    SALAIRE = "Salaire"
+    LOYER = "Loyer"
+    AUTRE = "Autre"
 
 
 class RoleType(enum.Enum):
@@ -262,19 +271,6 @@ class SaleItemForm(FlaskForm):
         ],
         render_kw={"step": "0.01"},  # Ensure HTML5 step for decimals
     )
-    # reduction_rate_applied = DecimalField(
-    #     "Taux de Réduction (%)",
-    #     default=Decimal("0.00"),  # Set a default to 0.00
-    #     validators=[
-    #         Optional(),
-    #         NumberRange(
-    #             min=Decimal("0.00"),
-    #             max=Decimal("100.00"),
-    #             message="Le taux de réduction doit être entre 0 et 100.",
-    #         ),
-    #     ],
-    #     render_kw={"step": "0.01"},
-    # )
 
 
 # Form for a single sale item (network order)
@@ -335,3 +331,51 @@ class SaleForm(FlaskForm):
                 )
                 return False
         return True
+
+
+class CashOutflowForm(FlaskForm):
+    amount = DecimalField(
+        "Montant (FC)", validators=[DataRequired(), NumberRange(min=Decimal("0.01"))]
+    )
+    category = SelectField(
+        "Catégorie de Dépense",
+        choices=[(tag.name, tag.value) for tag in CashOutflowCategory],
+        validators=[DataRequired()],
+    )
+    description = TextAreaField("Description (Optionnel)", validators=[Optional()])
+    submit = SubmitField("Enregistrer la Sortie")
+
+
+class DebtCollectionForm(FlaskForm):  # Renamed for clarity
+    sale_id = SelectField("Vente Concernée", coerce=int, validators=[DataRequired()])
+    amount_paid = DecimalField(
+        "Montant Payé (FC)",
+        validators=[DataRequired(), NumberRange(min=Decimal("0.01"))],
+    )
+    description = TextAreaField(
+        "Description (Optionnel)",
+        validators=[Optional()],
+        default="Encaissement de dette de vente",
+    )
+    submit = SubmitField("Enregistrer le Paiement")
+
+    def __init__(self, *args, **kwargs):
+        super(DebtCollectionForm, self).__init__(*args, **kwargs)
+        # Populate sales with outstanding debt
+        sales_with_debt = (
+            Sale.query.filter(Sale.debt_amount > Decimal("0.00"))
+            .order_by(Sale.created_at.desc())
+            .all()
+        )
+        from typing import Sequence
+
+        choices: Sequence[tuple[int, str]] = [
+            (-1, "Sélectionnez une vente avec dette")
+        ] + [
+            (
+                s.id,
+                f"Vente #{s.id} - Dû: {s.debt_amount:,.2f} FC - Client: {s.client.name if s.client else s.client_name_adhoc}",
+            )
+            for s in sales_with_debt
+        ]
+        self.sale_id.choices = choices

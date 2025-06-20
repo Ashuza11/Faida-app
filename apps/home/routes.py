@@ -18,6 +18,10 @@ from apps.authentication.models import (
     User,
     Sale,
     SaleItem,
+    CashOutflow,
+    CashInflow,
+    CashOutflowCategory,
+    CashInflowCategory,
 )
 
 from apps.home.forms import (
@@ -27,6 +31,8 @@ from apps.home.forms import (
     ClientEditForm,
     StockPurchaseForm,
     SaleForm,
+    CashOutflowForm,
+    DebtCollectionForm,
 )
 
 
@@ -985,4 +991,129 @@ def view_sale_details(sale_id):
         sale=sale,
         segment="stock",
         sub_segment="vente_stock",
+    )
+
+
+@blueprint.route("/sorties_cash", methods=["GET", "POST"])
+@login_required
+def sorties_cash():
+    outflow_form = CashOutflowForm()
+    debt_collection_form = DebtCollectionForm()  # Use the new form
+
+    # Handle Cash Outflow Form Submission
+    if outflow_form.validate_on_submit() and "outflow_submit" in request.form:
+        try:
+            amount = outflow_form.amount.data
+            category = CashOutflowCategory[outflow_form.category.data]
+            description = outflow_form.description.data
+
+            new_outflow = CashOutflow(
+                amount=amount,
+                category=category,
+                description=description,
+                recorded_by=current_user,
+            )
+            db.session.add(new_outflow)
+            db.session.commit()
+            flash(
+                f"Sortie de {amount:,.2f} FC ({category.value}) enregistrée avec succès.",
+                "success",
+            )
+            return redirect(url_for("home_blueprint.sorties_cash"))
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Erreur lors de l'enregistrement de la sortie: {e}", "danger")
+            print(f"Error recording cash outflow: {e}")
+
+    # Handle Debt Collection Form Submission (Cash Inflow related to sales)
+    # Important: Re-instantiate the form for POST to ensure choices are fresh for validation
+    if (
+        debt_collection_form.validate_on_submit()
+        and "debt_collection_submit" in request.form
+    ):
+        try:
+            sale_id = debt_collection_form.sale_id.data
+            amount_paid = debt_collection_form.amount_paid.data
+            description = debt_collection_form.description.data
+
+            sale_to_update = Sale.query.get(sale_id)
+
+            if not sale_to_update:
+                raise ValueError("Vente sélectionnée introuvable.")
+
+            if amount_paid <= Decimal("0.00"):
+                raise ValueError("Le montant payé doit être positif.")
+
+            if amount_paid > sale_to_update.debt_amount:
+                flash(
+                    f"Le montant payé ({amount_paid:,.2f} FC) est supérieur à la dette restante ({sale_to_update.debt_amount:,.2f} FC). Ajustement à la dette.",
+                    "warning",
+                )
+                amount_paid = (
+                    sale_to_update.debt_amount
+                )  # Cap payment at outstanding debt
+
+            # Create a CashInflow record for this debt collection
+            new_inflow = CashInflow(
+                amount=amount_paid,
+                category=CashInflowCategory.SALE_COLLECTION,  # Explicitly set this category
+                description=description,
+                recorded_by=current_user,
+                sale=sale_to_update,  # Link to the sale
+            )
+            db.session.add(new_inflow)
+
+            # Update the Sale's cash_paid and debt_amount
+            sale_to_update.cash_paid += amount_paid
+            sale_to_update.debt_amount -= amount_paid
+            sale_to_update.updated_at = datetime.utcnow()
+            db.session.add(sale_to_update)
+
+            db.session.commit()
+            flash(
+                f"Paiement de {amount_paid:,.2f} FC pour la vente #{sale_id} enregistré avec succès. Nouvelle dette: {sale_to_update.debt_amount:,.2f} FC.",
+                "success",
+            )
+            return redirect(url_for("home_blueprint.sorties_cash"))
+        except InvalidOperation:
+            flash("Montant invalide. Veuillez entrer un nombre valide.", "danger")
+            db.session.rollback()
+        except ValueError as e:
+            flash(f"Erreur de validation: {e}", "danger")
+            db.session.rollback()
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Erreur lors de l'enregistrement du paiement: {e}", "danger")
+            print(f"Error recording debt collection: {e}")
+
+    # Fetch all cash movements for display
+    all_outflows = CashOutflow.query.order_by(CashOutflow.created_at.desc()).all()
+    # Now, all explicit cash inflows will come from CashInflow model
+    all_inflows = CashInflow.query.order_by(CashInflow.created_at.desc()).all()
+
+    # If you also want to show initial cash paid at sale time in the 'Entrees' list
+    # You would query Sale.cash_paid for sales where cash_paid > 0
+    # For now, we'll keep it simple to explicit CashInflow records.
+    # A full cash report would combine these.
+
+    # Calculate total cash position (only from explicit records here)
+    total_outflow = (
+        sum(outflow.amount for outflow in all_outflows)
+        if all_outflows
+        else Decimal("0.00")
+    )
+    total_inflow = (
+        sum(inflow.amount for inflow in all_inflows) if all_inflows else Decimal("0.00")
+    )
+
+    return render_template(
+        "home/sorties_cash.html",
+        outflow_form=outflow_form,
+        debt_collection_form=debt_collection_form,  # Pass the new form
+        outflows=all_outflows,
+        inflows=all_inflows,
+        total_outflow=total_outflow,
+        total_inflow=total_inflow,
+        segment="financials",
+        sub_segment="Sorties_Cash",
     )

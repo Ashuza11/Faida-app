@@ -16,6 +16,21 @@ class RoleType(PyEnum):
     CLIENT = "client"
 
 
+# Enum for
+class CashOutflowCategory(PyEnum):
+    PURCHASE_AIRTIME = "Achat Recharge"
+    OPERATING_EXPENSE = "Frais de Fonctionnement"
+    SALARY = "Salaire"
+    RENT = "Loyer"
+    OTHER = "Autre"
+
+
+# Enum for
+class CashInflowCategory(PyEnum):
+    SALE_COLLECTION = "Encaissement Vente"
+    OTHER = "Autre Entrée"
+
+
 # Enum for network operators
 class NetworkType(PyEnum):
     AIRTEL = "airtel"
@@ -66,6 +81,13 @@ class User(db.Model, UserMixin):
         back_populates="purchased_by",
         lazy="dynamic",
         cascade="all, delete-orphan",
+    )
+
+    cash_inflows_recorded: so.Mapped[list["CashInflow"]] = so.relationship(
+        back_populates="recorded_by", foreign_keys="[CashInflow.recorded_by_id]"
+    )
+    cash_outflows_recorded: so.Mapped[list["CashOutflow"]] = so.relationship(
+        back_populates="recorded_by", foreign_keys="[CashOutflow.recorded_by_id]"
     )
 
     def set_password(self, password: str) -> None:
@@ -219,6 +241,10 @@ class Sale(db.Model):
     sale_items: so.Mapped[List["SaleItem"]] = so.relationship(
         back_populates="sale", cascade="all, delete-orphan"
     )
+    cash_inflows: so.Mapped[List["CashInflow"]] = so.relationship(
+        back_populates="sale",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         client_info = self.client.name if self.client else self.client_name_adhoc
@@ -257,3 +283,53 @@ class SaleItem(db.Model):
 
     def __repr__(self) -> str:
         return f"<SaleItem for Sale {self.sale_id}: {self.quantity} units of {self.network.value} at {self.price_per_unit_applied} FC/unit>"
+
+
+# New Model for Cash Outflows (Sorties)
+class CashOutflow(db.Model):
+    __tablename__ = "cash_outflows"
+
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+    created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
+    recorded_by_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=False
+    )
+    recorded_by: so.Mapped["User"] = so.relationship(
+        back_populates="cash_outflows_recorded"
+    )
+
+    amount: so.Mapped[sa.Numeric(precision=12, scale=2)] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False
+    )
+    category: so.Mapped[CashOutflowCategory] = so.mapped_column(
+        sa.Enum(CashOutflowCategory), nullable=False
+    )
+    description: so.Mapped[str] = so.mapped_column(sa.String(255), nullable=True)
+
+
+# New Model for Cash Inflows (Entrees - beyond initial sale collection in Sale model)
+class CashInflow(db.Model):
+    __tablename__ = "cash_inflows"
+
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+    created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
+    recorded_by_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=False
+    )
+    recorded_by: so.Mapped["User"] = so.relationship(
+        back_populates="cash_inflows_recorded"
+    )
+
+    amount: so.Mapped[sa.Numeric(precision=12, scale=2)] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False
+    )
+    category: so.Mapped[CashInflowCategory] = so.mapped_column(
+        sa.Enum(CashInflowCategory),
+        nullable=False,
+        default=CashInflowCategory.SALE_COLLECTION,
+    )
+    description: so.Mapped[str] = so.mapped_column(sa.String(255), nullable=True)
+
+    sale_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey("sales.id"), nullable=True)
+    # ADDED: Relationship back to Sale
+    sale: so.Mapped["Sale"] = so.relationship(back_populates="cash_inflows")
