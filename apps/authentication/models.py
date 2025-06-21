@@ -18,10 +18,10 @@ class RoleType(PyEnum):
 
 # Enum for
 class CashOutflowCategory(PyEnum):
-    PURCHASE_AIRTIME = "Achat Recharge"
+    PURCHASE_AIRTIME = "Achat Stock"
     OPERATING_EXPENSE = "Frais de Fonctionnement"
     SALARY = "Salaire"
-    RENT = "Loyer"
+    RENT = "Restoration"
     OTHER = "Autre"
 
 

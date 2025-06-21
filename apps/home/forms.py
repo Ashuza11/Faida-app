@@ -19,22 +19,9 @@ from wtforms.validators import (
     NumberRange,
     ValidationError,
 )
-from apps.authentication.models import NetworkType, Sale
+from apps.authentication.models import NetworkType, Sale, CashOutflowCategory, RoleType
 import enum
 from decimal import Decimal
-
-
-# Define CashOutflowCategory enum if not already imported
-class CashOutflowCategory(enum.Enum):
-    ACHAT = "Achat de stock"
-    SALAIRE = "Salaire"
-    LOYER = "Loyer"
-    AUTRE = "Autre"
-
-
-class RoleType(enum.Enum):
-    SUPERADMIN = "superadmin"
-    VENDEUR = "vendeur"
 
 
 # New Stocker (user)
@@ -333,49 +320,50 @@ class SaleForm(FlaskForm):
         return True
 
 
+def get_sales_with_debt():
+    sales = Sale.query.filter(Sale.debt_amount > Decimal("0.00")).all()
+    choices = [
+        (
+            s.id,
+            f"Vente ID: {s.id} - Client: {s.client.name if s.client else s.client_name_adhoc} (Dette: {s.debt_amount:,.2f} FC)",
+        )
+        for s in sales
+    ]
+    return choices
+
+
 class CashOutflowForm(FlaskForm):
     amount = DecimalField(
-        "Montant (FC)", validators=[DataRequired(), NumberRange(min=Decimal("0.01"))]
+        "Montant (FC)",
+        validators=[DataRequired(), NumberRange(min=0.01)],
+        render_kw={"placeholder": "Ex: 15000.00"},
     )
     category = SelectField(
-        "Catégorie de Dépense",
-        choices=[(tag.name, tag.value) for tag in CashOutflowCategory],
+        "Catégorie",
+        choices=[(cat.name, cat.value) for cat in CashOutflowCategory],
         validators=[DataRequired()],
     )
-    description = TextAreaField("Description (Optionnel)", validators=[Optional()])
-    submit = SubmitField("Enregistrer la Sortie")
+    description = StringField(
+        "Description", render_kw={"placeholder": "Ex: Achat fournitures bureau"}
+    )
+    submit = SubmitField("Enregistrer la Sortie")  # Generic name 'submit'
 
 
-class DebtCollectionForm(FlaskForm):  # Renamed for clarity
-    sale_id = SelectField("Vente Concernée", coerce=int, validators=[DataRequired()])
+class DebtCollectionForm(FlaskForm):
+    sale_id = SelectField(
+        "Sélectionner la Vente", coerce=int, validators=[DataRequired()]
+    )
     amount_paid = DecimalField(
         "Montant Payé (FC)",
-        validators=[DataRequired(), NumberRange(min=Decimal("0.01"))],
+        validators=[DataRequired(), NumberRange(min=0.01)],
+        render_kw={"placeholder": "Ex: 10000.00"},
     )
-    description = TextAreaField(
+    description = StringField(
         "Description (Optionnel)",
-        validators=[Optional()],
-        default="Encaissement de dette de vente",
+        render_kw={"placeholder": "Ex: 1ère tranche paiement"},
     )
-    submit = SubmitField("Enregistrer le Paiement")
+    submit = SubmitField("Enregistrer le Paiement")  # Generic name 'submit'
 
     def __init__(self, *args, **kwargs):
         super(DebtCollectionForm, self).__init__(*args, **kwargs)
-        # Populate sales with outstanding debt
-        sales_with_debt = (
-            Sale.query.filter(Sale.debt_amount > Decimal("0.00"))
-            .order_by(Sale.created_at.desc())
-            .all()
-        )
-        from typing import Sequence
-
-        choices: Sequence[tuple[int, str]] = [
-            (-1, "Sélectionnez une vente avec dette")
-        ] + [
-            (
-                s.id,
-                f"Vente #{s.id} - Dû: {s.debt_amount:,.2f} FC - Client: {s.client.name if s.client else s.client_name_adhoc}",
-            )
-            for s in sales_with_debt
-        ]
-        self.sale_id.choices = choices
+        self.sale_id.choices = get_sales_with_debt()

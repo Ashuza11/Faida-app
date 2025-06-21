@@ -9,7 +9,7 @@
 {% block content %}
 
     {# Render the Page Header #}
-    {% set page_title = 'Gestion des Stock' %}
+    {% set page_title = 'Gestion Stock' %}
     {% set breadcrumb_items = [
         {'text': 'Stock', 'url': url_for('home_blueprint.Achat_stock')},
         {'text': 'Achat stock', 'url': url_for('home_blueprint.Achat_stock')}
@@ -43,7 +43,7 @@
                                     <th scope="col" class="sort">ID</th>
                                     <th scope="col" class="sort">Reseaux</th>
                                     <th scope="col" class="sort">Nombre</th>
-                                    <th scope="col" class="sort">Prix Vente / Unité</th> {# Updated column header #}
+                                    <th scope="col" class="sort">Prix Vente / Unité</th> 
                                     <th scope="col" class="sort">Acheter par</th>
                                     <th scope="col" class="sort">Date</th>
                                     <th scope="col" class="text-right">Actions</th>

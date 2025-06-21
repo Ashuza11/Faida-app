@@ -994,18 +994,52 @@ def view_sale_details(sale_id):
     )
 
 
-@blueprint.route("/sorties_cash", methods=["GET", "POST"])
+# sorties_cash route
+@blueprint.route("/sorties_cash", methods=["GET"])
 @login_required
 def sorties_cash():
-    outflow_form = CashOutflowForm()
-    debt_collection_form = DebtCollectionForm()  # Use the new form
+    # Fetch all cash movements for display
+    all_outflows = CashOutflow.query.order_by(CashOutflow.created_at.desc()).all()
+    all_inflows = CashInflow.query.order_by(CashInflow.created_at.desc()).all()
 
-    # Handle Cash Outflow Form Submission
-    if outflow_form.validate_on_submit() and "outflow_submit" in request.form:
+    # Calculate total cash outflow
+    total_outflow = (
+        sum(outflow.amount for outflow in all_outflows)
+        if all_outflows
+        else Decimal("0.00")
+    )
+
+    # Now, total_inflow is simply the sum of all CashInflow records
+    total_inflow = (
+        sum(inflow.amount for inflow in all_inflows) if all_inflows else Decimal("0.00")
+    )
+
+    # Get total cash paid directly from Sales (initial payment at sale time)
+    all_sales_cash_paid = db.session.query(db.func.sum(Sale.cash_paid)).scalar()
+    total_inflow = all_sales_cash_paid if all_sales_cash_paid else Decimal("0.00")
+
+    return render_template(
+        "home/sorties_cash.html",
+        outflows=all_outflows,
+        inflows=all_inflows,
+        total_outflow=total_outflow,
+        total_inflow=total_inflow,
+        segment="stock",
+        sub_segment="Sorties_Cash",
+    )
+
+
+# Enregistrer une Sortie (Cash Outflow)
+@blueprint.route("/sorties_cash/enregistrer_sortie", methods=["GET", "POST"])
+@login_required
+def enregistrer_sortie():
+    form = CashOutflowForm()
+
+    if form.validate_on_submit():
         try:
-            amount = outflow_form.amount.data
-            category = CashOutflowCategory[outflow_form.category.data]
-            description = outflow_form.description.data
+            amount = form.amount.data
+            category = CashOutflowCategory[form.category.data]
+            description = form.description.data
 
             new_outflow = CashOutflow(
                 amount=amount,
@@ -1019,22 +1053,34 @@ def sorties_cash():
                 f"Sortie de {amount:,.2f} FC ({category.value}) enregistrée avec succès.",
                 "success",
             )
-            return redirect(url_for("home_blueprint.sorties_cash"))
+            return redirect(
+                url_for("home_blueprint.sorties_cash")
+            )  # Redirect back to overview
         except Exception as e:
             db.session.rollback()
             flash(f"Erreur lors de l'enregistrement de la sortie: {e}", "danger")
             print(f"Error recording cash outflow: {e}")
 
-    # Handle Debt Collection Form Submission (Cash Inflow related to sales)
-    # Important: Re-instantiate the form for POST to ensure choices are fresh for validation
-    if (
-        debt_collection_form.validate_on_submit()
-        and "debt_collection_submit" in request.form
-    ):
+    return render_template(
+        "home/enregistrer_sortie.html",
+        form=form,
+        segment="stock",
+        sub_segment="Sorties_Cash",
+        sub_page_title="Enregistrer Sortie",
+    )
+
+
+# Encaisser une Dette (Debt Collection)
+@blueprint.route("/sorties_cash/encaisser_dette", methods=["GET", "POST"])
+@login_required
+def encaisser_dette():
+    form = DebtCollectionForm()
+
+    if form.validate_on_submit():
         try:
-            sale_id = debt_collection_form.sale_id.data
-            amount_paid = debt_collection_form.amount_paid.data
-            description = debt_collection_form.description.data
+            sale_id = form.sale_id.data
+            amount_paid = form.amount_paid.data
+            description = form.description.data
 
             sale_to_update = Sale.query.get(sale_id)
 
@@ -1053,17 +1099,15 @@ def sorties_cash():
                     sale_to_update.debt_amount
                 )  # Cap payment at outstanding debt
 
-            # Create a CashInflow record for this debt collection
             new_inflow = CashInflow(
                 amount=amount_paid,
-                category=CashInflowCategory.SALE_COLLECTION,  # Explicitly set this category
+                category=CashInflowCategory.SALE_COLLECTION,
                 description=description,
                 recorded_by=current_user,
-                sale=sale_to_update,  # Link to the sale
+                sale=sale_to_update,
             )
             db.session.add(new_inflow)
 
-            # Update the Sale's cash_paid and debt_amount
             sale_to_update.cash_paid += amount_paid
             sale_to_update.debt_amount -= amount_paid
             sale_to_update.updated_at = datetime.utcnow()
@@ -1074,7 +1118,9 @@ def sorties_cash():
                 f"Paiement de {amount_paid:,.2f} FC pour la vente #{sale_id} enregistré avec succès. Nouvelle dette: {sale_to_update.debt_amount:,.2f} FC.",
                 "success",
             )
-            return redirect(url_for("home_blueprint.sorties_cash"))
+            return redirect(
+                url_for("home_blueprint.sorties_cash")
+            )  # Redirect back to overview
         except InvalidOperation:
             flash("Montant invalide. Veuillez entrer un nombre valide.", "danger")
             db.session.rollback()
@@ -1086,34 +1132,10 @@ def sorties_cash():
             flash(f"Erreur lors de l'enregistrement du paiement: {e}", "danger")
             print(f"Error recording debt collection: {e}")
 
-    # Fetch all cash movements for display
-    all_outflows = CashOutflow.query.order_by(CashOutflow.created_at.desc()).all()
-    # Now, all explicit cash inflows will come from CashInflow model
-    all_inflows = CashInflow.query.order_by(CashInflow.created_at.desc()).all()
-
-    # If you also want to show initial cash paid at sale time in the 'Entrees' list
-    # You would query Sale.cash_paid for sales where cash_paid > 0
-    # For now, we'll keep it simple to explicit CashInflow records.
-    # A full cash report would combine these.
-
-    # Calculate total cash position (only from explicit records here)
-    total_outflow = (
-        sum(outflow.amount for outflow in all_outflows)
-        if all_outflows
-        else Decimal("0.00")
-    )
-    total_inflow = (
-        sum(inflow.amount for inflow in all_inflows) if all_inflows else Decimal("0.00")
-    )
-
     return render_template(
-        "home/sorties_cash.html",
-        outflow_form=outflow_form,
-        debt_collection_form=debt_collection_form,  # Pass the new form
-        outflows=all_outflows,
-        inflows=all_inflows,
-        total_outflow=total_outflow,
-        total_inflow=total_inflow,
-        segment="financials",
+        "home/encaisser_dette.html",
+        form=form,
+        segment="stock",
         sub_segment="Sorties_Cash",
+        sub_page_title="Encaisser Dette",
     )

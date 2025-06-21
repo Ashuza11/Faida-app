@@ -1,0 +1,71 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} {{ page_title }} {% endblock %}
+
+{% block content %}
+
+    {# Render the Page Header #}
+    {% set page_title = 'Gestion Cash' %}
+    {% set breadcrumb_items = [
+        {'text': 'Entrées & Sorties', 'url': url_for('home_blueprint.sorties_cash')},
+        {'text': sub_page_title, 'url': url_for('home_blueprint.sorties_cash')},
+    ] %}
+    {% include 'includes/page_header.html' %}
+
+    {# Render the Page Content #}
+
+    <div class="container-fluid mt--6">
+      <div class="row">
+        <div class="col-xl-12 order-xl-1">
+          <div class="card">
+            <div class="card-header">
+              <div class="row align-items-center">
+                <div class="col-8">
+                  <h3 class="mb-0">{{ sub_page_title }}</h3>
+                </div>
+                <div class="col-4 text-right">
+                  <a href="{{ url_for('home_blueprint.sorties_cash') }}" class="btn btn-sm btn-outline-primary">Retour à l'aperçu</a>
+                </div>
+              </div>
+            </div>
+            <div class="card-body">
+              <form method="post" action="{{ url_for('home_blueprint.enregistrer_sortie') }}">
+                {{ form.hidden_tag() }}
+
+                {% for field in form if field.widget.input_type != 'hidden' and field.name != 'submit' %}
+                  <div class="form-group{% if field.errors %} has-danger{% endif %}">
+                    <label class="form-control-label" for="{{ field.id }}">{{ field.label }}</label>
+                    <div class="input-group input-group-merge input-group-alternative">
+                      <div class="input-group-prepend">
+                        {% if field.name == 'amount' %}<span class="input-group-text"><i class="fas fa-money-bill-wave"></i></span>
+                        {% elif field.name == 'category' %}<span class="input-group-text"><i class="fas fa-list"></i></span>
+                        {% elif field.name == 'description' %}<span class="input-group-text"><i class="fas fa-comment-alt"></i></span>
+                        {% endif %}
+                      </div>
+                      {{ field(class="form-control" + (" is-invalid" if field.errors else "")) }}
+                    </div>
+                    {% if field.errors %}
+                      <div class="invalid-feedback d-block">
+                        {% for error in field.errors %}
+                          <span>{{ error }}</span><br>
+                        {% endfor %}
+                      </div>
+                    {% endif %}
+                  </div>
+                {% endfor %}
+
+                <hr class="my-4" />
+                <div class="text-right">
+                  <a href="{{ url_for('home_blueprint.sorties_cash') }}" class="btn btn-secondary">Annuler</a>
+                  {{ form.submit(class="btn btn-primary") }} {# Generic submit, will use form.submit.label #}
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% include "includes/footer.html" %}
+    </div>
+
+{% endblock content %}

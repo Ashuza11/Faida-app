@@ -4,159 +4,36 @@
 
 {% block content %}
 
-    <div class="header bg-primary pb-6">
-      <div class="container-fluid">
-        <div class="header-body">
-          <div class="row align-items-center py-4">
-            <div class="col-lg-6 col-7">
-              <h6 class="h2 text-white d-inline-block mb-0">Gestion Cash</h6>
-              <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
-                <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
-                  <li class="breadcrumb-item"><a href="{{ url_for('home_blueprint.index') }}"><i class="fas fa-home"></i></a></li>
-                  <li class="breadcrumb-item"><a href="{{ url_for('home_blueprint.sorties_cash') }}">Sorties & Entrées Cash</a></li>
-                  <li class="breadcrumb-item active" aria-current="page">Vue d'ensemble</li>
-                </ol>
-              </nav>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    {# Render the Page Header #}
+    {% set page_title = 'Gestion Cash' %}
+    {% set breadcrumb_items = [
+        {'text': 'Entrées & Sorties', 'url': url_for('home_blueprint.sorties_cash')},
+        {'text': 'Balance', 'url': url_for('home_blueprint.sorties_cash')},
+    ] %}
+    {% include 'includes/page_header.html' %}
+
+    {# Render the Page Content #}
 
     <div class="container-fluid mt--6">
       <div class="row">
-        <div class="col-xl-6">
+        <div class="col-xl-12">
           <div class="card">
             <div class="card-header border-0">
-              <h3 class="mb-0">Enregistrer une Sortie (Dépense)</h3>
+              <h3 class="mb-0">Actions Cash</h3>
             </div>
             <div class="card-body">
-              <form role="form" method="post" action="{{ url_for('home_blueprint.sorties_cash') }}">
-                {{ outflow_form.hidden_tag() }}
-
-                <div class="form-group mb-3">
-                  <label for="{{ outflow_form.amount.id }}">Montant (FC)</label>
-                  <div class="input-group input-group-merge input-group-alternative">
-                    <div class="input-group-prepend">
-                      <span class="input-group-text"><i class="fas fa-money-bill-wave"></i></span>
-                    </div>
-                    {{ outflow_form.amount(class="form-control", placeholder="e.g. 5000") }}
-                  </div>
-                  {% if outflow_form.amount.errors %}
-                    <div class="text-danger mt-2">
-                      {% for error in outflow_form.amount.errors %}
-                        <span>{{ error }}</span>
-                      {% endfor %}
-                    </div>
-                  {% endif %}
+              <div class="row"> 
+                <div class="col-12 col-md-6 mb-3 mb-md-0"> 
+                  <a href="{{ url_for('home_blueprint.enregistrer_sortie') }}" class="btn btn-primary btn-block"> 
+                    <i class="fas fa-minus-circle mr-2"></i> Enregistrer une Sortie (Dépense)
+                  </a>
                 </div>
-
-                <div class="form-group mb-3">
-                  <label for="{{ outflow_form.category.id }}">Catégorie de Dépense</label>
-                  <div class="input-group input-group-merge input-group-alternative">
-                    <div class="input-group-prepend">
-                      <span class="input-group-text"><i class="fas fa-list"></i></span>
-                    </div>
-                    {{ outflow_form.category(class="form-control") }}
-                  </div>
-                  {% if outflow_form.category.errors %}
-                    <div class="text-danger mt-2">
-                      {% for error in outflow_form.category.errors %}
-                        <span>{{ error }}</span>
-                      {% endfor %}
-                    </div>
-                  {% endif %}
+                <div class="col-12 col-md-6"> 
+                  <a href="{{ url_for('home_blueprint.encaisser_dette') }}" class="btn btn-success btn-block"> 
+                    <i class="fas fa-plus-circle mr-2"></i> Enregistrer un Encaissement de Dette
+                  </a>
                 </div>
-
-                <div class="form-group mb-3">
-                  <label for="{{ outflow_form.description.id }}">Description</label>
-                  <div class="input-group input-group-merge input-group-alternative">
-                    <div class="input-group-prepend">
-                      <span class="input-group-text"><i class="fas fa-comment-alt"></i></span>
-                    </div>
-                    {{ outflow_form.description(class="form-control", rows="3", placeholder="Détails de la dépense...") }}
-                  </div>
-                  {% if outflow_form.description.errors %}
-                    <div class="text-danger mt-2">
-                      {% for error in outflow_form.description.errors %}
-                        <span>{{ error }}</span>
-                      {% endfor %}
-                    </div>
-                  {% endif %}
-                </div>
-
-                <div class="text-center">
-                  {{ outflow_form.submit(class="btn btn-primary mt-4") }}
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-xl-6">
-          <div class="card">
-            <div class="card-header border-0">
-              <h3 class="mb-0">Enregistrer un Encaissement de Dette (Vente)</h3> {# Changed title #}
-            </div>
-            <div class="card-body">
-              <form role="form" method="post" action="{{ url_for('home_blueprint.sorties_cash') }}">
-                {{ debt_collection_form.hidden_tag() }} {# Changed form object #}
-
-                <div class="form-group mb-3">
-                  <label for="{{ debt_collection_form.sale_id.id }}">Vente Concernée</label>
-                  <div class="input-group input-group-merge input-group-alternative">
-                    <div class="input-group-prepend">
-                      <span class="input-group-text"><i class="fas fa-receipt"></i></span> {# New icon #}
-                    </div>
-                    {{ debt_collection_form.sale_id(class="form-control") }}
-                  </div>
-                  {% if debt_collection_form.sale_id.errors %}
-                    <div class="text-danger mt-2">
-                      {% for error in debt_collection_form.sale_id.errors %}
-                        <span>{{ error }}</span>
-                      {% endfor %}
-                    </div>
-                  {% endif %}
-                </div>
-
-                <div class="form-group mb-3">
-                  <label for="{{ debt_collection_form.amount_paid.id }}">Montant Payé (FC)</label>
-                  <div class="input-group input-group-merge input-group-alternative">
-                    <div class="input-group-prepend">
-                      <span class="input-group-text"><i class="fas fa-hand-holding-usd"></i></span> {# New icon #}
-                    </div>
-                    {{ debt_collection_form.amount_paid(class="form-control", placeholder="e.g. 10000") }}
-                  </div>
-                  {% if debt_collection_form.amount_paid.errors %}
-                    <div class="text-danger mt-2">
-                      {% for error in debt_collection_form.amount_paid.errors %}
-                        <span>{{ error }}</span>
-                      {% endfor %}
-                    </div>
-                  {% endif %}
-                </div>
-
-                <div class="form-group mb-3">
-                  <label for="{{ debt_collection_form.description.id }}">Description</label>
-                  <div class="input-group input-group-merge input-group-alternative">
-                    <div class="input-group-prepend">
-                      <span class="input-group-text"><i class="fas fa-comment-alt"></i></span>
-                    </div>
-                    {{ debt_collection_form.description(class="form-control", rows="3", placeholder="Détails du paiement...") }}
-                  </div>
-                  {% if debt_collection_form.description.errors %}
-                    <div class="text-danger mt-2">
-                      {% for error in debt_collection_form.description.errors %}
-                        <span>{{ error }}</span>
-                      {% endfor %}
-                    </div>
-                  {% endif %}
-                </div>
-
-                <div class="text-center">
-                  {{ debt_collection_form.submit(class="btn btn-primary mt-4") }} 
-                </div>
-              </form>
+              </div> {# End the row #}
             </div>
           </div>
         </div>
@@ -182,38 +59,14 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {# Combine and sort all movements for display #}
                   {% set all_movements = [] %}
                   {% for outflow in outflows %}
                     {% set _ = all_movements.append({'type': 'Sortie', 'category': outflow.category.value, 'amount': outflow.amount, 'description': outflow.description, 'recorded_by': outflow.recorded_by.username, 'created_at': outflow.created_at}) %}
                   {% endfor %}
-                  {# Include explicit cash_inflow records #}
                   {% for inflow in inflows %}
                     {% set _ = all_movements.append({'type': 'Entrée', 'category': inflow.category.value, 'amount': inflow.amount, 'description': inflow.description, 'recorded_by': inflow.recorded_by.username, 'created_at': inflow.created_at}) %}
                   {% endfor %}
 
-                  {#
-                  # Optional: If you want to include the INITIAL cash_paid at the time of sale
-                  # as part of 'Entrees' in this list, you'd fetch it here.
-                  # This can lead to double counting if CashInflow 'SALE_COLLECTION' is
-                  # ALSO used for the initial payment. The current design assumes
-                  # CashInflow is *only* for debt collection after the initial sale.
-                  # If initial sale cash paid is part of your "Entrees" in this report:
-                  # {% for sale in sales_with_initial_cash_paid %}
-                  #    {% if sale.cash_paid > 0 %}
-                  #       {% set _ = all_movements.append({
-                  #           'type': 'Entrée',
-                  #           'category': 'Vente Initiale',
-                  #           'amount': sale.cash_paid,
-                  #           'description': 'Paiement initial de la vente #' + sale.id|string,
-                  #           'recorded_by': sale.vendeur.username, # Assuming vendor recorded it
-                  #           'created_at': sale.created_at
-                  #       }) %}
-                  #    {% endif %}
-                  # {% endfor %}
-                  #}
-
-                  {# Sort by created_at in descending order #}
                   {% set sorted_movements = all_movements | sort(attribute='created_at', reverse=true) %}
 
                   {% for movement in sorted_movements %}
