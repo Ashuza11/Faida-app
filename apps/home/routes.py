@@ -53,11 +53,10 @@ def route_template(template):
         return render_template("home/" + template, segment=segment)
 
     except TemplateNotFound:
-        abort(404)  # Triggers the  global @app.errorhandler(404)
-
+        abort(404)
     except Exception as e:
-        print(f"An unexpected error occurred in route_template: {e}")  # Log the error
-        abort(500)  # Triggers the global @app.errorhandler(500)
+        print(f"An unexpected error occurred in route_template: {e}")
+        abort(500)
 
 
 # Helper - Extract current page name from request
@@ -434,6 +433,165 @@ def Achat_stock():
         sub_segment="Achat_stock",
         stock_purchases=stock_purchases,
         form=form,
+    )
+
+
+# Edit Stock Purchase
+@blueprint.route("/achat_stock/editer/<int:purchase_id>", methods=["GET", "POST"])
+@login_required
+@superadmin_required
+def edit_stock_purchase(purchase_id):
+    purchase = StockPurchase.query.get_or_404(purchase_id)
+    form = StockPurchaseForm(obj=purchase)
+
+    # Manually set selling price choice for the form if it matches a preset
+    if purchase.selling_price_at_purchase == Decimal("27.5"):
+        form.selling_price_choice.data = "27.5"
+        form.custom_selling_price.data = None
+    elif purchase.selling_price_at_purchase == Decimal("28.0"):
+        form.selling_price_choice.data = "28.0"
+        form.custom_selling_price.data = None
+    else:
+        form.selling_price_choice.data = "custom"
+        form.custom_selling_price.data = purchase.selling_price_at_purchase
+
+    if form.validate_on_submit():
+        try:
+            old_amount_purchased = purchase.amount_purchased
+            old_network = purchase.network
+
+            network_enum_value = form.network.data
+            network_enum = NetworkType(network_enum_value)
+
+            amount_purchased = form.amount_purchased.data
+
+            # Determine selling_price_to_record_in_stock based on user's choice (same as Achat_stock)
+            selling_price_to_record_in_stock = None
+            if form.selling_price_choice.data == "custom":
+                selling_price_to_record_in_stock = form.custom_selling_price.data
+                if selling_price_to_record_in_stock is None:
+                    flash("Prix de vente personnalisé est requis.", "danger")
+                    # Re-render the form with errors
+                    return render_template(
+                        "home/edit_stock_purchase.html",
+                        form=form,
+                        purchase=purchase,
+                        page_title="Editer Achat de Stock",
+                        segment="stock",
+                        sub_segment="Achat_stock",
+                    )
+            elif form.selling_price_choice.data in ["27.5", "28.0"]:
+                selling_price_to_record_in_stock = Decimal(
+                    form.selling_price_choice.data
+                )
+            else:
+                flash("Veuillez sélectionner ou entrer un prix de vente.", "danger")
+                return render_template(
+                    "home/edit_stock_purchase.html",
+                    form=form,
+                    purchase=purchase,
+                    page_title="Editer Achat de Stock",
+                    segment="stock",
+                    sub_segment="Achat_stock",
+                )
+
+            # Update the StockPurchase record
+            purchase.network = network_enum
+            purchase.amount_purchased = amount_purchased
+            purchase.selling_price_at_purchase = selling_price_to_record_in_stock
+            purchase.updated_at = datetime.utcnow()
+
+            # --- Adjust Stock Balance based on changes ---
+            # Step 1: Subtract old amount from old network's stock
+            old_stock_item = Stock.query.filter_by(network=old_network).first()
+            if old_stock_item:
+                old_stock_item.balance -= old_amount_purchased
+                db.session.add(old_stock_item)  # Mark for update
+
+            # Step 2: Add new amount to new network's stock
+            new_stock_item = Stock.query.filter_by(network=network_enum).first()
+            if new_stock_item:
+                new_stock_item.balance += amount_purchased
+                # CRUCIAL: Update the selling_price_per_unit in the Stock table if changed or applies
+                new_stock_item.selling_price_per_unit = selling_price_to_record_in_stock
+                db.session.add(new_stock_item)  # Mark for update
+            else:
+                # This case should ideally not happen if you always have a stock item for each NetworkType
+                # but handle it if a network was added and then purchased for the first time via edit
+                new_stock_item = Stock(
+                    network=network_enum,
+                    balance=amount_purchased,
+                    selling_price_per_unit=selling_price_to_record_in_stock,
+                    reduction_rate=Decimal("0.00"),
+                )
+                db.session.add(new_stock_item)
+
+            db.session.commit()
+            flash("Achat de stock mis à jour avec succès!", "success")
+            return redirect(url_for("home_blueprint.Achat_stock"))
+
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(
+                f"Error updating stock purchase {purchase_id}: {e}"
+            )
+            flash(f"Une erreur est survenue lors de la mise à jour: {e}", "danger")
+
+    return render_template(
+        "home/edit_stock_purchase.html",
+        form=form,
+        purchase=purchase,
+        page_title="Editer Achat de Stock",
+        segment="stock",
+        sub_segment="Achat_stock",
+    )
+
+
+# Delete Stock Purchase
+@blueprint.route("/achat_stock/supprimer/<int:purchase_id>", methods=["GET", "POST"])
+@login_required
+@superadmin_required
+def delete_stock_purchase(purchase_id):
+    purchase = StockPurchase.query.get_or_404(purchase_id)
+
+    if (
+        request.method == "POST"
+    ):  # Ideally, deletion should be POST to prevent accidental deletion
+        try:
+            # Revert the stock balance
+            stock_item = Stock.query.filter_by(network=purchase.network).first()
+            if stock_item:
+                stock_item.balance -= purchase.amount_purchased
+                db.session.add(stock_item)  # Mark for update
+            else:
+                # This should ideally not happen unless data is inconsistent
+                flash(
+                    "Erreur: L'article de stock correspondant est introuvable.",
+                    "danger",
+                )
+                return redirect(url_for("home_blueprint.Achat_stock"))
+
+            db.session.delete(purchase)  # Delete the purchase record itself
+            db.session.commit()
+            flash(f"Achat de stock #{purchase_id} supprimé avec succès!", "success")
+            return redirect(url_for("home_blueprint.Achat_stock"))
+
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(
+                f"Error deleting stock purchase {purchase_id}: {e}"
+            )
+            flash(f"Une erreur est survenue lors de la suppression: {e}", "danger")
+            return redirect(url_for("home_blueprint.Achat_stock"))
+
+    # For GET request, you might want a confirmation page/modal
+    flash("Confirmez la suppression de l'achat de stock.", "warning")
+    return render_template(
+        "home/confirm_delete_stock_purchase.html",
+        purchase=purchase,
+        page_title="Confirmer Suppression",
+        segment="stock",
+        sub_segment="Achat_stock",
     )
 
 

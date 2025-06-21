@@ -1,0 +1,104 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} {{ page_title }} {% endblock %}
+
+{% block content %}
+
+    <div class="header bg-primary pb-6">
+      <div class="container-fluid">
+        <div class="header-body">
+          <div class="row align-items-center py-4">
+            <div class="col-lg-6 col-7">
+              <h6 class="h2 text-white d-inline-block mb-0">Gestion Stock</h6>
+              <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
+                <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
+                  <li class="breadcrumb-item"><a href="{{ url_for('home_blueprint.index') }}"><i class="fas fa-home"></i></a></li>
+                  <li class="breadcrumb-item"><a href="{{ url_for('home_blueprint.Achat_stock') }}">Achats Stock</a></li>
+                  <li class="breadcrumb-item active" aria-current="page">{{ page_title }} #{{ purchase.id }}</li> {# Use purchase.id here #}
+                </ol>
+              </nav>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="container-fluid mt--6">
+      <div class="row">
+        <div class="col-xl-12 order-xl-1">
+          <div class="card">
+            <div class="card-header">
+              <div class="row align-items-center">
+                <div class="col-8">
+                  <h3 class="mb-0">{{ page_title }} #{{ purchase.id }}</h3>
+                </div>
+                <div class="col-4 text-right">
+                  <a href="{{ url_for('home_blueprint.Achat_stock') }}" class="btn btn-sm btn-outline-primary">Retour à l'historique</a>
+                </div>
+              </div>
+            </div>
+            <div class="card-body">
+              <form method="post" action="{{ url_for('home_blueprint.edit_stock_purchase', purchase_id=purchase.id) }}">
+                {{ form.hidden_tag() }}
+
+                {% for field in form if field.widget.input_type != 'hidden' and field.name != 'submit' %}
+                  <div class="form-group{% if field.errors %} has-danger{% endif %}">
+                    <label class="form-control-label" for="{{ field.id }}">{{ field.label }}</label>
+                    <div class="input-group input-group-merge input-group-alternative">
+                      <div class="input-group-prepend">
+                        {# Adjust icons as per your form fields #}
+                        {% if field.name == 'network' %}<span class="input-group-text"><i class="fas fa-wifi"></i></span>
+                        {% elif field.name == 'amount_purchased' %}<span class="input-group-text"><i class="fas fa-cubes"></i></span>
+                        {% elif field.name == 'selling_price_choice' or field.name == 'custom_selling_price' %}<span class="input-group-text"><i class="fas fa-dollar-sign"></i></span>
+                        {% endif %}
+                      </div>
+                      {{ field(class="form-control" + (" is-invalid" if field.errors else "")) }}
+                    </div>
+                    {% if field.errors %}
+                      <div class="invalid-feedback d-block">
+                        {% for error in field.errors %}
+                          <span>{{ error }}</span><br>
+                        {% endfor %}
+                      </div>
+                    {% endif %}
+                  </div>
+                {% endfor %}
+
+                <hr class="my-4" />
+                <div class="text-right">
+                  <a href="{{ url_for('home_blueprint.Achat_stock') }}" class="btn btn-secondary">Annuler</a>
+                  {{ form.submit(class="btn btn-primary") }}
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% include "includes/footer.html" %}
+    </div>
+
+{% endblock content %}
+
+{# Add JS to show custom_selling_price based on choice, if not already handled #}
+{% block javascripts %}
+  {{ super() }}
+  <script>
+    $(document).ready(function() {
+      // Function to toggle custom selling price visibility
+      function toggleCustomSellingPrice() {
+        if ($('#selling_price_choice').val() === 'custom') {
+          $('#custom_selling_price').closest('.form-group').show();
+        } else {
+          $('#custom_selling_price').closest('.form-group').hide();
+        }
+      }
+
+      // Initial call on page load
+      toggleCustomSellingPrice();
+
+      // Bind to change event
+      $('#selling_price_choice').change(toggleCustomSellingPrice);
+    });
+  </script>
+{% endblock javascripts %}

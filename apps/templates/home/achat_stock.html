@@ -65,8 +65,8 @@
                                                 <i class="fas fa-ellipsis-v"></i>
                                             </a>
                                             <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
-                                                <a class="dropdown-item" href="#">Editer</a>
-                                                <a class="dropdown-item text-danger" href="#">Supprimer</a>
+                                                <a class="dropdown-item" href="{{ url_for('home_blueprint.edit_stock_purchase', purchase_id=purchase.id) }}">Editer</a>
+                                                <a class="dropdown-item text-danger" href="{{ url_for('home_blueprint.delete_stock_purchase', purchase_id=purchase.id) }}">Supprimer</a>
                                             </div>
                                         </div>
                                     </td>
@@ -82,7 +82,6 @@
                 </div>
             </div>
         </div>
-
         {% include "includes/footer.html" %}
 
     </div>
@@ -99,12 +98,17 @@
                 </div>
                 {# The form itself for Stock Purchase #}
                 <form method="post" action="{{ url_for('home_blueprint.Achat_stock') }}">
-                    <div class="modal-body">
+                    <div class="modal-body"> {# Or just remove this div if it's no longer in a modal #}
                         {{ form.hidden_tag() }} {# CSRF token #}
 
                         <div class="form-group{% if form.network.errors %} has-danger{% endif %}">
                             {{ form.network.label(class="form-control-label") }}
-                            {{ form.network(class="form-control" + (" is-invalid" if form.network.errors else "")) }}
+                            <div class="input-group input-group-merge input-group-alternative"> 
+                                <div class="input-group-prepend"> 
+                                    <span class="input-group-text"><i class="fas fa-wifi"></i></span> 
+                                </div>
+                                {{ form.network(class="form-control" + (" is-invalid" if form.network.errors else "")) }}
+                            </div> 
                             {% for error in form.network.errors %}
                                 <div class="invalid-feedback d-block">{{ error }}</div>
                             {% endfor %}
@@ -112,7 +116,12 @@
 
                         <div class="form-group{% if form.amount_purchased.errors %} has-danger{% endif %}">
                             {{ form.amount_purchased.label(class="form-control-label") }}
-                            {{ form.amount_purchased(class="form-control" + (" is-invalid" if form.amount_purchased.errors else ""), placeholder=form.amount_purchased.label.text) }}
+                            <div class="input-group input-group-merge input-group-alternative"> 
+                                <div class="input-group-prepend"> 
+                                    <span class="input-group-text"><i class="fas fa-cubes"></i></span> 
+                                </div> 
+                                {{ form.amount_purchased(class="form-control" + (" is-invalid" if form.amount_purchased.errors else ""), placeholder=form.amount_purchased.label.text) }}
+                            </div> 
                             {% for error in form.amount_purchased.errors %}
                                 <div class="invalid-feedback d-block">{{ error }}</div>
                             {% endfor %}
@@ -121,7 +130,12 @@
                         {# New field for selling price choice #}
                         <div class="form-group{% if form.selling_price_choice.errors %} has-danger{% endif %}">
                             {{ form.selling_price_choice.label(class="form-control-label") }}
-                            {{ form.selling_price_choice(class="form-control" + (" is-invalid" if form.selling_price_choice.errors else ""), id="sellingPriceChoice") }}
+                            <div class="input-group input-group-merge input-group-alternative"> 
+                                <div class="input-group-prepend"> 
+                                    <span class="input-group-text"><i class="fas fa-dollar-sign"></i></span> 
+                                </div> 
+                                {{ form.selling_price_choice(class="form-control" + (" is-invalid" if form.selling_price_choice.errors else ""), id="sellingPriceChoice") }}
+                            </div> 
                             {% for error in form.selling_price_choice.errors %}
                                 <div class="invalid-feedback d-block">{{ error }}</div>
                             {% endfor %}
@@ -130,16 +144,21 @@
                         {# New field for custom selling price (initially hidden) #}
                         <div class="form-group{% if form.custom_selling_price.errors %} has-danger{% endif %}" id="customSellingPriceField" style="display: none;">
                             {{ form.custom_selling_price.label(class="form-control-label") }}
-                            {{ form.custom_selling_price(class="form-control" + (" is-invalid" if form.custom_selling_price.errors else ""), id="customSellingPrice", placeholder=form.custom_selling_price.label.text) }}
+                            <div class="input-group input-group-merge input-group-alternative"> 
+                                <div class="input-group-prepend"> 
+                                    <span class="input-group-text"><i class="fas fa-dollar-sign"></i></span> 
+                                </div> 
+                                {{ form.custom_selling_price(class="form-control" + (" is-invalid" if form.custom_selling_price.errors else ""), id="customSellingPrice", placeholder=form.custom_selling_price.label.text) }}
+                            </div> 
                             {% for error in form.custom_selling_price.errors %}
                                 <div class="invalid-feedback d-block">{{ error }}</div>
                             {% endfor %}
                         </div>
 
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Annuler</button>
-                        <button type="submit" class="btn btn-primary">Enregistrer Achat</button>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-dismiss="modal">Annuler</button>
+                            <button type="submit" class="btn btn-primary">Enregistrer Achat</button>
+                        </div>
                     </div>
                 </form>
             </div>
