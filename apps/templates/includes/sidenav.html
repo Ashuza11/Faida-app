@@ -54,7 +54,7 @@
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link {% if 'tables' in segment %} active {% endif %}" href="/tables.html">
+            <a class="nav-link {% if segment == 'rapports' %} active {% endif %}" href="{{ url_for('home_blueprint.rapports') }}"> 
               <i class="ni ni-chart-bar-32 text-primary"></i>
               <span class="nav-link-text">Rapports</span>
             </a>

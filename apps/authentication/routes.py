@@ -1,4 +1,4 @@
-from flask import render_template, redirect, request, url_for
+from flask import render_template, redirect, request, url_for, flash
 from flask_login import current_user, login_user, logout_user
 
 from apps import db, login_manager
@@ -24,6 +24,8 @@ def login():
 
         if user and user.check_password(password):
             login_user(user)
+            # welcome message
+            flash(f"Bienvenue {user.username} !", "success")
 
             # Templates will handle role-based UI
             return redirect(url_for("home_blueprint.index"))

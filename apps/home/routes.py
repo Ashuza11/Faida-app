@@ -6,7 +6,7 @@ from apps.decorators import superadmin_required, vendeur_required
 from apps.home.utils import custom_round_up
 from apps import db
 from decimal import Decimal, InvalidOperation
-from datetime import datetime
+from datetime import datetime, date
 from apps.authentication.models import (
     User,
     RoleType,
@@ -345,12 +345,15 @@ def Achat_stock():
             network_enum_value = form.network.data
             network_enum = NetworkType(network_enum_value)
             amount_purchased = form.amount_purchased.data
-            selling_price_to_record_in_stock = None
 
-            # Determine selling_price_to_record_in_stock based on user's choice
+            # This variable should reflect the price determined by the form for THIS purchase.
+            # This is the price that will be recorded in Stock.buying_price and StockPurchase.selling_price_at_purchase
+            price_to_record_for_purchase = None
+
+            # Determine price_to_record_for_purchase based on user's choice
             if form.selling_price_choice.data == "custom":
-                selling_price_to_record_in_stock = form.custom_selling_price.data
-                if selling_price_to_record_in_stock is None:
+                price_to_record_for_purchase = form.custom_selling_price.data
+                if price_to_record_for_purchase is None:
                     flash("Prix de vente personnalisé est requis.", "danger")
                     stock_purchases = StockPurchase.query.order_by(
                         StockPurchase.created_at.desc()
@@ -363,11 +366,8 @@ def Achat_stock():
                         sub_segment="Achat_stock",
                     )
             elif form.selling_price_choice.data in ["27.5", "28.0"]:
-                selling_price_to_record_in_stock = Decimal(
-                    form.selling_price_choice.data
-                )
+                price_to_record_for_purchase = Decimal(form.selling_price_choice.data)
             else:
-                # For now, let's make it clear that a price MUST be chosen.
                 flash("Veuillez sélectionner ou entrer un prix de vente.", "danger")
                 stock_purchases = StockPurchase.query.order_by(
                     StockPurchase.created_at.desc()
@@ -386,14 +386,15 @@ def Achat_stock():
             if stock_item:
                 # Update the stock balance
                 stock_item.balance += amount_purchased
-                # CRUCIAL: Update the selling_price_per_unit in the Stock table
-                stock_item.selling_price_per_unit = selling_price_to_record_in_stock
+                # CRUCIAL CHANGE: Update the buying_price in the Stock table
+                # This ensures the Stock model always reflects the most recent purchase price for 'Virtuel' calculations
+                stock_item.buying_price = price_to_record_for_purchase  # Corrected here
             else:
                 # If no stock item exists for this network, create a new one
                 stock_item = Stock(
                     network=network_enum,
                     balance=amount_purchased,
-                    selling_price_per_unit=selling_price_to_record_in_stock,
+                    buying_price=price_to_record_for_purchase,  # Corrected here
                     reduction_rate=Decimal(
                         "0.00"
                     ),  # Initialize reduction_rate if new stock
@@ -407,7 +408,8 @@ def Achat_stock():
                 stock_item_id=stock_item.id,
                 network=network_enum,
                 amount_purchased=amount_purchased,
-                selling_price_at_purchase=selling_price_to_record_in_stock,
+                # This should still be `selling_price_at_purchase` for the record of THIS transaction
+                selling_price_at_purchase=price_to_record_for_purchase,  # Keep this as 'selling_price_at_purchase' for the purchase record
                 purchased_by=current_user,
             )
             db.session.add(new_purchase)
@@ -442,15 +444,16 @@ def Achat_stock():
 @superadmin_required
 def edit_stock_purchase(purchase_id):
     purchase = StockPurchase.query.get_or_404(purchase_id)
-    form = StockPurchaseForm(obj=purchase)
+    form = StockPurchaseForm(obj=purchase)  # Pre-fill form with existing data
 
     # Manually set selling price choice for the form if it matches a preset
+    # Note: `purchase.selling_price_at_purchase` is the historical price from THIS specific purchase
     if purchase.selling_price_at_purchase == Decimal("27.5"):
         form.selling_price_choice.data = "27.5"
-        form.custom_selling_price.data = None
+        form.custom_selling_price.data = None  # Clear custom if preset selected
     elif purchase.selling_price_at_purchase == Decimal("28.0"):
         form.selling_price_choice.data = "28.0"
-        form.custom_selling_price.data = None
+        form.custom_selling_price.data = None  # Clear custom if preset selected
     else:
         form.selling_price_choice.data = "custom"
         form.custom_selling_price.data = purchase.selling_price_at_purchase
@@ -465,13 +468,12 @@ def edit_stock_purchase(purchase_id):
 
             amount_purchased = form.amount_purchased.data
 
-            # Determine selling_price_to_record_in_stock based on user's choice (same as Achat_stock)
-            selling_price_to_record_in_stock = None
+            # This variable should reflect the new price determined by the form for THIS updated purchase.
+            price_to_record_for_purchase = None
             if form.selling_price_choice.data == "custom":
-                selling_price_to_record_in_stock = form.custom_selling_price.data
-                if selling_price_to_record_in_stock is None:
+                price_to_record_for_purchase = form.custom_selling_price.data
+                if price_to_record_for_purchase is None:
                     flash("Prix de vente personnalisé est requis.", "danger")
-                    # Re-render the form with errors
                     return render_template(
                         "home/edit_stock_purchase.html",
                         form=form,
@@ -481,9 +483,7 @@ def edit_stock_purchase(purchase_id):
                         sub_segment="Achat_stock",
                     )
             elif form.selling_price_choice.data in ["27.5", "28.0"]:
-                selling_price_to_record_in_stock = Decimal(
-                    form.selling_price_choice.data
-                )
+                price_to_record_for_purchase = Decimal(form.selling_price_choice.data)
             else:
                 flash("Veuillez sélectionner ou entrer un prix de vente.", "danger")
                 return render_template(
@@ -495,33 +495,37 @@ def edit_stock_purchase(purchase_id):
                     sub_segment="Achat_stock",
                 )
 
-            # Update the StockPurchase record
+            # Update the StockPurchase record itself
             purchase.network = network_enum
             purchase.amount_purchased = amount_purchased
-            purchase.selling_price_at_purchase = selling_price_to_record_in_stock
-            purchase.updated_at = datetime.utcnow()
+            # Keep this as 'selling_price_at_purchase' for the purchase record
+            purchase.selling_price_at_purchase = price_to_record_for_purchase
+            purchase.updated_at = (
+                datetime.utcnow()
+            )  # Assuming an updated_at field on StockPurchase
 
-            # --- Adjust Stock Balance based on changes ---
-            # Step 1: Subtract old amount from old network's stock
+            # --- Adjust Stock Balance and Buying Price based on changes ---
+            # Step 1: Revert old amount from old network's stock
             old_stock_item = Stock.query.filter_by(network=old_network).first()
             if old_stock_item:
                 old_stock_item.balance -= old_amount_purchased
-                db.session.add(old_stock_item)  # Mark for update
+                # If network changed, we don't update buying_price on the old one for this reason
+                db.session.add(old_stock_item)
 
-            # Step 2: Add new amount to new network's stock
+            # Step 2: Apply new amount to new network's stock
             new_stock_item = Stock.query.filter_by(network=network_enum).first()
             if new_stock_item:
                 new_stock_item.balance += amount_purchased
-                # CRUCIAL: Update the selling_price_per_unit in the Stock table if changed or applies
-                new_stock_item.selling_price_per_unit = selling_price_to_record_in_stock
-                db.session.add(new_stock_item)  # Mark for update
+                # CRUCIAL CHANGE: Update the buying_price in the Stock table for the new (or same) network
+                new_stock_item.buying_price = (
+                    price_to_record_for_purchase  # Corrected here
+                )
+                db.session.add(new_stock_item)
             else:
-                # This case should ideally not happen if you always have a stock item for each NetworkType
-                # but handle it if a network was added and then purchased for the first time via edit
                 new_stock_item = Stock(
                     network=network_enum,
                     balance=amount_purchased,
-                    selling_price_per_unit=selling_price_to_record_in_stock,
+                    buying_price=price_to_record_for_purchase,  # Corrected here
                     reduction_rate=Decimal("0.00"),
                 )
                 db.session.add(new_stock_item)
@@ -554,24 +558,32 @@ def edit_stock_purchase(purchase_id):
 def delete_stock_purchase(purchase_id):
     purchase = StockPurchase.query.get_or_404(purchase_id)
 
-    if (
-        request.method == "POST"
-    ):  # Ideally, deletion should be POST to prevent accidental deletion
+    if request.method == "POST":
         try:
             # Revert the stock balance
             stock_item = Stock.query.filter_by(network=purchase.network).first()
             if stock_item:
                 stock_item.balance -= purchase.amount_purchased
-                db.session.add(stock_item)  # Mark for update
+
+                # IMPORTANT: If this was the only purchase of this type,
+                # or if you want buying_price to reflect what's left,
+                # you might need more complex logic. For simplicity,
+                # we're just adjusting the balance. The buying_price
+                # on Stock will remain what it was updated to by the last *new* purchase.
+                # If the deleted purchase was the most recent that set the buying_price,
+                # the buying_price might now be inaccurate until a new purchase occurs.
+                # A more robust system for buying_price would track average cost or
+                # rely solely on the last purchase, even if deleted.
+                # For now, we leave the buying_price as is on Stock, only affecting balance.
+                db.session.add(stock_item)
             else:
-                # This should ideally not happen unless data is inconsistent
                 flash(
                     "Erreur: L'article de stock correspondant est introuvable.",
                     "danger",
                 )
                 return redirect(url_for("home_blueprint.Achat_stock"))
 
-            db.session.delete(purchase)  # Delete the purchase record itself
+            db.session.delete(purchase)
             db.session.commit()
             flash(f"Achat de stock #{purchase_id} supprimé avec succès!", "success")
             return redirect(url_for("home_blueprint.Achat_stock"))
@@ -584,7 +596,6 @@ def delete_stock_purchase(purchase_id):
             flash(f"Une erreur est survenue lors de la suppression: {e}", "danger")
             return redirect(url_for("home_blueprint.Achat_stock"))
 
-    # For GET request, you might want a confirmation page/modal
     flash("Confirmez la suppression de l'achat de stock.", "warning")
     return render_template(
         "home/confirm_delete_stock_purchase.html",
@@ -1296,4 +1307,175 @@ def encaisser_dette():
         segment="stock",
         sub_segment="Sorties_Cash",
         sub_page_title="Encaisser Dette",
+    )
+
+
+# Rapports route
+
+
+# Helper function to parse date from request, or use today's date
+def parse_date_param(date_str, default_date=None):
+    if date_str:
+        try:
+            return datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            pass  # Fallback to default
+    return default_date if default_date is not None else date.today()
+
+
+@blueprint.route("/rapports", methods=["GET"])
+@login_required
+@superadmin_required
+def rapports():
+    # Get start and end dates from request, default to today
+    today = date.today()
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+
+    # Convert to date objects (start_of_day and end_of_day for queries)
+    # Start date is inclusive (00:00:00), end date is exclusive (next day's 00:00:00)
+    selected_start_date = parse_date_param(start_date_str, default_date=today)
+    selected_end_date = parse_date_param(end_date_str, default_date=today)
+
+    # Ensure end_date is at least start_date
+    if selected_end_date < selected_start_date:
+        selected_end_date = selected_start_date
+        flash(
+            "La date de fin ne peut pas être antérieure à la date de début. La date de fin a été ajustée.",
+            "warning",
+        )
+
+    # For database queries, we need datetime objects representing start/end of the day
+    start_datetime = datetime(
+        selected_start_date.year,
+        selected_start_date.month,
+        selected_start_date.day,
+        0,
+        0,
+        0,
+    )
+    # End datetime is the start of the *next* day to make the range inclusive for the chosen day
+    end_datetime = datetime(
+        selected_end_date.year,
+        selected_end_date.month,
+        selected_end_date.day,
+        23,
+        59,
+        59,
+        999999,
+    )
+
+    # Initialize report data structure
+    report_data = {
+        network.name: {
+            "initial_stock": Decimal("0.00"),
+            "purchased_stock": Decimal("0.00"),
+            "sold_stock": Decimal("0.00"),
+            "final_stock": Decimal("0.00"),
+            "virtual_value": Decimal("0.00"),
+            "debt_amount": Decimal("0.00"),
+        }
+        for network in NetworkType
+    }
+
+    # Also initialize totals
+    grand_totals = {
+        "initial_stock": Decimal("0.00"),
+        "purchased_stock": Decimal("0.00"),
+        "sold_stock": Decimal("0.00"),
+        "final_stock": Decimal("0.00"),
+        "virtual_value": Decimal("0.00"),
+        "debt_amount": Decimal("0.00"),
+    }
+
+    # Fetch all networks (Recaputilatifs)
+    networks = NetworkType.__members__.values()
+
+    for network in networks:
+        network_name = network.name
+
+        # Stock Purchased (Stock Acheter) for the period
+        purchases_in_period = db.session.query(
+            db.func.sum(StockPurchase.amount_purchased)
+        ).filter(StockPurchase.network == network).filter(
+            StockPurchase.created_at >= start_datetime
+        ).filter(
+            StockPurchase.created_at <= end_datetime
+        ).scalar() or Decimal(
+            "0.00"
+        )
+        report_data[network_name]["purchased_stock"] = purchases_in_period
+        grand_totals["purchased_stock"] += purchases_in_period
+
+        # Stock Sold (Stock Vendus) for the period
+        sales_in_period = db.session.query(db.func.sum(SaleItem.quantity)).filter(
+            SaleItem.network == network
+        ).filter(SaleItem.created_at >= start_datetime).filter(
+            SaleItem.created_at <= end_datetime
+        ).scalar() or Decimal(
+            "0.00"
+        )
+        report_data[network_name]["sold_stock"] = sales_in_period
+        grand_totals["sold_stock"] += sales_in_period
+
+        # Current Stock Balance (Stock Final) - taken at the time of report generation
+        # This reflects the *current* real-time stock
+        current_stock = Stock.query.filter_by(network=network).first()
+        final_stock_balance = (
+            current_stock.balance if current_stock else Decimal("0.00")
+        )
+        report_data[network_name]["final_stock"] = final_stock_balance
+        grand_totals["final_stock"] += final_stock_balance
+
+        # Virtuel (Virtual Value) - based on final stock and buying price
+        # This requires the buying_price on the Stock model.
+        # Assuming you have a `buying_price_per_unit` on your Stock model
+        buying_price = current_stock.buying_price if current_stock else Decimal("0.00")
+        virtual_value = final_stock_balance * buying_price
+        report_data[network_name]["virtual_value"] = virtual_value
+        grand_totals["virtual_value"] += virtual_value
+
+        # Stock Initial (Initial Stock) - Calculated for the period
+        # Initial = Final - Purchased + Sold
+        # This is a calculation *for the period*, not a historical snapshot from DB.
+        initial_stock = final_stock_balance - purchases_in_period + sales_in_period
+        report_data[network_name]["initial_stock"] = initial_stock
+        grand_totals["initial_stock"] += initial_stock
+
+        # Dettes (Debts) - Total debt from sales of this network made in the period
+        # This is a simplification. Sale.debt_amount is for the whole sale.
+        # To get debt per network accurately, your SaleItem would need a debt field, or you'd
+        # have to proportionally attribute debt from sales containing this network.
+        # For this report, let's sum total debt from all sales made in this period.
+        # This will be aggregated at the grand_totals level as it's hard per network.
+        # If the image implies debt *per network*, we need to clarify data model.
+        # For now, let's sum ALL outstanding debt from sales CREATED within the period.
+        # This means, for a sale, if it has debt, add it up.
+
+        # Fetch sales where this network's items were sold within the period
+        # This is a complex query to directly link debt to a network via SaleItem
+        # Simplest approach for "Dettes" as per image is if it refers to
+        # Total debt from sales made during that period.
+        # Let's aggregate it separately at the end for "Total Dettes" for the period.
+
+    # Total Dettes (Grand Total) - Sum of *outstanding* debt from *all sales* made within the period
+    # It reflects sales created in the period that still have remaining debt.
+    total_debt_for_period = db.session.query(db.func.sum(Sale.debt_amount)).filter(
+        Sale.created_at >= start_datetime
+    ).filter(Sale.created_at <= end_datetime).filter(
+        Sale.debt_amount > Decimal("0.00")
+    ).scalar() or Decimal(
+        "0.00"
+    )
+    grand_totals["debt_amount"] = total_debt_for_period
+
+    return render_template(
+        "home/rapports.html",  # New template for the report
+        report_data=report_data,
+        networks=networks,  # Pass NetworkType enum members for iterating
+        grand_totals=grand_totals,
+        selected_start_date=selected_start_date.strftime("%Y-%m-%d"),
+        selected_end_date=selected_end_date.strftime("%Y-%m-%d"),
+        segment="rapports",
+        page_title="Rapport Quotidien de Stock & Ventes",
     )

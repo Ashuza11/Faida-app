@@ -145,8 +145,8 @@ class Stock(db.Model):
     )
     balance: so.Mapped[int] = so.mapped_column(sa.Integer, default=0, nullable=False)
 
-    selling_price_per_unit: so.Mapped[sa.Numeric(precision=10, scale=2)] = (
-        so.mapped_column(sa.Numeric(10, 2), default=1.00, nullable=False)
+    buying_price: so.Mapped[sa.Numeric(precision=10, scale=2)] = so.mapped_column(
+        sa.Numeric(10, 2), nullable=False, default=Decimal("0.00")
     )
 
     updated_at: so.Mapped[datetime] = so.mapped_column(
@@ -271,7 +271,6 @@ class SaleItem(db.Model):
     )  # Amount of airtime sold for this network
 
     # Price per unit for this specific sale item (after network reduction)
-    # This is effectively the final selling price per unit applied to this quantity
     price_per_unit_applied: so.Mapped[sa.Numeric(precision=10, scale=2)] = (
         so.mapped_column(sa.Numeric(10, 2), nullable=False)
     )

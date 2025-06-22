@@ -14,7 +14,7 @@ def initialize_stock_items(app):
                 initial_stock_item = Stock(
                     network=network_type,
                     balance=0,
-                    selling_price_per_unit=27.5,  # 28 or 27.5
+                    buying_price=27.1,  # 27.1 >
                 )
                 db.session.add(initial_stock_item)
                 app.logger.info(f"Initialized Stock for {network_type.value}")
