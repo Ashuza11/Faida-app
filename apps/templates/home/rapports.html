@@ -23,7 +23,6 @@
       </div>
     </div>
 
-    <!-- Page content -->
     <div class="container-fluid mt--6">
       <div class="row">
         <div class="col-xl-12">
@@ -38,13 +37,13 @@
                         {# "Du" Date Input #}
                         <div class="col-12 col-md-auto mb-3 mb-md-0"> 
                             <label for="start_date" class="mr-md-2 d-block d-md-inline-block">Du:</label> 
-                            <input type="date" id="start_date" name="start_date" class="form-control w-100 w-md-auto">
+                            <input type="date" id="start_date" name="start_date" class="form-control w-100 w-md-auto" value="{{ selected_start_date }}">
                         </div>
 
                         {# "Au" Date Input #}
                         <div class="col-12 col-md-auto mb-3 mb-md-0"> 
                             <label for="end_date" class="mr-md-2 d-block d-md-inline-block">Au:</label> 
-                            <input type="date" id="end_date" name="end_date" class="form-control w-100 w-md-auto">
+                            <input type="date" id="end_date" name="end_date" class="form-control w-100 w-md-auto" value="{{ selected_end_date }}">
                         </div>
 
                         {# Filter Button - no extra mb-X, relying on align-items-end #}
@@ -70,34 +69,59 @@
                     <th scope="col">Stock Vendus</th>
                     <th scope="col">Stock Final</th>
                     <th scope="col">Virtuel (FC)</th>
-                    <th scope="col">Dettes (FC)</th> {# This will be 0 for network rows unless debt calculation per network is added #}
+                    <th scope="col">Dettes (FC)</th> {# This column will show 0 for network rows #}
                   </tr>
                 </thead>
                 <tbody>
                   {% for network in networks %}
                     {% set data = report_data[network.name] %}
                     <tr>
-                      <td><strong>{{ network.value }}</strong></td>
-                      <td>{{ "{:,.2f}".format(data.initial_stock) }}</td>
-                      <td>{{ "{:,.2f}".format(data.purchased_stock) }}</td>
-                      <td>{{ "{:,.2f}".format(data.sold_stock) }}</td>
-                      <td>{{ "{:,.2f}".format(data.final_stock) }}</td>
-                      <td>{{ "{:,.2f}".format(data.virtual_value) }}</td>
-                      <td>{{ "{:,.2f}".format(data.debt_amount) }}</td> {# Will be 0 unless debt per network is implemented #}
+                      <td><strong>{{ network.value | upper }}</strong></td> 
+                      <td>{{ "{:,.2f}".format(data.initial_stock | default(0)) }}</td>
+                      <td>{{ "{:,.2f}".format(data.purchased_stock | default(0)) }}</td>
+                      <td>{{ "{:,.2f}".format(data.sold_stock | default(0)) }}</td> 
+                      <td>{{ "{:,.2f}".format(data.final_stock | default(0)) }}</td>
+                      <td>{{ "{:,.2f}".format(data.virtual_value | default(0)) }}</td>
+                      <td>{{ "{:,.2f}".format(data.debt_amount | default(0)) }}</td> 
                     </tr>
                   {% endfor %}
                   {# Total Row #}
                   <tr class="bg-primary text-white">
                     <td><strong>Total Général</strong></td>
-                    <td><strong>{{ "{:,.2f}".format(grand_totals.initial_stock) }}</strong></td>
-                    <td><strong>{{ "{:,.2f}".format(grand_totals.purchased_stock) }}</strong></td>
-                    <td><strong>{{ "{:,.2f}".format(grand_totals.sold_stock) }}</strong></td>
-                    <td><strong>{{ "{:,.2f}".format(grand_totals.final_stock) }}</strong></td>
-                    <td><strong>{{ "{:,.2f}".format(grand_totals.virtual_value) }}</strong></td>
-                    <td><strong>{{ "{:,.2f}".format(grand_totals.debt_amount) }}</strong></td> {# This will be the only non-zero debt amount #}
+                    <td><strong>{{ "{:,.2f}".format(grand_totals.initial_stock | default(0)) }}</strong></td>
+                    <td><strong>{{ "{:,.2f}".format(grand_totals.purchased_stock | default(0)) }}</strong></td>
+                    <td><strong>{{ "{:,.2f}".format(grand_totals.sold_stock | default(0)) }}</strong></td> {# Sum of actual sales #}
+                    <td><strong>{{ "{:,.2f}".format(grand_totals.final_stock | default(0)) }}</strong></td>
+                    <td><strong>{{ "{:,.2f}".format(grand_totals.virtual_value | default(0)) }}</strong></td>
+                    <td><strong>{{ "{:,.2f}".format(grand_totals.total_debts | default(0)) }}</strong></td> {# This is the actual total debt #}
                   </tr>
                 </tbody>
               </table>
+            </div>
+
+            <div class="card-footer">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h4>Autres indicateurs</h4>
+                        <ul class="list-group list-group-flush">
+
+                            <li class="list-group-item">
+                                **Total Ventes Réelles (Transactions)**: {{ "{:,.2f}".format(grand_totals.total_sales_from_transactions) }} FC
+                                <p class="text-muted small mb-0">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    Quantité totale des ventes enregistrées via les transactions.
+                                </p>
+                            </li>
+                            <li class="list-group-item">
+                                **Total Stock Vendus (Calculé du Rapport)**: {{ "{:,.2f}".format(grand_totals.initial_stock + grand_totals.purchased_stock - grand_totals.final_stock) }} FC
+                                <p class="text-muted small mb-0">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    Calculé comme (Stock Initial + Stock Acheté - Stock Final)
+                                </p>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
             </div>
           </div>
         </div>
@@ -107,3 +131,54 @@
     </div>
 
 {% endblock content %}
+
+{% block javascripts %}
+  {{ super() }}
+  {# Add a specific script block for toasts #}
+  {% if imbalance_message %}
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Function to show toast (assuming Bootstrap 4 or similar)
+        function showToast(message) {
+            // Check if toast container exists, create if not
+            let toastContainer = document.getElementById('toast-container');
+            if (!toastContainer) {
+                toastContainer = document.createElement('div');
+                toastContainer.id = 'toast-container';
+                toastContainer.style.position = 'fixed';
+                toastContainer.style.top = '20px';
+                toastContainer.style.right = '20px';
+                toastContainer.style.zIndex = '1050'; // Bootstrap modal z-index + 1
+                document.body.appendChild(toastContainer);
+            }
+
+            const toastId = 'toast-' + new Date().getTime();
+            const toastHtml = `
+                <div class="toast" role="alert" aria-live="assertive" aria-atomic="true" id="${toastId}" data-delay="10000">
+                    <div class="toast-header bg-warning text-white">
+                        <strong class="mr-auto">Alerte Déséquilibre</strong>
+                        <button type="button" class="ml-2 mb-1 close text-white" data-dismiss="toast" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="toast-body">
+                        ${message}
+                    </div>
+                </div>
+            `;
+            toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+
+            // Initialize and show the toast
+            $(`#${toastId}`).toast('show');
+
+            // Optional: remove toast from DOM after it hides
+            $(`#${toastId}`).on('hidden.bs.toast', function () {
+                $(this).remove();
+            });
+        }
+
+        showToast("{{ imbalance_message | e }}"); // Use |e for HTML escaping
+    });
+  </script>
+  {% endif %}
+{% endblock javascripts %}

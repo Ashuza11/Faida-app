@@ -145,8 +145,11 @@ class Stock(db.Model):
     )
     balance: so.Mapped[int] = so.mapped_column(sa.Integer, default=0, nullable=False)
 
-    buying_price: so.Mapped[sa.Numeric(precision=10, scale=2)] = so.mapped_column(
-        sa.Numeric(10, 2), nullable=False, default=Decimal("0.00")
+    buying_price_per_unit: so.Mapped[sa.Numeric(precision=10, scale=2)] = (
+        so.mapped_column(sa.Numeric(10, 2), nullable=False, default=Decimal("0.00"))
+    )
+    selling_price_per_unit: so.Mapped[sa.Numeric(precision=10, scale=2)] = (
+        so.mapped_column(sa.Numeric(10, 2), nullable=False, default=Decimal("0.00"))
     )
 
     updated_at: so.Mapped[datetime] = so.mapped_column(
@@ -170,31 +173,34 @@ class StockPurchase(db.Model):
     stock_item_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("stock.id"), nullable=False
     )
-    stock_item: so.Mapped[Stock] = so.relationship(back_populates="purchases")
+    stock_item: so.Mapped["Stock"] = so.relationship(back_populates="purchases")
 
     network: so.Mapped[NetworkType] = so.mapped_column(
         sa.Enum(NetworkType), nullable=False
     )
+
+    # NEW/RENAMED: buying_price_at_purchase (was 'cost' or implied)
+    buying_price_at_purchase: so.Mapped[sa.Numeric(precision=10, scale=2)] = (
+        so.mapped_column(sa.Numeric(10, 2), nullable=False, default=Decimal("0.00"))
+    )
+    # This remains: selling_price_at_purchase (price determined for sale at time of purchase)
     selling_price_at_purchase: so.Mapped[sa.Numeric(precision=10, scale=2)] = (
         so.mapped_column(sa.Numeric(10, 2), nullable=False)
     )
-    amount_purchased: so.Mapped[int] = so.mapped_column(sa.Integer, nullable=False)
 
-    cost: so.Mapped[Optional[Decimal]] = so.mapped_column(
-        sa.Numeric(12, 2), nullable=True
-    )
+    amount_purchased: so.Mapped[int] = so.mapped_column(sa.Integer, nullable=False)
 
     purchased_by_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False
     )
-    purchased_by: so.Mapped[User] = so.relationship(
+    purchased_by: so.Mapped["User"] = so.relationship(
         back_populates="stock_purchases_made"
     )
 
     created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
 
     def __repr__(self) -> str:
-        return f"<StockPurchase {self.network.value} - {self.amount_purchased}FC by User {self.purchased_by_id}>"
+        return f"<StockPurchase {self.network.value} - {self.amount_purchased} units bought at {self.buying_price_at_purchase} FC, intended sell at {self.selling_price_at_purchase} FC>"
 
 
 # New Sale Model
@@ -306,7 +312,7 @@ class CashOutflow(db.Model):
     description: so.Mapped[str] = so.mapped_column(sa.String(255), nullable=True)
 
 
-# New Model for Cash Inflows (Entrees - beyond initial sale collection in Sale model)
+# Cash Inflows (Entrees - beyond initial sale collection in Sale model)
 class CashInflow(db.Model):
     __tablename__ = "cash_inflows"
 
@@ -332,3 +338,67 @@ class CashInflow(db.Model):
     sale_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey("sales.id"), nullable=True)
     # ADDED: Relationship back to Sale
     sale: so.Mapped["Sale"] = so.relationship(back_populates="cash_inflows")
+
+
+class DailyStockReport(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    report_date = db.Column(db.Date, nullable=False)
+    network = db.Column(
+        db.Enum(NetworkType), nullable=False
+    )  # Store enum values as strings
+
+    initial_stock_balance = db.Column(
+        db.Numeric(precision=10, scale=2), default=Decimal("0.00"), nullable=False
+    )
+    purchased_stock_amount = db.Column(
+        db.Numeric(precision=10, scale=2), default=Decimal("0.00"), nullable=False
+    )
+    sold_stock_amount = db.Column(
+        db.Numeric(precision=10, scale=2), default=Decimal("0.00"), nullable=False
+    )
+    final_stock_balance = db.Column(
+        db.Numeric(precision=10, scale=2), default=Decimal("0.00"), nullable=False
+    )
+    virtual_value = db.Column(
+        db.Numeric(precision=10, scale=2), default=Decimal("0.00"), nullable=False
+    )
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint("report_date", "network", name="_report_date_network_uc"),
+    )
+
+    def __repr__(self):
+        return f"<DailyStockReport {self.report_date} - {self.network.name}>"
+
+
+# Overall daily totals
+class DailyOverallReport(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    report_date = db.Column(db.Date, unique=True, nullable=False)
+    total_initial_stock = db.Column(
+        db.Numeric(10, 2), default=Decimal("0.00"), nullable=False
+    )
+    total_purchased_stock = db.Column(
+        db.Numeric(10, 2), default=Decimal("0.00"), nullable=False
+    )
+    total_sold_stock = db.Column(
+        db.Numeric(10, 2), default=Decimal("0.00"), nullable=False
+    )
+    total_final_stock = db.Column(
+        db.Numeric(10, 2), default=Decimal("0.00"), nullable=False
+    )
+    total_virtual_value = db.Column(
+        db.Numeric(10, 2), default=Decimal("0.00"), nullable=False
+    )
+    total_debts = db.Column(db.Numeric(10, 2), default=Decimal("0.00"), nullable=False)
+    total_capital_circulant = db.Column(
+        db.Numeric(10, 2), default=Decimal("0.00"), nullable=False
+    )
+    # ... and so on for other grand totals
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, onupdate=datetime.utcnow)

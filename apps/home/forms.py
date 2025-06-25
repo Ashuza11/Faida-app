@@ -83,10 +83,7 @@ class UserEditForm(FlaskForm):
     role = SelectField(
         "Role",
         id="edit_role",
-        choices=[
-            (role.value, role.name.capitalize())
-            for role in RoleType  # Allow all roles for editing if needed
-        ],
+        choices=[(role.value, role.name.capitalize()) for role in RoleType],
         validators=[DataRequired()],
     )
     is_active = BooleanField(
@@ -162,12 +159,21 @@ class ClientEditForm(FlaskForm):
     submit = SubmitField("Mettre à jour")
 
 
-# Custom validator to ensure custom_selling_price is provided if 'custom' is selected
+# Custom validator for conditional price fields
 def validate_custom_price_if_selected(form, field):
-    if form.selling_price_choice.data == "custom" and not field.data:
-        raise ValidationError(
-            'Veuillez entrer un prix de vente personnalisé lorsque "Entrer un prix personnalisé" est sélectionné.'
-        )
+
+    # Check for custom buying price
+    if field.name == "custom_buying_price":
+        if form.buying_price_choice.data == "custom" and not field.data:
+            raise ValidationError(
+                'Veuillez entrer un prix d\'achat personnalisé lorsque "Entrer un prix personnalisé" est sélectionné.'
+            )
+    # Check for custom selling price
+    elif field.name == "custom_intended_selling_price":
+        if form.intended_selling_price_choice.data == "custom" and not field.data:
+            raise ValidationError(
+                'Veuillez entrer un prix de vente personnalisé lorsque "Entrer un prix personnalisé" est sélectionné.'
+            )
 
 
 class StockPurchaseForm(FlaskForm):
@@ -177,27 +183,57 @@ class StockPurchaseForm(FlaskForm):
 
     network = SelectField(
         "Réseaux",
-        choices=[(tag.value, tag.value.capitalize()) for tag in NetworkType],
+        choices=[(tag.name, tag.value) for tag in NetworkType],
         validators=[DataRequired()],
         render_kw={"class": "form-control"},
     )
 
     amount_purchased = IntegerField(
-        "Montant acheté (Unités)",
+        "Quantité achetée (Unités)",
         validators=[
             DataRequired(),
-            NumberRange(min=1, message="Le montant doit être positif"),
+            NumberRange(min=1, message="La quantité doit être positive"),
         ],
         render_kw={"placeholder": "e.g., 50000", "class": "form-control"},
     )
 
-    # Select field for selling price choices
-    selling_price_choice = SelectField(
-        "Prix de vente par unité",
+    buying_price_choice = SelectField(
+        "Prix d'achat par unité",
         choices=[
-            ("", "Sélectionner un prix ou entrer un personnalisé"),
-            ("27.5", "27.5 FC (27500 FC pour 1000 unités)"),
-            ("28.0", "28.0 FC (28000 FC pour 1000 unités)"),
+            ("", "Sélectionner un prix d'achat ou entrer un personnalisé"),
+            ("26.79", "26.79 FC"),
+            ("27.075", "27.075 FC"),
+            ("custom", "Entrer un prix personnalisé"),
+        ],
+        validators=[
+            DataRequired(
+                message="Veuillez sélectionner un prix d'achat ou en entrer un personnalisé."
+            )
+        ],
+        default="",
+    )
+
+    # Field for custom BUYING price, validated conditionally
+    custom_buying_price = DecimalField(
+        "Prix d'achat personnalisé (FC)",
+        validators=[
+            Optional(),
+            NumberRange(min=0.01),
+            validate_custom_price_if_selected,
+        ],
+        render_kw={
+            "placeholder": "Entrer le prix d'achat personnalisé",
+            "step": "0.01",
+        },
+    )
+
+    # INTENDED SELLING price choices
+    intended_selling_price_choice = SelectField(
+        "Prix de vente par unité (Prévu)",
+        choices=[
+            ("", "Sélectionner un prix de vente ou entrer un personnalisé"),
+            ("27.5", "27.5 FC"),
+            ("28.0", "28.0 FC"),
             ("custom", "Entrer un prix personnalisé"),
         ],
         validators=[
@@ -208,21 +244,31 @@ class StockPurchaseForm(FlaskForm):
         default="",
     )
 
-    # Field for custom selling price, validated conditionally
-    custom_selling_price = DecimalField(
+    # INTENDED SELLING price
+    custom_intended_selling_price = DecimalField(
         "Prix de vente personnalisé (FC)",
         validators=[
             Optional(),
             NumberRange(min=0.01),
             validate_custom_price_if_selected,
         ],
-        render_kw={"placeholder": "Entrer le prix personnalisé", "step": "0.01"},
+        render_kw={
+            "placeholder": "Entrer le prix de vente personnalisé",
+            "step": "0.01",
+        },
     )
 
     submit = SubmitField(
         "Enregistrer l'achat",
         render_kw={"class": "btn btn-primary mt-3"},
     )
+
+    # Override validate method to ensure consistency for custom fields
+    def validate(self, extra_validators=None):
+        if not super().validate(extra_validators=extra_validators):
+            return False
+
+        return True
 
 
 # Helper to get choices for network enum
@@ -256,7 +302,7 @@ class SaleItemForm(FlaskForm):
                 min=Decimal("0.01"), message="Le prix unitaire doit être positif."
             ),
         ],
-        render_kw={"step": "0.01"},  # Ensure HTML5 step for decimals
+        render_kw={"step": "0.01"},
     )
 
 

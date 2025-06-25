@@ -43,7 +43,7 @@
                                     <th scope="col" class="sort">ID</th>
                                     <th scope="col" class="sort">Reseaux</th>
                                     <th scope="col" class="sort">Nombre</th>
-                                    <th scope="col" class="sort">Prix Vente / Unité</th> 
+                                    <th scope="col" class="sort">Prix d'achat</th> 
                                     <th scope="col" class="sort">Acheter par</th>
                                     <th scope="col" class="sort">Date</th>
                                     <th scope="col" class="text-right">Actions</th>
@@ -55,8 +55,7 @@
                                     <td>{{ purchase.id }}</td>
                                     <td>{{ purchase.network.value|capitalize }}</td>
                                     <td>{{ purchase.amount_purchased }} unités</td>
-                                    {# Display selling_price_at_purchase #}
-                                    <td>{{ "%.2f FC"|format(purchase.selling_price_at_purchase) }}</td>
+                                    <td>{{ "%.2f FC"|format(purchase.buying_price_at_purchase) }}</td>
                                     <td>{{ purchase.purchased_by.username }}</td>
                                     <td>{{ purchase.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
                                     <td class="text-right">
@@ -127,33 +126,61 @@
                             {% endfor %}
                         </div>
 
-                        {# New field for selling price choice #}
-                        <div class="form-group{% if form.selling_price_choice.errors %} has-danger{% endif %}">
-                            {{ form.selling_price_choice.label(class="form-control-label") }}
-                            <div class="input-group input-group-merge input-group-alternative"> 
-                                <div class="input-group-prepend"> 
-                                    <span class="input-group-text"><i class="fas fa-dollar-sign"></i></span> 
-                                </div> 
-                                {{ form.selling_price_choice(class="form-control" + (" is-invalid" if form.selling_price_choice.errors else ""), id="sellingPriceChoice") }}
-                            </div> 
-                            {% for error in form.selling_price_choice.errors %}
-                                <div class="invalid-feedback d-block">{{ error }}</div>
-                            {% endfor %}
-                        </div>
+                        {# NEW: Buying price choice #}
+                            <div class="form-group{% if form.buying_price_choice.errors %} has-danger{% endif %}">
+                                {{ form.buying_price_choice.label(class="form-control-label") }}
+                                <div class="input-group input-group-merge input-group-alternative">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text"><i class="fas fa-dollar-sign"></i></span>
+                                    </div>
+                                    {{ form.buying_price_choice(class="form-control" + (" is-invalid" if form.buying_price_choice.errors else ""), id="buyingPriceChoice") }}
+                                </div>
+                                {% for error in form.buying_price_choice.errors %}
+                                    <div class="invalid-feedback d-block">{{ error }}</div>
+                                {% endfor %}
+                            </div>
 
-                        {# New field for custom selling price (initially hidden) #}
-                        <div class="form-group{% if form.custom_selling_price.errors %} has-danger{% endif %}" id="customSellingPriceField" style="display: none;">
-                            {{ form.custom_selling_price.label(class="form-control-label") }}
-                            <div class="input-group input-group-merge input-group-alternative"> 
-                                <div class="input-group-prepend"> 
-                                    <span class="input-group-text"><i class="fas fa-dollar-sign"></i></span> 
-                                </div> 
-                                {{ form.custom_selling_price(class="form-control" + (" is-invalid" if form.custom_selling_price.errors else ""), id="customSellingPrice", placeholder=form.custom_selling_price.label.text) }}
-                            </div> 
-                            {% for error in form.custom_selling_price.errors %}
-                                <div class="invalid-feedback d-block">{{ error }}</div>
-                            {% endfor %}
-                        </div>
+                            {# NEW: Custom buying price (initially hidden) #}
+                            <div class="form-group{% if form.custom_buying_price.errors %} has-danger{% endif %}" id="customBuyingPriceField" style="display: none;">
+                                {{ form.custom_buying_price.label(class="form-control-label") }}
+                                <div class="input-group input-group-merge input-group-alternative">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text"><i class="fas fa-dollar-sign"></i></span>
+                                    </div>
+                                    {{ form.custom_buying_price(class="form-control" + (" is-invalid" if form.custom_buying_price.errors else ""), id="customBuyingPrice", placeholder=form.custom_buying_price.label.text) }}
+                                </div>
+                                {% for error in form.custom_buying_price.errors %}
+                                    <div class="invalid-feedback d-block">{{ error }}</div>
+                                {% endfor %}
+                            </div>
+
+                            {# RENAMED: Intended selling price choice #}
+                            <div class="form-group{% if form.intended_selling_price_choice.errors %} has-danger{% endif %}">
+                                {{ form.intended_selling_price_choice.label(class="form-control-label") }}
+                                <div class="input-group input-group-merge input-group-alternative">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text"><i class="fas fa-tag"></i></span> {# Using tag icon for selling price #}
+                                    </div>
+                                    {{ form.intended_selling_price_choice(class="form-control" + (" is-invalid" if form.intended_selling_price_choice.errors else ""), id="intendedSellingPriceChoice") }}
+                                </div>
+                                {% for error in form.intended_selling_price_choice.errors %}
+                                    <div class="invalid-feedback d-block">{{ error }}</div>
+                                {% endfor %}
+                            </div>
+
+                            {# RENAMED: Custom intended selling price (initially hidden) #}
+                            <div class="form-group{% if form.custom_intended_selling_price.errors %} has-danger{% endif %}" id="customIntendedSellingPriceField" style="display: none;">
+                                {{ form.custom_intended_selling_price.label(class="form-control-label") }}
+                                <div class="input-group input-group-merge input-group-alternative">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text"><i class="fas fa-tag"></i></span>
+                                    </div>
+                                    {{ form.custom_intended_selling_price(class="form-control" + (" is-invalid" if form.custom_intended_selling_price.errors else ""), id="customIntendedSellingPrice", placeholder=form.custom_intended_selling_price.label.text) }}
+                                </div>
+                                {% for error in form.custom_intended_selling_price.errors %}
+                                    <div class="invalid-feedback d-block">{{ error }}</div>
+                                {% endfor %}
+                            </div>
 
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" data-dismiss="modal">Annuler</button>
@@ -169,36 +196,25 @@
 
 {% block javascripts %}
     {{ super() }}
-    <script>
-        $(document).ready(function() {
-            // Show the add stock purchase modal if there are form errors on initial load
-            {% if form.errors or form.selling_price_choice.errors or form.custom_selling_price.errors %}
-                $('#addStockPurchaseModal').modal('show');
-            {% endif %}
+  <script>
+    $(document).ready(function() {
+      function toggleCustomPriceFields() {
+        if ($('#buyingPriceChoice').val() === 'custom') {
+          $('#customBuyingPriceField').show();
+        } else {
+          $('#customBuyingPriceField').hide();
+        }
 
-            // JavaScript to handle showing/hiding custom price field
-            var $sellingPriceChoice = $('#sellingPriceChoice');
-            var $customSellingPriceField = $('#customSellingPriceField');
-            var $customSellingPriceInput = $('#customSellingPrice');
+        if ($('#intendedSellingPriceChoice').val() === 'custom') {
+          $('#customIntendedSellingPriceField').show();
+        } else {
+          $('#customIntendedSellingPriceField').hide();
+        }
+      }
 
-            function toggleCustomPriceField() {
-                if ($sellingPriceChoice.val() === 'custom') {
-                    $customSellingPriceField.show();
-                    // We rely on Flask-WTF validators, so 'required' is not strictly needed for frontend,
-                    // but can be helpful for immediate user feedback.
-                    // $customSellingPriceInput.prop('required', true);
-                } else {
-                    $customSellingPriceField.hide();
-                    $customSellingPriceInput.val(''); // Clear value when hidden
-                    // $customSellingPriceInput.prop('required', false);
-                }
-            }
-
-            // Initial call to set visibility based on default value or server-side error
-            toggleCustomPriceField();
-
-            // Bind change event to the select field
-            $sellingPriceChoice.on('change', toggleCustomPriceField);
-        });
-    </script>
+      toggleCustomPriceFields(); // Initial state
+      $('#buyingPriceChoice').change(toggleCustomPriceFields);
+      $('#intendedSellingPriceChoice').change(toggleCustomPriceFields);
+    });
+  </script>
 {% endblock javascripts %}
