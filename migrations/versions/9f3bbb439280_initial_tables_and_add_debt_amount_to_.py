@@ -1,8 +1,8 @@
-"""Initial migration with all correct constraints
+"""Initial tables and add debt_amount to DailyStockReport
 
-Revision ID: f7a87ad322c0
+Revision ID: 9f3bbb439280
 Revises: 
-Create Date: 2025-06-25 12:28:59.371192
+Create Date: 2025-06-27 13:17:05.177597
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'f7a87ad322c0'
+revision = '9f3bbb439280'
 down_revision = None
 branch_labels = None
 depends_on = None

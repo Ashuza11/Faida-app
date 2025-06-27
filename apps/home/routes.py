@@ -6,8 +6,9 @@ from apps.decorators import superadmin_required, vendeur_required
 from apps.home.utils import custom_round_up
 from apps import db
 from decimal import Decimal, InvalidOperation
-from datetime import datetime, date
-from sqlalchemy import func
+from datetime import datetime, date, timedelta
+from sqlalchemy import func, cast
+from sqlalchemy.types import Date
 from apps.authentication.models import (
     User,
     RoleType,
@@ -161,7 +162,7 @@ def user_edit(user_id):
         user_edit_form.username.data = user.username
         user_edit_form.email.data = user.email
         user_edit_form.role.data = user.role.value
-        user_edit_form.is_active.data = user.is_active
+        user_edit_form.is_active.data = user.is_activeH
 
     users = User.query.all()
     return render_template(
@@ -504,8 +505,22 @@ def edit_stock_purchase(purchase_id):
             old_amount_purchased = purchase.amount_purchased
             old_network = purchase.network
 
-            network_enum_value = form.network.data
-            network_enum = NetworkType(network_enum_value)
+            network_type_string_from_form = form.network.data
+            try:
+                network_enum = NetworkType(network_type_string_from_form.lower())
+            except ValueError:
+                flash(
+                    f"Le type de réseau '{network_type_string_from_form}' n'est pas valide.",
+                    "danger",
+                )
+                return render_template(
+                    "home/edit_stock_purchase.html",
+                    form=form,
+                    purchase=purchase,
+                    page_title="Editer Achat de Stock",
+                    segment="stock",
+                    sub_segment="Achat_stock",
+                )
             amount_purchased = form.amount_purchased.data
 
             # Determine BUYING price from the form
@@ -1318,57 +1333,62 @@ def parse_date_param(date_str, default_date=None):
 @login_required
 @superadmin_required
 def rapports():
+    page_title = "Rapport Stock & Ventes"
     today = date.today()
+
+    # Determine default date range
+    default_start_date = today - timedelta(days=1)
+    default_end_date = today - timedelta(days=1)
+
+    # Check if there's any report data for the default yesterday
+    test_report_exists = DailyStockReport.query.filter_by(
+        report_date=default_end_date
+    ).first()
+
+    if not test_report_exists:
+        # If no report for yesterday, default to today's date for range
+        current_app.logger.info(
+            "No historical stock reports found for yesterday. Defaulting report range to today (live data)."
+        )
+        default_start_date = today
+        default_end_date = today
+
     start_date_str = request.args.get("start_date")
     end_date_str = request.args.get("end_date")
 
-    selected_start_date = parse_date_param(start_date_str, default_date=today)
-    selected_end_date = parse_date_param(end_date_str, default_date=today)
+    # Parse dates from request or use defaults
+    selected_start_date = parse_date_param(
+        start_date_str, default_date=default_start_date
+    )
+    selected_end_date = parse_date_param(end_date_str, default_date=default_end_date)
 
     if selected_end_date < selected_start_date:
-        selected_end_date = selected_start_date
         flash(
             "La date de fin ne peut pas être antérieure à la date de début. La date de fin a été ajustée.",
             "warning",
         )
+        selected_end_date = selected_start_date
 
-    # Fetch all networks for iterating and initializing report_data
-    networks = list(
-        NetworkType.__members__.values()
-    )  # Convert to list for consistent iteration
-
-    # Initialize report data structure (per network for display)
-    report_data = {}  # Start with an empty dict, will populate robustly below
-
-    # --- Fetch Grand Totals from DailyOverallReport ---
-
-    # Get the overall report for the start date of the period
-    overall_report_start_date_obj = DailyOverallReport.query.filter_by(
-        report_date=selected_start_date
-    ).first()
-
-    # Get the overall report for the end date of the period (for final values like current stock and debt)
-    overall_report_end_date_obj = DailyOverallReport.query.filter_by(
-        report_date=selected_end_date
-    ).first()
-
-    # Aggregate sums for purchased_stock and sold_stock over the selected range
-    # Summing 'total_debts' over a range usually doesn't make sense for 'outstanding debt'
-    # as debt changes. We'll use the 'total_debts' from the `overall_report_end_date_obj`.
-    aggregated_overall_data = (
-        db.session.query(
-            func.sum(DailyOverallReport.total_purchased_stock).label("total_purchased"),
-            func.sum(DailyOverallReport.total_sold_stock).label("total_sold"),
-        )
-        .filter(
-            DailyOverallReport.report_date >= selected_start_date,
-            DailyOverallReport.report_date <= selected_end_date,
-        )
-        .first()
+    current_app.logger.debug(
+        f"Report requested for: Start={selected_start_date}, End={selected_end_date}"
     )
 
-    # --- Construct grand_totals with robust None checks ---
-    # Initialize all values to Decimal("0.00")
+    networks = list(NetworkType.__members__.values())
+
+    # Initialize report data structure (per network for display)
+    report_data = {
+        network.name: {
+            "initial_stock": Decimal("0.00"),
+            "purchased_stock": Decimal("0.00"),
+            "sold_stock": Decimal("0.00"),
+            "final_stock": Decimal("0.00"),
+            "virtual_value": Decimal("0.00"),
+            "debt_amount": Decimal("0.00"),
+            "sales_from_transactions": Decimal("0.00"),
+        }
+        for network in networks
+    }
+
     grand_totals = {
         "initial_stock": Decimal("0.00"),
         "purchased_stock": Decimal("0.00"),
@@ -1376,120 +1396,271 @@ def rapports():
         "final_stock": Decimal("0.00"),
         "virtual_value": Decimal("0.00"),
         "total_debts": Decimal("0.00"),
+        "total_capital_circulant": Decimal("0.00"),
         "total_sales_from_transactions": Decimal("0.00"),
     }
 
-    # Populate grand_totals from fetched objects, ensuring Decimal types
-    if overall_report_start_date_obj:
-        grand_totals["initial_stock"] = (
-            overall_report_start_date_obj.total_initial_stock or Decimal("0.00")
-        )
+    # --- Determine if the report range includes 'today' ---
+    is_today_included = selected_end_date == today
+    is_period_historical_only = (
+        selected_end_date < today
+    )  # Strictly historical, no today
 
-    if overall_report_end_date_obj:
-        grand_totals["final_stock"] = (
-            overall_report_end_date_obj.total_final_stock or Decimal("0.00")
-        )
-        grand_totals["virtual_value"] = (
-            overall_report_end_date_obj.total_virtual_value or Decimal("0.00")
-        )
-        grand_totals["total_debts"] = (
-            overall_report_end_date_obj.total_debts or Decimal("0.00")
-        )
-
-    if aggregated_overall_data:
-        # For summed values, func.sum() returns None if no rows match, so use 'or Decimal("0.00")'
-        grand_totals["purchased_stock"] = (
-            aggregated_overall_data.total_purchased or Decimal("0.00")
-        )
-        grand_totals["sold_stock"] = aggregated_overall_data.total_sold or Decimal(
-            "0.00"
-        )
-        grand_totals["total_sales_from_transactions"] = grand_totals[
-            "sold_stock"
-        ]  # This is the total quantity sold over the period
-
-    # --- Fetch Per-Network Data from DailyStockReport ---
+    # --- Fetch Data for Each Network ---
     for network in networks:
         network_name = network.name
 
-        # Initialize network-specific data defaults to Decimal("0.00")
-        # This acts as a fallback if any of the queries below return no data
-        current_network_data = {
-            "initial_stock": Decimal("0.00"),
-            "purchased_stock": Decimal("0.00"),
-            "sold_stock": Decimal("0.00"),
-            "final_stock": Decimal("0.00"),
-            "virtual_value": Decimal("0.00"),
-            "debt_amount": Decimal(
+        # 1. Get Initial Stock for the Period
+        if selected_start_date == today:
+            # If start date is today, initial stock comes from previous day's final stock or live stock
+            previous_day_for_initial = today - timedelta(days=1)
+            prev_day_report = DailyStockReport.query.filter_by(
+                network=network, report_date=previous_day_for_initial
+            ).first()
+            if prev_day_report:
+                report_data[network_name]["initial_stock"] = (
+                    prev_day_report.final_stock_balance or Decimal("0.00")
+                )
+            else:
+                # Fallback to live stock balance if no previous daily report (e.g., first day of app)
+                live_stock_item = Stock.query.filter_by(network=network).first()
+                report_data[network_name]["initial_stock"] = (
+                    live_stock_item.balance if live_stock_item else Decimal("0.00")
+                )
+            current_app.logger.debug(
+                f"Network {network_name} initial stock (today's start): {report_data[network_name]['initial_stock']}"
+            )
+        else:
+            # For historical periods, get initial stock from DailyStockReport for selected_start_date
+            network_initial_report = DailyStockReport.query.filter_by(
+                network=network, report_date=selected_start_date
+            ).first()
+            if network_initial_report:
+                report_data[network_name]["initial_stock"] = (
+                    network_initial_report.initial_stock_balance or Decimal("0.00")
+                )
+            # If no initial report for a historical start date, it means no data, initial is 0.00 (default)
+            current_app.logger.debug(
+                f"Network {network_name} initial stock (historical start): {report_data[network_name]['initial_stock']}"
+            )
+
+        # 2. Sum Purchased and Sold Stock for the Period
+        # This part requires careful aggregation based on the date range.
+
+        # Total purchased for the selected range
+        purchased_for_period = Decimal("0.00")
+        if selected_start_date == selected_end_date and selected_start_date == today:
+            # Only today, get live transactions
+            purchased_for_period = db.session.query(
+                func.sum(StockPurchase.amount_purchased)
+            ).filter(
+                StockPurchase.network == network,
+                cast(StockPurchase.created_at, Date) == today,
+            ).scalar() or Decimal(
                 "0.00"
-            ),  # DailyStockReport doesn't have debt_amount, keep it 0 or remove from this dict
-            "sales_from_transactions": Decimal("0.00"),
-        }
-
-        # Get initial stock for the period from the specific network's report for selected_start_date
-        network_initial_report = DailyStockReport.query.filter_by(
-            network=network, report_date=selected_start_date
-        ).first()
-        if network_initial_report:
-            current_network_data["initial_stock"] = (
-                network_initial_report.initial_stock_balance or Decimal("0.00")
             )
-
-        # Get final stock and virtual value from the specific network's report for selected_end_date
-        network_final_report = DailyStockReport.query.filter_by(
-            network=network, report_date=selected_end_date
-        ).first()
-        if network_final_report:
-            current_network_data["final_stock"] = (
-                network_final_report.final_stock_balance or Decimal("0.00")
+            current_app.logger.debug(
+                f"Live purchased for {network_name} ({today}): {purchased_for_period}"
             )
-            current_network_data["virtual_value"] = (
-                network_final_report.virtual_value or Decimal("0.00")
-            )
-
-        # Sum purchased and sold for the period for each network
-        network_period_data = (
-            db.session.query(
-                func.sum(DailyStockReport.purchased_stock_amount).label(
-                    "period_purchased"
-                ),
-                func.sum(DailyStockReport.sold_stock_amount).label("period_sold"),
-            )
-            .filter(
+        elif is_period_historical_only:
+            # Historical period, aggregate from DailyStockReport
+            purchased_for_period = db.session.query(
+                func.sum(DailyStockReport.purchased_stock_amount)
+            ).filter(
                 DailyStockReport.network == network,
                 DailyStockReport.report_date >= selected_start_date,
                 DailyStockReport.report_date <= selected_end_date,
+            ).scalar() or Decimal(
+                "0.00"
             )
-            .first()
-        )
+            current_app.logger.debug(
+                f"Historical purchased for {network_name} ({selected_start_date} to {selected_end_date}): {purchased_for_period}"
+            )
+        else:  # Period includes past dates AND today
+            # Sum historical DailyStockReport data up to yesterday
+            historical_purchased = db.session.query(
+                func.sum(DailyStockReport.purchased_stock_amount)
+            ).filter(
+                DailyStockReport.network == network,
+                DailyStockReport.report_date >= selected_start_date,
+                DailyStockReport.report_date < today,
+            ).scalar() or Decimal(
+                "0.00"
+            )
 
-        if network_period_data:
-            # func.sum() results are None if no rows, so use 'or Decimal("0.00")'
-            current_network_data["purchased_stock"] = (
-                network_period_data.period_purchased or Decimal("0.00")
+            # Add today's live transactions
+            live_purchased_today = db.session.query(
+                func.sum(StockPurchase.amount_purchased)
+            ).filter(
+                StockPurchase.network == network,
+                cast(StockPurchase.created_at, Date) == today,
+            ).scalar() or Decimal(
+                "0.00"
             )
-            current_network_data["sold_stock"] = (
-                network_period_data.period_sold or Decimal("0.00")
+            purchased_for_period = historical_purchased + live_purchased_today
+            current_app.logger.debug(
+                f"Mixed purchased for {network_name} ({selected_start_date} to {today}): {purchased_for_period}"
             )
-            current_network_data["sales_from_transactions"] = current_network_data[
-                "sold_stock"
-            ]
 
-        # Assign the robustly populated current_network_data to report_data
-        report_data[network_name] = current_network_data
+        # Total sold for the selected range
+        sold_for_period = Decimal("0.00")
+        if selected_start_date == selected_end_date and selected_start_date == today:
+            # Only today, get live transactions
+            sold_for_period = db.session.query(func.sum(SaleItem.quantity)).join(
+                Sale
+            ).filter(
+                SaleItem.network == network,
+                cast(Sale.created_at, Date) == today,  # Filter by Sale creation date
+            ).scalar() or Decimal(
+                "0.00"
+            )
+            current_app.logger.debug(
+                f"Live sold for {network_name} ({today}): {sold_for_period}"
+            )
+        elif is_period_historical_only:
+            # Historical period, aggregate from DailyStockReport
+            sold_for_period = db.session.query(
+                func.sum(DailyStockReport.sold_stock_amount)
+            ).filter(
+                DailyStockReport.network == network,
+                DailyStockReport.report_date >= selected_start_date,
+                DailyStockReport.report_date <= selected_end_date,
+            ).scalar() or Decimal(
+                "0.00"
+            )
+            current_app.logger.debug(
+                f"Historical sold for {network_name} ({selected_start_date} to {selected_end_date}): {sold_for_period}"
+            )
+        else:  # Period includes past dates AND today
+            # Sum historical DailyStockReport data up to yesterday
+            historical_sold = db.session.query(
+                func.sum(DailyStockReport.sold_stock_amount)
+            ).filter(
+                DailyStockReport.network == network,
+                DailyStockReport.report_date >= selected_start_date,
+                DailyStockReport.report_date < today,
+            ).scalar() or Decimal(
+                "0.00"
+            )
+
+            # Add today's live transactions
+            live_sold_today = db.session.query(func.sum(SaleItem.quantity)).join(
+                Sale
+            ).filter(
+                SaleItem.network == network, cast(Sale.created_at, Date) == today
+            ).scalar() or Decimal(
+                "0.00"
+            )
+            sold_for_period = historical_sold + live_sold_today
+            current_app.logger.debug(
+                f"Mixed sold for {network_name} ({selected_start_date} to {today}): {sold_for_period}"
+            )
+
+        report_data[network_name]["purchased_stock"] = purchased_for_period
+        report_data[network_name]["sold_stock"] = sold_for_period
+        report_data[network_name][
+            "sales_from_transactions"
+        ] = sold_for_period  # For consistency
+
+        # 3. Get Final Stock, Virtual Value, and Debts for the Period End
+        final_stock_for_network = Decimal("0.00")
+        virtual_value_for_network = Decimal("0.00")
+        debt_amount_for_network = Decimal("0.00")
+
+        if is_today_included:
+            # If end date is today, calculate final stock and virtual value from live data
+            final_stock_for_network = (
+                report_data[network_name]["initial_stock"]
+                + report_data[network_name][
+                    "purchased_stock"
+                ]  # This is cumulative for the period
+                - report_data[network_name][
+                    "sold_stock"
+                ]  # This is cumulative for the period
+            )
+
+            # Fetch current live selling price for virtual value
+            stock_item = Stock.query.filter_by(network=network).first()
+            current_selling_price_per_unit = (
+                stock_item.selling_price_per_unit if stock_item else Decimal("1.00")
+            )
+            virtual_value_for_network = (
+                final_stock_for_network * current_selling_price_per_unit
+            )
+
+            # Calculate current outstanding debts for the network (sum of debt_amount from unpaid sales up to today)
+            debt_amount_for_network = db.session.query(func.sum(Sale.debt_amount)).join(
+                SaleItem
+            ).filter(
+                SaleItem.network == network,
+                Sale.debt_amount > 0,
+                # Consider only sales up to and including today.
+                # If a sale was made previously and is still unpaid, it counts.
+                # This assumes Sale.created_at captures when debt was incurred.
+                cast(Sale.created_at, Date)
+                <= today,  # Sum all outstanding debts up to today
+            ).scalar() or Decimal(
+                "0.00"
+            )
+
+            current_app.logger.debug(
+                f"Network {network_name} final stock/virtual/debts (live today): {final_stock_for_network}, {virtual_value_for_network}, {debt_amount_for_network}"
+            )
+
+        else:  # Historical end date
+            # Get final stock, virtual value, and debt from DailyStockReport for selected_end_date
+            network_final_report = DailyStockReport.query.filter_by(
+                network=network, report_date=selected_end_date
+            ).first()
+            if network_final_report:
+                final_stock_for_network = (
+                    network_final_report.final_stock_balance or Decimal("0.00")
+                )
+                virtual_value_for_network = (
+                    network_final_report.virtual_value or Decimal("0.00")
+                )
+                debt_amount_for_network = network_final_report.debt_amount or Decimal(
+                    "0.00"
+                )
+            current_app.logger.debug(
+                f"Network {network_name} final stock/virtual/debts (historical): {final_stock_for_network}, {virtual_value_for_network}, {debt_amount_for_network}"
+            )
+
+        report_data[network_name]["final_stock"] = final_stock_for_network
+        report_data[network_name]["virtual_value"] = virtual_value_for_network
+        report_data[network_name]["debt_amount"] = debt_amount_for_network
+
+    # --- Calculate Grand Totals based on aggregated report_data ---
+    for network in networks:
+        network_name = network.name
+        data = report_data[network_name]
+
+        grand_totals["initial_stock"] += data["initial_stock"]
+        grand_totals["purchased_stock"] += data["purchased_stock"]
+        grand_totals["sold_stock"] += data["sold_stock"]
+        grand_totals["final_stock"] += data["final_stock"]
+        grand_totals["virtual_value"] += data["virtual_value"]
+        grand_totals["total_debts"] += data["debt_amount"]
+        grand_totals["total_sales_from_transactions"] += data["sales_from_transactions"]
+
+    # Calculate total_capital_circulant
+    grand_totals["total_capital_circulant"] = (
+        grand_totals["virtual_value"] - grand_totals["total_debts"]
+    )
+
+    current_app.logger.debug(f"Final Grand Totals before render: {grand_totals}")
 
     # --- Stock Vendus vs. Sales Total Reconciliation ---
-    # This calculation should now be safe as all grand_totals values are guaranteed Decimal.
     total_derived_sold_from_balance = (
         grand_totals["initial_stock"]
         + grand_totals["purchased_stock"]
         - grand_totals["final_stock"]
     )
+    current_app.logger.debug(
+        f"Total derived sold from balance: {total_derived_sold_from_balance}"
+    )
 
-    imbalance_message = None
     tolerance = Decimal("0.01")
-
-    # Ensure all values in comparison are Decimal
     if (
         abs(
             total_derived_sold_from_balance
@@ -1497,11 +1668,13 @@ def rapports():
         )
         > tolerance
     ):
-        imbalance_message = (
+        imbalance_message_text = (
             f"Déséquilibre détecté : Le 'Stock Vendus' calculé du rapport ({total_derived_sold_from_balance:,.2f} FC) "
             f"ne correspond pas au total des ventes enregistrées ({grand_totals['total_sales_from_transactions']:,.2f} FC). "
             f"Cela peut indiquer un achat non enregistré, une vente non enregistrée ou une erreur de saisie."
         )
+        current_app.logger.warning(f"Imbalance detected: {imbalance_message_text}")
+        flash(imbalance_message_text, "warning")
 
     return render_template(
         "home/rapports.html",
@@ -1511,6 +1684,5 @@ def rapports():
         selected_start_date=selected_start_date.strftime("%Y-%m-%d"),
         selected_end_date=selected_end_date.strftime("%Y-%m-%d"),
         segment="rapports",
-        page_title="Rapport Stock & Ventes",
-        imbalance_message=imbalance_message,
+        page_title=page_title,
     )

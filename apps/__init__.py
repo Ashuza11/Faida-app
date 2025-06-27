@@ -55,7 +55,20 @@ def create_app(config):
     configure_database(app)
 
     with app.app_context():
-        db.create_all()
+        if not db.engine.dialect.has_table(db.engine.connect(), "user"):
+            db.create_all()
+            app.logger.info("Database tables created.")
+
+            from apps.cli import seed_db_command
+
+            app.cli.add_command(seed_db_command)
+            app.logger.info(
+                "Seed DB command added to Flask CLI. Run 'flask seed-db' manually."
+            )
+        else:
+            app.logger.info(
+                "Database tables already exist, skipping initial creation and seeding."
+            )
 
         from apps.authentication.models import User, RoleType
         from apps.authentication.util import create_superadmin

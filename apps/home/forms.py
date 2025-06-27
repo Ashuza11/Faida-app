@@ -218,7 +218,7 @@ class StockPurchaseForm(FlaskForm):
         "Prix d'achat personnalisé (FC)",
         validators=[
             Optional(),
-            NumberRange(min=0.01),
+            NumberRange(min=1),
             validate_custom_price_if_selected,
         ],
         render_kw={

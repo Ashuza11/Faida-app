@@ -1,8 +1,9 @@
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, List
 from enum import Enum as PyEnum
 from flask_login import UserMixin
 from apps import db
+from hashlib import md5
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlalchemy as sa
 import sqlalchemy.orm as so
@@ -98,6 +99,10 @@ class User(db.Model, UserMixin):
 
     def __repr__(self) -> str:
         return f"<User {self.username} ({self.role.value})>"
+
+    def avatar(self, size):
+        digest = md5(self.email.lower().encode("utf-8")).hexdigest()
+        return f"https://www.gravatar.com/avatar/{digest}?d=identicon&s={size}"
 
 
 # Client model
@@ -340,65 +345,72 @@ class CashInflow(db.Model):
     sale: so.Mapped["Sale"] = so.relationship(back_populates="cash_inflows")
 
 
+# Daily Stock Report Model
 class DailyStockReport(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    report_date = db.Column(db.Date, nullable=False)
-    network = db.Column(
-        db.Enum(NetworkType), nullable=False
-    )  # Store enum values as strings
+    __tablename__ = "daily_stock_reports"
 
-    initial_stock_balance = db.Column(
-        db.Numeric(precision=10, scale=2), default=Decimal("0.00"), nullable=False
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+    report_date: so.Mapped[date] = so.mapped_column(sa.Date, nullable=False, index=True)
+    network: so.Mapped[NetworkType] = so.mapped_column(
+        sa.Enum(NetworkType), nullable=False
     )
-    purchased_stock_amount = db.Column(
-        db.Numeric(precision=10, scale=2), default=Decimal("0.00"), nullable=False
+    initial_stock_balance: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
-    sold_stock_amount = db.Column(
-        db.Numeric(precision=10, scale=2), default=Decimal("0.00"), nullable=False
+    purchased_stock_amount: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
-    final_stock_balance = db.Column(
-        db.Numeric(precision=10, scale=2), default=Decimal("0.00"), nullable=False
+    sold_stock_amount: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
-    virtual_value = db.Column(
-        db.Numeric(precision=10, scale=2), default=Decimal("0.00"), nullable=False
+    final_stock_balance: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
-
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(
-        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    virtual_value: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
+    debt_amount: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
 
     __table_args__ = (
-        db.UniqueConstraint("report_date", "network", name="_report_date_network_uc"),
+        sa.UniqueConstraint("report_date", "network", name="_report_date_network_uc"),
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<DailyStockReport {self.report_date} - {self.network.name}>"
 
 
-# Overall daily totals
+# Daily Overall Report Model
 class DailyOverallReport(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    report_date = db.Column(db.Date, unique=True, nullable=False)
-    total_initial_stock = db.Column(
-        db.Numeric(10, 2), default=Decimal("0.00"), nullable=False
+    __tablename__ = "daily_overall_reports"
+
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+    report_date: so.Mapped[date] = so.mapped_column(
+        sa.Date, unique=True, nullable=False, index=True
     )
-    total_purchased_stock = db.Column(
-        db.Numeric(10, 2), default=Decimal("0.00"), nullable=False
+
+    total_initial_stock: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
-    total_sold_stock = db.Column(
-        db.Numeric(10, 2), default=Decimal("0.00"), nullable=False
+    total_purchased_stock: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
-    total_final_stock = db.Column(
-        db.Numeric(10, 2), default=Decimal("0.00"), nullable=False
+    total_sold_stock: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
-    total_virtual_value = db.Column(
-        db.Numeric(10, 2), default=Decimal("0.00"), nullable=False
+    total_final_stock: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
-    total_debts = db.Column(db.Numeric(10, 2), default=Decimal("0.00"), nullable=False)
-    total_capital_circulant = db.Column(
-        db.Numeric(10, 2), default=Decimal("0.00"), nullable=False
+    total_virtual_value: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
-    # ... and so on for other grand totals
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, onupdate=datetime.utcnow)
+    total_debts: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
+    total_capital_circulant: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
+
+    def __repr__(self) -> str:
+        return f"<DailyOverallReport {self.report_date}>"

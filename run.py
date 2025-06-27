@@ -2,6 +2,7 @@ from flask_migrate import Migrate
 from sys import exit
 from decouple import config
 
+from apps.cli import seed_db_command
 from apps.config import config_dict
 from apps import create_app, db
 
@@ -27,6 +28,8 @@ if DEBUG:
     app.logger.info("DEBUG       = " + str(DEBUG))
     app.logger.info("Environment = " + get_config_mode)
     app.logger.info("DBMS        = " + app_config.SQLALCHEMY_DATABASE_URI)
+    app.cli.add_command(seed_db_command)
+
 
 if __name__ == "__main__":
     app.run()
