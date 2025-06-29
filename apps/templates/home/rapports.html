@@ -63,13 +63,13 @@
               <table class="table align-items-center table-flush">
                 <thead class="thead-light">
                   <tr>
-                    <th scope="col">Récapitulatif (Réseau)</th>
+                    <th scope="col">Réseau</th>
                     <th scope="col">Stock Initial</th>
                     <th scope="col">Stock Acheté</th>
                     <th scope="col">Stock Vendus</th>
                     <th scope="col">Stock Final</th>
-                    <th scope="col">Virtuel (FC)</th>
-                    <th scope="col">Dettes (FC)</th> {# This column will show 0 for network rows #}
+                    <th scope="col">Unités (FC)</th>
+                    <th scope="col">Dettes (FC)</th> 
                   </tr>
                 </thead>
                 <tbody>
@@ -98,40 +98,9 @@
                 </tbody>
               </table>
             </div>
-
-            <div class="card-footer">
-                <div class="row">
-                    <div class="col-md-6">
-                        <h4>Autres indicateurs</h4>
-                        <ul class="list-group list-group-flush">
-
-                            <li class="list-group-item">
-                                **Total Ventes Réelles (Transactions)**: {{ "{:,.2f}".format(grand_totals.total_sales_from_transactions) }} FC
-                                <p class="text-muted small mb-0">
-                                    <i class="fas fa-info-circle mr-1"></i>
-                                    Quantité totale des ventes enregistrées via les transactions.
-                                </p>
-                            </li>
-                            <li class="list-group-item">
-                                **Total Stock Vendus (Calculé du Rapport)**: {{ "{:,.2f}".format(grand_totals.initial_stock + grand_totals.purchased_stock - grand_totals.final_stock) }} FC
-                                <p class="text-muted small mb-0">
-                                    <i class="fas fa-info-circle mr-1"></i>
-                                    Calculé comme (Stock Initial + Stock Acheté - Stock Final)
-                                </p>
-                            </li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-          </div>
-        </div>
       </div>
 
       {% include "includes/footer.html" %}
     </div>
 
 {% endblock content %}
-
-{% block javascripts %}
-  {{ super() }}
-{% endblock javascripts %}
