@@ -2,6 +2,8 @@ from apps.home import blueprint
 from flask import render_template, request, flash, redirect, url_for, abort, current_app
 from flask_login import login_required, current_user
 import sqlalchemy as sa
+from sqlalchemy.sql import func, cast
+from sqlalchemy.types import Date
 from jinja2 import TemplateNotFound
 from apps.decorators import superadmin_required, vendeur_required
 from apps.home.utils import custom_round_up, parse_date_param, get_daily_report_data
@@ -42,7 +44,129 @@ from apps.home.forms import (
 @blueprint.route("/index")
 @login_required
 def index():
-    return render_template("home/index.html", segment="index")
+    today = date.today()
+
+    # --- 1. Total Stock for each network (Card stats) ---
+    # Query current stock balances for all networks
+    current_stocks = Stock.query.all()
+    total_stocks_data = {}
+    for stock in current_stocks:
+        total_stocks_data[stock.network.value] = stock.balance
+
+    # --- 2. Sales Over Time (Chart 1 - Sales Value) ---
+    # For weekly sales chart (example: last 7 days)
+    sales_data_week = {}
+    dates_in_week = [
+        (today - timedelta(days=i)) for i in range(6, -1, -1)
+    ]  # Last 7 days including today
+
+    for d in dates_in_week:
+        daily_sales = (
+            db.session.query(func.sum(Sale.total_amount_due))
+            .filter(cast(Sale.created_at, Date) == d)
+            .scalar()
+        )
+        sales_data_week[d.strftime("%a")] = (
+            float(daily_sales) if daily_sales else 0.00
+        )  # 'Mon', 'Tue', etc.
+
+    # For monthly sales (example: last 30 days or aggregated by day in month)
+    # This might require more sophisticated charting data, for simplicity, we'll use weekly for the initial chart.
+    # You can expand this logic for monthly aggregation later.
+
+    # --- 3. Sales by Network (Chart 2 - Total Orders/Performance) ---
+    sales_by_network = {}
+    for network in NetworkType:
+        network_sales = (
+            db.session.query(func.sum(SaleItem.subtotal))
+            .filter(
+                SaleItem.network == network,
+                cast(SaleItem.created_at, Date) == today,  # Sales for today by network
+            )
+            .scalar()
+        )
+        sales_by_network[network.value] = (
+            float(network_sales) if network_sales else 0.00
+        )
+
+    # --- 4. Key Performance Indicators (Card Stats) ---
+    # Total Sales (Today)
+    total_sales_today = (
+        db.session.query(func.sum(Sale.total_amount_due))
+        .filter(cast(Sale.created_at, Date) == today)
+        .scalar()
+    )
+    total_sales_today = float(total_sales_today) if total_sales_today else 0.00
+
+    # Total Debt (Currently outstanding)
+    total_debt = (
+        db.session.query(func.sum(Sale.debt_amount))
+        .filter(Sale.debt_amount > 0)
+        .scalar()
+    )
+    total_debt = float(total_debt) if total_debt else 0.00
+
+    # Total Cash Inflow (Today, from sales collection and other inflows)
+    total_cash_inflow_sales = (
+        db.session.query(func.sum(Sale.cash_paid))
+        .filter(cast(Sale.created_at, Date) == today)
+        .scalar()
+    )
+    total_cash_inflow_other = (
+        db.session.query(func.sum(CashInflow.amount))
+        .filter(
+            cast(CashInflow.created_at, Date) == today,
+            CashInflow.category == CashInflowCategory.OTHER,
+        )
+        .scalar()
+    )
+
+    total_cash_inflow_today = (
+        total_cash_inflow_sales if total_cash_inflow_sales else Decimal("0.00")
+    ) + (total_cash_inflow_other if total_cash_inflow_other else Decimal("0.00"))
+    total_cash_inflow_today = float(total_cash_inflow_today)
+
+    # Total Cash Outflow (Today)
+    total_cash_outflow_today = (
+        db.session.query(func.sum(CashOutflow.amount))
+        .filter(cast(CashOutflow.created_at, Date) == today)
+        .scalar()
+    )
+    total_cash_outflow_today = (
+        float(total_cash_outflow_today) if total_cash_outflow_today else 0.00
+    )
+
+    # --- 5. Recent Sales History (Table) ---
+    recent_sales = (
+        Sale.query.options(
+            db.joinedload(Sale.vendeur),
+            db.joinedload(Sale.client),
+            db.joinedload(Sale.sale_items),
+        )
+        .order_by(Sale.created_at.desc())
+        .limit(5)
+        .all()
+    )  # Get last 5 sales
+
+    # --- 6. Daily Stock Report and Overall Report (Summary Tables) ---
+    daily_stock_reports = DailyStockReport.query.filter_by(report_date=today).all()
+    daily_overall_report = DailyOverallReport.query.filter_by(report_date=today).first()
+
+    return render_template(
+        "home/index.html",
+        segment="index",
+        total_stocks_data=total_stocks_data,
+        sales_data_week=sales_data_week,
+        sales_by_network=sales_by_network,
+        total_sales_today=total_sales_today,
+        total_debt=total_debt,
+        total_cash_inflow_today=total_cash_inflow_today,
+        total_cash_outflow_today=total_cash_outflow_today,
+        recent_sales=recent_sales,
+        daily_stock_reports=daily_stock_reports,
+        daily_overall_report=daily_overall_report,
+        NetworkType=NetworkType,  # Pass the Enum to the template for image paths
+    )
 
 
 @blueprint.route("/<template>")

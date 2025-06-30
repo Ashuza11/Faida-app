@@ -1,131 +1,138 @@
 {% extends 'layouts/base.html' %}
 
-{% block title %} Dashboard {% endblock title %}
+{% block title %} Tableau de Bord {% endblock title %}
 
-<!-- Specific CSS goes HERE -->
 {% block stylesheets %}{% endblock stylesheets %}
 
 {% block content %}
 
-    <!-- Header -->
     <div class="header bg-primary pb-6">
       <div class="container-fluid">
         <div class="header-body">
           <div class="row align-items-center py-4">
             <div class="col-lg-6 col-7">
-              <h6 class="h2 text-white d-inline-block mb-0">Default</h6>
+              <h6 class="h2 text-white d-inline-block mb-0">Dashboard</h6>
               <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
                 <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
                   <li class="breadcrumb-item"><a href="#"><i class="fas fa-home"></i></a></li>
                   <li class="breadcrumb-item"><a href="#">Dashboards</a></li>
-                  <li class="breadcrumb-item active" aria-current="page">Default</li>
+                  <li class="breadcrumb-item active" aria-current="page">Principal</li>
                 </ol>
               </nav>
             </div>
-            <div class="col-lg-6 col-5 text-right">
-              <a href="#" class="btn btn-sm btn-neutral">New</a>
-              <a href="#" class="btn btn-sm btn-neutral">Filters</a>
-            </div>
           </div>
-          <!-- Card stats -->
           <div class="row">
+            {% for network_name, balance in total_stocks_data.items() %}
             <div class="col-xl-3 col-md-6">
                 <div class="card card-stats">
-                  <!-- Card body -->
                   <div class="card-body">
                     <div class="row">
                       <div class="col">
-                        <h5 class="card-title text-uppercase text-muted mb-0">Total traffic</h5>
-                        <span class="h2 font-weight-bold mb-0">350,897</span>
+                        <h5 class="card-title text-uppercase text-muted mb-0">Solde {{ network_name.capitalize() }}</h5>
+                        <span class="h2 font-weight-bold mb-0">{{ balance | int }}</span>
                       </div>
                       <div class="col-auto">
                         <div class="icon icon-shape text-white rounded-circle shadow"
                             style="background: #fff; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
-                          <img src="{{ url_for('static', filename='assets/img/theme/airtel.png') }}"
-                              alt="Airtel"
-                              style="width: 32px; height: 32px; object-fit: contain;">
+                            <img src="{{ url_for('static', filename='assets/img/theme/' + network_name + '.png') }}"
+                                alt="{{ network_name.capitalize() }}"
+                                style="width: 32px; height: 32px; object-fit: contain;">
                         </div>
                       </div>
                     </div>
                     <p class="mt-3 mb-0 text-sm">
-                      <span class="text-success mr-2"><i class="fa fa-arrow-up"></i> 3.48%</span>
-                      <span class="text-nowrap">Since last month</span>
+                      <span class="text-nowrap">Solde Actuel</span>
+                    </p>
+                  </div>
+                </div>
+            </div>
+            {% endfor %}
+
+            <div class="col-xl-3 col-md-6">
+                <div class="card card-stats">
+                  <div class="card-body">
+                    <div class="row">
+                      <div class="col">
+                        <h5 class="card-title text-uppercase text-muted mb-0">Total des Ventes </h5>
+                        <span class="h2 font-weight-bold mb-0">{{ "%.2f" | format(total_sales_today) }} FC</span>
+                      </div>
+                      <div class="col-auto">
+                        <div class="icon icon-shape bg-gradient-green text-white rounded-circle shadow">
+                          <i class="ni ni-money-coins"></i>
+                        </div>
+                      </div>
+                    </div>
+                    <p class="mt-3 mb-0 text-sm">
+                      <span class="text-nowrap">Ventes enregistrées </span>
                     </p>
                   </div>
                 </div>
             </div>
             <div class="col-xl-3 col-md-6">
-              <div class="card card-stats">
-                <!-- Card body -->
-                <div class="card-body">
-                  <div class="row">
-                    <div class="col">
-                      <h5 class="card-title text-uppercase text-muted mb-0">New users</h5>
-                      <span class="h2 font-weight-bold mb-0">2,356</span>
-                    </div>
-                    <div class="col-auto">
-                      <div class="icon icon-shape bg-gradient-orange text-white rounded-circle shadow">
-                        <i class="ni ni-chart-pie-35"></i>
+                <div class="card card-stats">
+                  <div class="card-body">
+                    <div class="row">
+                      <div class="col">
+                        <h5 class="card-title text-uppercase text-muted mb-0">Total Dette Actuelle</h5>
+                        <span class="h2 font-weight-bold mb-0">{{ "%.2f" | format(total_debt) }} FC</span>
+                      </div>
+                      <div class="col-auto">
+                        <div class="icon icon-shape bg-gradient-orange text-white rounded-circle shadow">
+                          <i class="fas fa-hand-holding-usd"></i>
+                        </div>
                       </div>
                     </div>
+                    <p class="mt-3 mb-0 text-sm">
+                      <span class="text-nowrap">Dettes impayées</span>
+                    </p>
                   </div>
-                  <p class="mt-3 mb-0 text-sm">
-                    <span class="text-success mr-2"><i class="fa fa-arrow-up"></i> 3.48%</span>
-                    <span class="text-nowrap">Since last month</span>
-                  </p>
                 </div>
-              </div>
             </div>
             <div class="col-xl-3 col-md-6">
-              <div class="card card-stats">
-                <!-- Card body -->
-                <div class="card-body">
-                  <div class="row">
-                    <div class="col">
-                      <h5 class="card-title text-uppercase text-muted mb-0">Sales</h5>
-                      <span class="h2 font-weight-bold mb-0">924</span>
-                    </div>
-                    <div class="col-auto">
-                      <div class="icon icon-shape bg-gradient-green text-white rounded-circle shadow">
-                        <i class="ni ni-money-coins"></i>
+                <div class="card card-stats">
+                  <div class="card-body">
+                    <div class="row">
+                      <div class="col">
+                        <h5 class="card-title text-uppercase text-muted mb-0">Encaissement</h5>
+                        <span class="h2 font-weight-bold mb-0">{{ "%.2f" | format(total_cash_inflow_today) }} FC</span>
+                      </div>
+                      <div class="col-auto">
+                        <div class="icon icon-shape bg-gradient-info text-white rounded-circle shadow">
+                          <i class="fas fa-coins"></i>
+                        </div>
                       </div>
                     </div>
+                    <p class="mt-3 mb-0 text-sm">
+                      <span class="text-nowrap">Argent total reçu aujourd'hui</span>
+                    </p>
                   </div>
-                  <p class="mt-3 mb-0 text-sm">
-                    <span class="text-success mr-2"><i class="fa fa-arrow-up"></i> 3.48%</span>
-                    <span class="text-nowrap">Since last month</span>
-                  </p>
                 </div>
-              </div>
             </div>
             <div class="col-xl-3 col-md-6">
-              <div class="card card-stats">
-                <!-- Card body -->
-                <div class="card-body">
-                  <div class="row">
-                    <div class="col">
-                      <h5 class="card-title text-uppercase text-muted mb-0">Performance</h5>
-                      <span class="h2 font-weight-bold mb-0">49,65%</span>
-                    </div>
-                    <div class="col-auto">
-                      <div class="icon icon-shape bg-gradient-info text-white rounded-circle shadow">
-                        <i class="ni ni-chart-bar-32"></i>
+                <div class="card card-stats">
+                  <div class="card-body">
+                    <div class="row">
+                      <div class="col">
+                        <h5 class="card-title text-uppercase text-muted mb-0">Décaissement </h5>
+                        <span class="h2 font-weight-bold mb-0">{{ "%.2f" | format(total_cash_outflow_today) }} FC</span>
+                      </div>
+                      <div class="col-auto">
+                        <div class="icon icon-shape bg-gradient-danger text-white rounded-circle shadow">
+                          <i class="fas fa-cash-register"></i>
+                        </div>
                       </div>
                     </div>
+                    <p class="mt-3 mb-0 text-sm">
+                      <span class="text-nowrap">Dépenses totales aujourd'hui</span>
+                    </p>
                   </div>
-                  <p class="mt-3 mb-0 text-sm">
-                    <span class="text-success mr-2"><i class="fa fa-arrow-up"></i> 3.48%</span>
-                    <span class="text-nowrap">Since last month</span>
-                  </p>
                 </div>
-              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Page content -->
     <div class="container-fluid mt--6">
       <div class="row">
         <div class="col-xl-8">
@@ -133,31 +140,23 @@
             <div class="card-header bg-transparent">
               <div class="row align-items-center">
                 <div class="col">
-                  <h6 class="text-light text-uppercase ls-1 mb-1">Overview</h6>
-                  <h5 class="h3 text-white mb-0">Sales value</h5>
+                  <h6 class="text-light text-uppercase ls-1 mb-1">Aperçu</h6>
+                  <h5 class="h3 text-white mb-0">Valeur des ventes (7 derniers jours)</h5>
                 </div>
                 <div class="col">
                   <ul class="nav nav-pills justify-content-end">
-                    <li class="nav-item mr-2 mr-md-0" data-toggle="chart" data-target="#chart-sales-dark" data-update='{"data":{"datasets":[{"data":[0, 20, 10, 30, 15, 40, 20, 60, 60]}]}}' data-prefix="$" data-suffix="k">
-                      <a href="#" class="nav-link py-2 px-3 active" data-toggle="tab">
-                        <span class="d-none d-md-block">Month</span>
-                        <span class="d-md-none">M</span>
+                    <li class="nav-item mr-2 mr-md-0">
+                      <a href="#" class="nav-link py-2 px-3 active">
+                        <span class="d-none d-md-block">Semaine</span>
+                        <span class="d-md-none">S</span>
                       </a>
                     </li>
-                    <li class="nav-item" data-toggle="chart" data-target="#chart-sales-dark" data-update='{"data":{"datasets":[{"data":[0, 20, 5, 25, 10, 30, 15, 40, 40]}]}}' data-prefix="$" data-suffix="k">
-                      <a href="#" class="nav-link py-2 px-3" data-toggle="tab">
-                        <span class="d-none d-md-block">Week</span>
-                        <span class="d-md-none">W</span>
-                      </a>
-                    </li>
-                  </ul>
+                    </ul>
                 </div>
               </div>
             </div>
             <div class="card-body">
-              <!-- Chart -->
               <div class="chart">
-                <!-- Chart wrapper -->
                 <canvas id="chart-sales-dark" class="chart-canvas"></canvas>
               </div>
             </div>
@@ -168,13 +167,12 @@
             <div class="card-header bg-transparent">
               <div class="row align-items-center">
                 <div class="col">
-                  <h6 class="text-uppercase text-muted ls-1 mb-1">Performance</h6>
-                  <h5 class="h3 mb-0">Total orders</h5>
+                  <h6 class="text-uppercase text-muted ls-1 mb-1">Ventes par Réseau</h6>
+                  <h5 class="h3 mb-0">Ventes d'aujourd'hui</h5>
                 </div>
               </div>
             </div>
             <div class="card-body">
-              <!-- Chart -->
               <div class="chart">
                 <canvas id="chart-bars" class="chart-canvas"></canvas>
               </div>
@@ -188,95 +186,44 @@
             <div class="card-header border-0">
               <div class="row align-items-center">
                 <div class="col">
-                  <h3 class="mb-0">Page visits</h3>
+                  <h3 class="mb-0">Historique des Ventes Récentes</h3>
                 </div>
                 <div class="col text-right">
-                  <a href="#!" class="btn btn-sm btn-primary">See all</a>
+                  <a href="{{ url_for('home_blueprint.vente_stock') }}" class="btn btn-sm btn-primary">Voir tout</a>
                 </div>
               </div>
             </div>
             <div class="table-responsive">
-              <!-- Projects table -->
               <table class="table align-items-center table-flush">
                 <thead class="thead-light">
                   <tr>
-                    <th scope="col">Page name</th>
-                    <th scope="col">Visitors</th>
-                    <th scope="col">Unique users</th>
-                    <th scope="col">Bounce rate</th>
+                    <th scope="col">Vendeur</th>
+                    <th scope="col">Détails des Articles</th>
+                    <th scope="col">Total DÛ (FC)</th>
+                    <th scope="col">Argent Donné (FC)</th>
+                    <th scope="col">Dette (FC)</th>
+                    <th scope="col">Date & Heure</th>
                   </tr>
                 </thead>
                 <tbody>
+                  {% for sale in recent_sales %}
                   <tr>
-                    <th scope="row">
-                      /argon/
-                    </th>
+                    <th scope="row">{{ sale.vendeur.username }}</th>
                     <td>
-                      4,569
+                      {% for item in sale.sale_items %}
+                        {{ item.quantity }} unités @ {{ "%.2f" | format(item.price_per_unit_applied) }} FC - Sous-total: {{ "%.2f" | format(item.subtotal) }} FC ({{ item.network.value.capitalize() }})<br>
+                      {% endfor %}
                     </td>
-                    <td>
-                      340
-                    </td>
-                    <td>
-                      <i class="fas fa-arrow-up text-success mr-3"></i> 46,53%
-                    </td>
+                    <td>{{ "%.2f" | format(sale.total_amount_due) }} FC</td>
+                    <td>{{ "%.2f" | format(sale.cash_paid) }} FC</td>
+                    <td>{{ "%.2f" | format(sale.debt_amount) }} FC</td>
+                    <td>{{ sale.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
                   </tr>
+                  {% else %}
                   <tr>
-                    <th scope="row">
-                      /argon/index.html
-                    </th>
-                    <td>
-                      3,985
-                    </td>
-                    <td>
-                      319
-                    </td>
-                    <td>
-                      <i class="fas fa-arrow-down text-warning mr-3"></i> 46,53%
-                    </td>
+                    <td colspan="6" class="text-center">Aucune donnée de vente récente disponible.</td>
                   </tr>
-                  <tr>
-                    <th scope="row">
-                      /argon/charts.html
-                    </th>
-                    <td>
-                      3,513
-                    </td>
-                    <td>
-                      294
-                    </td>
-                    <td>
-                      <i class="fas fa-arrow-down text-warning mr-3"></i> 36,49%
-                    </td>
-                  </tr>
-                  <tr>
-                    <th scope="row">
-                      /argon/tables.html
-                    </th>
-                    <td>
-                      2,050
-                    </td>
-                    <td>
-                      147
-                    </td>
-                    <td>
-                      <i class="fas fa-arrow-up text-success mr-3"></i> 50,87%
-                    </td>
-                  </tr>
-                  <tr>
-                    <th scope="row">
-                      /argon/profile.html
-                    </th>
-                    <td>
-                      1,795
-                    </td>
-                    <td>
-                      190
-                    </td>
-                    <td>
-                      <i class="fas fa-arrow-down text-danger mr-3"></i> 46,53%
-                    </td>
-                  </tr>
+                  {% endfor %}
                 </tbody>
               </table>
             </div>
@@ -287,114 +234,53 @@
             <div class="card-header border-0">
               <div class="row align-items-center">
                 <div class="col">
-                  <h3 class="mb-0">Social traffic</h3>
+                  <h3 class="mb-0">Rapport de Stock Quotidien (Aujourd'hui)</h3>
                 </div>
                 <div class="col text-right">
-                  <a href="#!" class="btn btn-sm btn-primary">See all</a>
+                  <a href="{{ url_for('home_blueprint.rapports') }}" class="btn btn-sm btn-primary">Voir tout</a>
                 </div>
               </div>
             </div>
             <div class="table-responsive">
-              <!-- Projects table -->
               <table class="table align-items-center table-flush">
                 <thead class="thead-light">
                   <tr>
-                    <th scope="col">Referral</th>
-                    <th scope="col">Visitors</th>
-                    <th scope="col"></th>
+                    <th scope="col">Réseau</th>
+                    <th scope="col">Stock Initial</th>
+                    <th scope="col">Stock Acheté</th>
+                    <th scope="col">Stock Vendu</th>
+                    <th scope="col">Stock Final</th>
+                    <th scope="col">Valeur Virtuelle (FC)</th>
+                    <th scope="col">Dettes (FC)</th>
                   </tr>
                 </thead>
                 <tbody>
+                  {% for report in daily_stock_reports %}
                   <tr>
-                    <th scope="row">
-                      Facebook
-                    </th>
-                    <td>
-                      1,480
-                    </td>
-                    <td>
-                      <div class="d-flex align-items-center">
-                        <span class="mr-2">60%</span>
-                        <div>
-                          <div class="progress">
-                            <div class="progress-bar bg-gradient-danger" role="progressbar" aria-valuenow="60" aria-valuemin="0" aria-valuemax="100" style="width: 60%;"></div>
-                          </div>
-                        </div>
-                      </div>
-                    </td>
+                    <th scope="row">{{ report.network.value.capitalize() }}</th>
+                    <td>{{ "%.2f" | format(report.initial_stock_balance) }}</td>
+                    <td>{{ "%.2f" | format(report.purchased_stock_amount) }}</td>
+                    <td>{{ "%.2f" | format(report.sold_stock_amount) }}</td>
+                    <td>{{ "%.2f" | format(report.final_stock_balance) }}</td>
+                    <td>{{ "%.2f" | format(report.virtual_value) }}</td>
+                    <td>{{ "%.2f" | format(report.debt_amount) }}</td>
                   </tr>
+                  {% else %}
                   <tr>
-                    <th scope="row">
-                      Facebook
-                    </th>
-                    <td>
-                      5,480
-                    </td>
-                    <td>
-                      <div class="d-flex align-items-center">
-                        <span class="mr-2">70%</span>
-                        <div>
-                          <div class="progress">
-                            <div class="progress-bar bg-gradient-success" role="progressbar" aria-valuenow="70" aria-valuemin="0" aria-valuemax="100" style="width: 70%;"></div>
-                          </div>
-                        </div>
-                      </div>
-                    </td>
+                    <td colspan="7" class="text-center">Aucune donnée de rapport de stock quotidien pour aujourd'hui.</td>
                   </tr>
-                  <tr>
-                    <th scope="row">
-                      Google
-                    </th>
-                    <td>
-                      4,807
-                    </td>
-                    <td>
-                      <div class="d-flex align-items-center">
-                        <span class="mr-2">80%</span>
-                        <div>
-                          <div class="progress">
-                            <div class="progress-bar bg-gradient-primary" role="progressbar" aria-valuenow="80" aria-valuemin="0" aria-valuemax="100" style="width: 80%;"></div>
-                          </div>
-                        </div>
-                      </div>
-                    </td>
+                  {% endfor %}
+                  {% if daily_overall_report %}
+                  <tr class="bg-gradient-primary text-white">
+                    <th scope="row">Total Général</th>
+                    <td>{{ "%.2f" | format(daily_overall_report.total_initial_stock) }}</td>
+                    <td>{{ "%.2f" | format(daily_overall_report.total_purchased_stock) }}</td>
+                    <td>{{ "%.2f" | format(daily_overall_report.total_sold_stock) }}</td>
+                    <td>{{ "%.2f" | format(daily_overall_report.total_final_stock) }}</td>
+                    <td>{{ "%.2f" | format(daily_overall_report.total_virtual_value) }}</td>
+                    <td>{{ "%.2f" | format(daily_overall_report.total_debts) }}</td>
                   </tr>
-                  <tr>
-                    <th scope="row">
-                      Instagram
-                    </th>
-                    <td>
-                      3,678
-                    </td>
-                    <td>
-                      <div class="d-flex align-items-center">
-                        <span class="mr-2">75%</span>
-                        <div>
-                          <div class="progress">
-                            <div class="progress-bar bg-gradient-info" role="progressbar" aria-valuenow="75" aria-valuemin="0" aria-valuemax="100" style="width: 75%;"></div>
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <th scope="row">
-                      twitter
-                    </th>
-                    <td>
-                      2,645
-                    </td>
-                    <td>
-                      <div class="d-flex align-items-center">
-                        <span class="mr-2">30%</span>
-                        <div>
-                          <div class="progress">
-                            <div class="progress-bar bg-gradient-warning" role="progressbar" aria-valuenow="30" aria-valuemin="0" aria-valuemax="100" style="width: 30%;"></div>
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
+                  {% endif %}
                 </tbody>
               </table>
             </div>
@@ -408,10 +294,150 @@
 
 {% endblock content %}
 
-<!-- Specific JS goes HERE --> 
 {% block javascripts %}
 
   <script src="/static/assets/vendor/chart.js/dist/Chart.min.js"></script>
   <script src="/static/assets/vendor/chart.js/dist/Chart.extension.js"></script>
+
+  <script>
+    // Data for Sales Value chart (Last 7 Days)
+    var salesDataWeek = {{ sales_data_week | tojson }};
+    var salesLabels = Object.keys(salesDataWeek);
+    var salesValues = Object.values(salesDataWeek);
+
+    var ChartSales = (function() {
+      var $chart = $('#chart-sales-dark');
+
+      function init($chart) {
+        var salesChart = new Chart($chart, {
+          type: 'line',
+          options: {
+            scales: {
+              yAxes: [{
+                gridLines: {
+                  lineWidth: 1,
+                  drawBorder: false,
+                  drawOnChartArea: false,
+                  drawTicks: false
+                },
+                ticks: {
+                  callback: function(value) {
+                    // This will format the y-axis labels to include ' FC'
+                    return value + ' FC';
+                  }
+                }
+              }],
+              xAxes: [{
+                gridLines: {
+                  drawBorder: false,
+                  drawOnChartArea: false,
+                  drawTicks: false
+                },
+                ticks: {
+                  autoSkip: false,
+                  maxRotation: 0,
+                  minRotation: 0,
+                  // Translate month abbreviations to French if needed, assuming salesLabels are month names like 'Jan', 'Feb' etc.
+                  // For daily data (last 7 days), 'salesLabels' are likely short day names (e.g., 'Mon', 'Tue').
+                  // If these labels are coming from the backend as English abbreviations, you'd need to map them here.
+                  // For now, assuming they are already suitable or you handle it in the backend.
+                }
+              }]
+            },
+            tooltips: {
+              callbacks: {
+                label: function(item, data) {
+                  var label = data.datasets[item.datasetIndex].label || '';
+                  var yLabel = item.yLabel;
+                  var content = '';
+                  if (data.datasets.length > 1) {
+                    content += '<span class="popover-body-label mr-auto">' + label + '</span>';
+                  }
+                  // Ensure tooltips display ' FC'
+                  return content + yLabel + ' FC';
+                }
+              }
+            }
+          },
+          data: {
+            labels: salesLabels,
+            datasets: [{
+              label: 'Ventes', // Translated label
+              data: salesValues
+            }]
+          }
+        });
+        $chart.data('chart', salesChart);
+      };
+
+      if ($chart.length) {
+        init($chart);
+      }
+    })();
+
+    // Data for Sales by Network chart (Today)
+    var salesByNetworkData = {{ sales_by_network | tojson }};
+    var networkLabels = Object.keys(salesByNetworkData);
+    var networkValues = Object.values(salesByNetworkData);
+    var networkColors = {
+        'airtel': '#F44336', // Red
+        'orange': '#FF9800', // Orange
+        'vodacom': '#673AB7', // Deep Purple
+        'africel': '#4CAF50'  // Green
+    };
+    var backgroundColors = networkLabels.map(label => networkColors[label] || '#cccccc'); // Default grey if not found
+
+    var ChartBars = (function() {
+      var $chart = $('#chart-bars');
+
+      function init($chart) {
+        var barsChart = new Chart($chart, {
+          type: 'bar',
+          data: {
+            // Capitalize network names for display. If you need full French names (e.g., 'Airtel' -> 'Airtel'),
+            // you might need a mapping object here or ensure names are translated in the backend.
+            labels: networkLabels.map(label => label.charAt(0).toUpperCase() + label.slice(1)),
+            datasets: [{
+              label: 'Ventes (FC)', // Translated label
+              data: networkValues,
+              backgroundColor: backgroundColors
+            }]
+          },
+          options: {
+            scales: {
+              yAxes: [{
+                ticks: {
+                  beginAtZero: true,
+                  callback: function(value) {
+                    // Ensure y-axis labels display ' FC'
+                    return value + ' FC';
+                  }
+                }
+              }]
+            },
+            tooltips: {
+              callbacks: {
+                label: function(item, data) {
+                  var label = data.datasets[item.datasetIndex].label || '';
+                  var yLabel = item.yLabel;
+                  var content = '';
+                  if (data.datasets.length > 1) {
+                    content += '<span class="popover-body-label mr-auto">' + label + '</span>';
+                  }
+                  // Ensure tooltips display ' FC'
+                  return content + yLabel + ' FC';
+                }
+              }
+            }
+          }
+        });
+        $chart.data('chart', barsChart);
+      };
+
+      if ($chart.length) {
+        init($chart);
+      }
+    })();
+  </script>
 
 {% endblock javascripts %}
