@@ -26,9 +26,7 @@ class Config(object):
             "url": SQLALCHEMY_DATABASE_URI,
         }
     }
-    SCHEDULER_TIMEZONE = (
-        "Africa/Lubumbashi"  # Or 'Africa/Lubumbashi' if it works after this fix
-    )
+    SCHEDULER_TIMEZONE = "Africa/Lubumbashi"
 
 
 class ProductionConfig(Config):

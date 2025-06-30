@@ -1,12 +1,13 @@
 from apps.home import blueprint
 from flask import render_template, request, flash, redirect, url_for, abort, current_app
 from flask_login import login_required, current_user
+import sqlalchemy as sa
 from jinja2 import TemplateNotFound
 from apps.decorators import superadmin_required, vendeur_required
 from apps.home.utils import custom_round_up, parse_date_param, get_daily_report_data
 from apps import db
 from decimal import Decimal, InvalidOperation
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta, timezone, date
 from apps.authentication.models import (
     User,
     RoleType,
@@ -659,7 +660,6 @@ def delete_stock_purchase(purchase_id):
 
 @blueprint.route("/vente_stock", methods=["GET", "POST"])
 @login_required
-@superadmin_required
 @vendeur_required
 def vente_stock():
     form = SaleForm()
@@ -1320,19 +1320,44 @@ def encaisser_dette():
 @superadmin_required
 def rapports():
     page_title = "Rapport Stock & Ventes"
-    today = date.today()
+    local_today = date.today()
+
+    local_timezone_offset_hours = 2  # Example: For CAT (Central Africa Time), UTC+2
+
+    # Start of local today in UTC
+    # Example: If local_today is 2025-06-30 (CAT, UTC+2)
+    # The start of the local day (00:00:00 CAT) is 2025-06-29 22:00:00 UTC
+    start_of_local_today_dt = datetime(
+        local_today.year, local_today.month, local_today.day, 0, 0, 0
+    )
+    start_of_local_today_utc = start_of_local_today_dt - timedelta(
+        hours=local_timezone_offset_hours
+    )
+
+    # End of local today in UTC (just before next local day)
+    # Example: If local_today is 2025-06-30 (CAT, UTC+2)
+    # The end of the local day (23:59:59.999999 CAT) is 2025-06-30 21:59:59.999999 UTC
+    end_of_local_today_dt = datetime(
+        local_today.year, local_today.month, local_today.day, 23, 59, 59, 999999
+    )
+    end_of_local_today_utc = end_of_local_today_dt - timedelta(
+        hours=local_timezone_offset_hours
+    )
+
+    # The rest of your date parsing logic might need to align with this approach
+    # For simplicity in this fix, we will keep selected_start_date and selected_end_date as date objects
+    # but use the calculated UTC datetime ranges for the live query.
+    selected_start_date = (
+        local_today  # For display and non-live data historical queries
+    )
+    selected_end_date = local_today
 
     # Determine default date range
-    # Check if there's any report data for yesterday
-    # If not, default to today's date for a live report
+    today = date.today()
     default_start_date = today - timedelta(days=1)
     default_end_date = today - timedelta(days=1)
 
-    # Check for *any* historical report to decide default range
-    # If no reports at all, default to showing today's live data
-    test_report_exists = (
-        DailyOverallReport.query.first()
-    )  # Check for any overall report
+    test_report_exists = DailyOverallReport.query.first()
     if not test_report_exists:
         current_app.logger.info(
             "No historical stock reports found. Defaulting report range to today (live data)."
@@ -1340,13 +1365,10 @@ def rapports():
         default_start_date = today
         default_end_date = today
 
-    # If historical reports exist, but not for yesterday, still default to yesterday if it's not today.
-    # The logic in get_daily_report_data will handle falling back to live stock if yesterday's report isn't present.
-
     start_date_str = request.args.get("start_date")
     end_date_str = request.args.get("end_date")
 
-    # Parse dates from request or use defaults
+    # When parsing, ensure default_date is also UTC-aligned if it comes from here
     selected_start_date = parse_date_param(
         start_date_str, default_date=default_start_date
     )
@@ -1365,19 +1387,16 @@ def rapports():
 
     networks = list(NetworkType.__members__.values())
 
-    # Initialize report data structure (per network for display)
     report_data = {
         network.name: {
             "initial_stock": Decimal("0.00"),
             "purchased_stock": Decimal("0.00"),
-            "sold_stock": Decimal("0.00"),  # This will be sold quantity
+            "sold_stock": Decimal("0.00"),
             "final_stock": Decimal("0.00"),
             "virtual_value": Decimal("0.00"),
             "debt_amount": Decimal("0.00"),
-            "sales_from_transactions_value": Decimal(
-                "0.00"
-            ),  # For verification display
-            "network": network,  # Pass network object for easier access in template
+            "sales_from_transactions_value": Decimal("0.00"),
+            "network": network,
         }
         for network in networks
     }
@@ -1385,41 +1404,27 @@ def rapports():
     grand_totals = {
         "initial_stock": Decimal("0.00"),
         "purchased_stock": Decimal("0.00"),
-        "sold_stock": Decimal("0.00"),  # Grand total of sold quantity
+        "sold_stock": Decimal("0.00"),
         "final_stock": Decimal("0.00"),
         "virtual_value": Decimal("0.00"),
         "total_debts": Decimal("0.00"),
-        "total_sales_from_transactions_value": Decimal(
-            "0.00"
-        ),  # Grand total of sales value from transactions
-        "total_calculated_sold_stock": Decimal("0.00"),  # For verification display
     }
 
     overall_report_for_display = None
-    sales_discrepancy_message = None
 
-    # --- Fetch Data based on selected date range ---
     if selected_start_date == today and selected_end_date == today:
-        # Live data (today's report)
         current_app.logger.info("Fetching live report data for today.")
-        calculated_data, total_sales_val, total_debts = get_daily_report_data(
-            current_app, today
-        )
+        calculated_data, total_sales_val, _ = get_daily_report_data(current_app, today)
 
         for network_name, data in calculated_data.items():
             report_data[network_name].update(
                 {
                     "initial_stock": data["initial_stock"],
                     "purchased_stock": data["purchased_stock"],
-                    "sold_stock": data[
-                        "sold_stock_quantity"
-                    ],  # Show sold quantity in report
+                    "sold_stock": data["sold_stock_quantity"],
                     "final_stock": data["final_stock"],
                     "virtual_value": data["virtual_value"],
-                    "debt_amount": data["debt_amount"],
-                    "sales_from_transactions_value": data[
-                        "sold_stock_value"
-                    ],  # This is monetary value
+                    "sales_from_transactions_value": data["sold_stock_value"],
                 }
             )
 
@@ -1428,32 +1433,32 @@ def rapports():
             grand_totals["sold_stock"] += data["sold_stock_quantity"]
             grand_totals["final_stock"] += data["final_stock"]
             grand_totals["virtual_value"] += data["virtual_value"]
-            # total_debts is already aggregated by get_daily_report_data
-            grand_totals["total_sales_from_transactions_value"] += data[
-                "sold_stock_value"
-            ]
 
-        grand_totals["total_debts"] = total_debts  # Assign the aggregated total debts
+        # --- REVISED QUERY FOR LIVE DEBTS ---
+        # Query using the calculated UTC datetime range
 
-        # Calculate 'Total Stock Vendus (Calculé du Rapport)' for live data
-        # This needs to be done after all network data is aggregated
+        total_live_debts = (
+            db.session.query(sa.func.sum(Sale.debt_amount))
+            .filter(
+                Sale.created_at >= start_of_local_today_utc,
+                Sale.created_at <= end_of_local_today_utc,
+            )
+            .scalar()
+        )
+        grand_totals["total_debts"] = (
+            total_live_debts if total_live_debts is not None else Decimal("0.00")
+        )
+        current_app.logger.info(
+            f"++++++++++++++++ This is the total live debts {total_live_debts} ++++++++++++++++++++++++++++++++++"
+        )
+
         grand_totals["total_calculated_sold_stock"] = (
             grand_totals["initial_stock"]
             + grand_totals["purchased_stock"]
             - grand_totals["final_stock"]
         )
 
-        # Check for sales discrepancy in live data (quantity based)
-        if grand_totals["total_calculated_sold_stock"] != grand_totals["sold_stock"]:
-            sales_discrepancy_message = (
-                f"Discrepancy: Total Sold (Calculated) ({grand_totals['total_calculated_sold_stock']:,.2f}) "
-                f"vs. Total Sold (Transactions) ({grand_totals['sold_stock']:,.2f}). "
-                "Please check for forgotten sale registrations."
-            )
-            flash(sales_discrepancy_message, "danger")
-
     elif selected_start_date == selected_end_date:
-        # Historical single day report
         current_app.logger.info(
             f"Fetching historical report data for {selected_start_date}."
         )
@@ -1463,7 +1468,6 @@ def rapports():
         ).first()
 
         if overall_report_for_display:
-            # Populate grand totals from DailyOverallReport
             grand_totals["initial_stock"] = (
                 overall_report_for_display.total_initial_stock
             )
@@ -1476,33 +1480,13 @@ def rapports():
                 overall_report_for_display.total_virtual_value
             )
             grand_totals["total_debts"] = overall_report_for_display.total_debts
-            grand_totals["total_sales_from_transactions_value"] = (
-                overall_report_for_display.total_sales_from_transactions
-            )
 
-            # Recalculate 'Total Stock Vendus (Calculé du Rapport)' for verification
             grand_totals["total_calculated_sold_stock"] = (
                 overall_report_for_display.total_initial_stock
                 + overall_report_for_display.total_purchased_stock
                 - overall_report_for_display.total_final_stock
             )
 
-            # Check for sales discrepancy for historical data
-            # Use the stored total_sold_stock and total_sales_from_transactions
-            if (
-                grand_totals["total_calculated_sold_stock"]
-                != grand_totals["sold_stock"]
-            ):
-                sales_discrepancy_message = (
-                    f"Discrepancy found for {selected_start_date}: Total Sold (Calculated) "
-                    f"({grand_totals['total_calculated_sold_stock']:,.2f}) vs. "
-                    f"Total Sold (Transactions) ({grand_totals['sold_stock']:,.2f})."
-                )
-                flash(
-                    sales_discrepancy_message, "warning"
-                )  # Use warning for historical as it's already logged
-
-            # Populate network-specific data from DailyStockReport
             daily_network_reports = DailyStockReport.query.filter_by(
                 report_date=selected_start_date
             ).all()
@@ -1515,7 +1499,6 @@ def rapports():
                             "sold_stock": r.sold_stock_amount,
                             "final_stock": r.final_stock_balance,
                             "virtual_value": r.virtual_value,
-                            "debt_amount": r.debt_amount,
                         }
                     )
         else:
@@ -1528,45 +1511,16 @@ def rapports():
             )
 
     else:
-        # Date range selected (aggregation of historical data)
         current_app.logger.info(
             f"Aggregating historical report data from {selected_start_date} to {selected_end_date}."
         )
 
-        # Query for DailyOverallReport entries within the date range
         range_overall_reports = DailyOverallReport.query.filter(
             DailyOverallReport.report_date >= selected_start_date,
             DailyOverallReport.report_date <= selected_end_date,
         ).all()
 
         if range_overall_reports:
-            # Sum up the grand totals from all daily overall reports in the range
-            for r in range_overall_reports:
-                grand_totals[
-                    "initial_stock"
-                ] += (
-                    r.total_initial_stock
-                )  # This would technically be sum of initial stock for each day
-                grand_totals["purchased_stock"] += r.total_purchased_stock
-                grand_totals["sold_stock"] += r.total_sold_stock
-                grand_totals[
-                    "final_stock"
-                ] += (
-                    r.total_final_stock
-                )  # This would be sum of final stock for each day
-                grand_totals[
-                    "virtual_value"
-                ] += r.total_virtual_value  # This would be sum of virtual for each day
-                grand_totals[
-                    "total_debts"
-                ] += r.total_debts  # Sum of debts at the end of each day
-                grand_totals[
-                    "total_sales_from_transactions_value"
-                ] += r.total_sales_from_transactions
-
-            # For range reports, "Stock Initial" and "Stock Final" should arguably be
-            # the initial stock of the *first day* and final stock of the *last day*.
-            # The current summing is simple aggregation. We will adjust it.
             first_day_overall_report = DailyOverallReport.query.filter_by(
                 report_date=selected_start_date
             ).first()
@@ -1579,9 +1533,11 @@ def rapports():
                     first_day_overall_report.total_initial_stock
                 )
             else:
-                grand_totals["initial_stock"] = Decimal(
-                    "0.00"
-                )  # No data for start of range
+                grand_totals["initial_stock"] = Decimal("0.00")
+
+            for r in range_overall_reports:
+                grand_totals["purchased_stock"] += r.total_purchased_stock
+                grand_totals["sold_stock"] += r.total_sold_stock
 
             if last_day_overall_report:
                 grand_totals["final_stock"] = last_day_overall_report.total_final_stock
@@ -1590,22 +1546,16 @@ def rapports():
                 )
                 grand_totals["total_debts"] = last_day_overall_report.total_debts
             else:
-                grand_totals["final_stock"] = Decimal(
-                    "0.00"
-                )  # No data for end of range
+                grand_totals["final_stock"] = Decimal("0.00")
                 grand_totals["virtual_value"] = Decimal("0.00")
-                grand_totals["total_debts"] = Decimal(
-                    "0.00"
-                )  # Debt should be from the end date
+                grand_totals["total_debts"] = Decimal("0.00")
 
-            # Recalculate 'Total Stock Vendus (Calculé du Rapport)' for range
             grand_totals["total_calculated_sold_stock"] = (
                 grand_totals["initial_stock"]
                 + grand_totals["purchased_stock"]
                 - grand_totals["final_stock"]
             )
 
-            # For network rows, you'd need to sum DailyStockReport entries
             for network in networks:
                 network_range_reports = DailyStockReport.query.filter(
                     DailyStockReport.network == network,
@@ -1618,10 +1568,8 @@ def rapports():
                 network_sold_stock_for_range = Decimal("0.00")
                 network_final_stock_for_range = Decimal("0.00")
                 network_virtual_value_for_range = Decimal("0.00")
-                network_debt_amount_for_range = Decimal("0.00")
 
                 if network_range_reports:
-                    # Get initial stock from the first day of the range for this network
                     first_network_report_in_range = DailyStockReport.query.filter(
                         DailyStockReport.network == network,
                         DailyStockReport.report_date == selected_start_date,
@@ -1631,12 +1579,10 @@ def rapports():
                             first_network_report_in_range.initial_stock_balance
                         )
 
-                    # Sum purchased and sold for the entire range
                     for r in network_range_reports:
                         network_purchased_stock_for_range += r.purchased_stock_amount
                         network_sold_stock_for_range += r.sold_stock_amount
 
-                    # Get final stock, virtual value, and debt from the *last day* of the range for this network
                     last_network_report_in_range = DailyStockReport.query.filter(
                         DailyStockReport.network == network,
                         DailyStockReport.report_date == selected_end_date,
@@ -1648,9 +1594,6 @@ def rapports():
                         network_virtual_value_for_range = (
                             last_network_report_in_range.virtual_value
                         )
-                        network_debt_amount_for_range = (
-                            last_network_report_in_range.debt_amount
-                        )
 
                 report_data[network.name].update(
                     {
@@ -1659,7 +1602,6 @@ def rapports():
                         "sold_stock": network_sold_stock_for_range,
                         "final_stock": network_final_stock_for_range,
                         "virtual_value": network_virtual_value_for_range,
-                        "debt_amount": network_debt_amount_for_range,
                     }
                 )
 
@@ -1679,5 +1621,4 @@ def rapports():
         grand_totals=grand_totals,
         selected_start_date=selected_start_date.strftime("%Y-%m-%d"),
         selected_end_date=selected_end_date.strftime("%Y-%m-%d"),
-        sales_discrepancy_message=sales_discrepancy_message,
     )

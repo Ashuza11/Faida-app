@@ -1,37 +1,38 @@
 import click
+from . import db
+import logging
 from decimal import Decimal
-from apps.config import Config
+from .config import Config
 from flask import Flask
-from apps.authentication.models import db, NetworkType, User
-from apps.home.utils import (
-    seed_initial_stock_balances,
-    update_daily_reports,
-)
-from apps.authentication.models import (
-    Stock,
+from datetime import date, timedelta, datetime, time
+from .authentication.models import (
+    NetworkType,
+    User,
     StockPurchase,
     Sale,
     SaleItem,
 )
-from datetime import date, timedelta, datetime
+from .home.utils import (
+    seed_initial_stock_balances,
+    update_daily_reports,
+)
+
+cli_logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 
-def create_app():
+def create_app_cli():
     """
     Creates and configures the Flask application for CLI commands.
     """
     app = Flask(__name__)
-    app.config.from_object(Config)  # Load your application configuration
+    app.config.from_object(Config)
 
-    # Initialize extensions and database
-    # We'll use the db object initialized here for CLI commands.
-    # Note: In a real application, you might want a more robust way to
-    # manage app context for CLI, but for simple commands, this works.
+    # Use the main app's logger for CLI too
+    app.logger.setLevel(logging.INFO)
     db.init_app(app)
 
     with app.app_context():
-        # Ensure tables are created if they don't exist.
-        # This is important for CLI commands that interact with the database.
         db.create_all()
 
     # --- CLI Commands Registration ---
@@ -51,24 +52,24 @@ def create_app():
                 click.echo("Invalid date format. Please use YYYY-MM-DD.")
                 return
         else:
-            seed_date = date.today() - timedelta(days=2)  # Default seed date
+            # Current date is June 29, 2025. Today - 2 days means June 27, 2025.
+            # This aligns with your initial seed date in utils.py before modification.
+            seed_date = date.today() - timedelta(days=2)
 
         click.echo(f"Attempting to seed reports for {seed_date}...")
         try:
-            # Pass app and seed_date if your seed_initial_stock_balances can accept it.
-            # Based on your snippet, it currently only takes 'app'.
-            # If you want dynamic seeding, you'll need to modify seed_initial_stock_balances
-            # to accept a seed_date argument. For now, calling as it is.
-            seed_initial_stock_balances(app)
-            click.echo(f"Successfully attempted to seed reports for {seed_date}.")
+            # Now seed_initial_stock_balances accepts the seed_date
+            seed_initial_stock_balances(app, seed_date)
+            click.echo(f"Successfully seeded reports for {seed_date}.")
         except Exception as e:
             click.echo(f"Failed to seed reports for {seed_date}: {e}")
+            cli_logger.error(f"Error seeding reports: {e}", exc_info=True)
 
     @app.cli.command("generate-reports")
     @click.option(
         "--date",
         default=None,
-        help="Date for which to generate report (YYYY-MM-DD). Defaults to today.",
+        help="Date for which to generate report (YYYY-MM-DD). Defaults to yesterday.",  # Changed default
     )
     def generate_reports_command(date):
         """Generates/updates daily stock and overall reports for a given date."""
@@ -79,14 +80,17 @@ def create_app():
                 click.echo("Invalid date format. Please use YYYY-MM-DD.")
                 return
         else:
-            report_date = date.today()
+            # Default to yesterday for full day's data
+            report_date = date.today() - timedelta(days=1)
 
         click.echo(f"Generating reports for {report_date}...")
         try:
+            # update_daily_reports already takes app and report_date
             update_daily_reports(app, report_date)
             click.echo(f"Reports for {report_date} generated successfully.")
         except Exception as e:
             click.echo(f"Failed to generate reports for {report_date}: {e}")
+            cli_logger.error(f"Error generating reports: {e}", exc_info=True)
 
     @app.cli.command("simulate-transactions")
     @click.option(
@@ -117,9 +121,7 @@ def create_app():
         with app.app_context():
             click.echo(f"Simulating transactions for {transaction_date}...")
             networks = list(NetworkType.__members__.values())
-            user = db.session.query(
-                User
-            ).first()  # Assuming a User exists for purchase/sale recording
+            user = db.session.query(User).first()
 
             if not user:
                 click.echo(
@@ -127,13 +129,11 @@ def create_app():
                 )
                 return
 
-            # Dynamically import Stock model here to avoid circular dependencies
-            # if Stock is defined in apps.home.models
             try:
-                from apps.authentication.models import Stock
+                from authentication.models import Stock
             except ImportError:
                 click.echo(
-                    "Error: Could not import Stock model. Make sure it's defined in apps.authentication.models."
+                    "Error: Could not import Stock model. Make sure it's defined in authentication.models."
                 )
                 return
 
@@ -154,11 +154,12 @@ def create_app():
                     amount_purchased=purchases,
                     purchased_by=user,
                     created_at=datetime.combine(
-                        transaction_date, datetime.utcnow().time()
-                    ),  # Set time to simulate within day
+                        transaction_date,
+                        datetime.now().time(),  # Use datetime.now().time() for local time
+                    ),
                 )
                 db.session.add(new_purchase)
-                stock_item.balance += purchases  # Update live stock
+                stock_item.balance += purchases
                 click.echo(
                     f"  {network.name}: Purchased {purchases} units. New live stock: {stock_item.balance}"
                 )
@@ -167,16 +168,17 @@ def create_app():
                 if stock_item.balance >= sales:
                     new_sale = Sale(
                         vendeur=user,
-                        client_id=None,  # Adhoc client for simulation
+                        client_id=None,
                         total_amount=Decimal(sales) * stock_item.selling_price_per_unit,
                         amount_paid=Decimal(sales) * stock_item.selling_price_per_unit,
                         debt_amount=Decimal("0.00"),
                         created_at=datetime.combine(
-                            transaction_date, datetime.utcnow().time()
+                            transaction_date,
+                            datetime.now().time(),  # Use datetime.now().time() for local time
                         ),
                     )
                     db.session.add(new_sale)
-                    db.session.flush()  # Needed to get new_sale.id for SaleItem
+                    db.session.flush()
 
                     new_sale_item = SaleItem(
                         sale=new_sale,
@@ -187,7 +189,7 @@ def create_app():
                         subtotal=Decimal(sales) * stock_item.selling_price_per_unit,
                     )
                     db.session.add(new_sale_item)
-                    stock_item.balance -= sales  # Update live stock
+                    stock_item.balance -= sales
                     click.echo(
                         f"  {network.name}: Sold {sales} units. New live stock: {stock_item.balance}"
                     )
@@ -203,8 +205,6 @@ def create_app():
 
 
 # Exposing the app factory function for Flask CLI
-if __name__ == "__main__":
-    # This block is typically not needed for standard Flask CLI usage
-    # where FLASK_APP is set to the module containing create_app().
-    # It's more for direct execution, but Flask CLI handles app creation.
-    pass
+# This assumes this file is named something like 'cli.py' or 'run.py'
+# and FLASK_APP is set to this file.
+cli_app = create_app_cli()

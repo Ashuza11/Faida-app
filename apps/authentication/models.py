@@ -8,6 +8,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import sqlalchemy as sa
 import sqlalchemy.orm as so
 from decimal import Decimal
+from datetime import datetime, timezone
 
 
 # Enum for user roles
@@ -45,9 +46,9 @@ class User(db.Model, UserMixin):
     __tablename__ = "users"
 
     id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
-    created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
+    created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.now())
     updated_at: so.Mapped[datetime] = so.mapped_column(
-        default=datetime.utcnow, onupdate=datetime.utcnow
+        default=datetime.now(), onupdate=datetime.now()
     )
 
     username: so.Mapped[str] = so.mapped_column(
@@ -56,9 +57,7 @@ class User(db.Model, UserMixin):
     email: so.Mapped[str] = so.mapped_column(
         sa.String(120), unique=True, nullable=False
     )
-    password_hash: so.Mapped[Optional[str]] = so.mapped_column(
-        sa.String(128), nullable=False
-    )
+    password_hash: so.Mapped[str] = so.mapped_column(sa.String(128), nullable=False)
     phone: so.Mapped[Optional[str]] = so.mapped_column(sa.String(20), unique=True)
     role: so.Mapped[RoleType] = so.mapped_column(sa.Enum(RoleType), nullable=False)
     created_by: so.Mapped[Optional[int]] = so.mapped_column(
@@ -110,9 +109,12 @@ class Client(db.Model):
     __tablename__ = "clients"
 
     id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
-    created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
+    created_at: so.Mapped[datetime] = so.mapped_column(
+        default=lambda: datetime.now(timezone.utc)
+    )
     updated_at: so.Mapped[datetime] = so.mapped_column(
-        default=datetime.utcnow, onupdate=datetime.utcnow
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
     name: so.Mapped[str] = so.mapped_column(sa.String(128), nullable=False)
@@ -125,8 +127,8 @@ class Client(db.Model):
     gps_long: so.Mapped[Optional[float]] = so.mapped_column()
     is_active: so.Mapped[bool] = so.mapped_column(default=True)
     # Client-specific discount, separate from network's reduction rate
-    discount_rate: so.Mapped[sa.Numeric(precision=5, scale=4)] = so.mapped_column(
-        sa.Numeric(5, 4), default=0.00
+    discount_rate: so.Mapped[sa.Numeric] = so.mapped_column(
+        sa.Numeric(precision=5, scale=4), default=0.00
     )
 
     vendeur_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey("users.id"))
@@ -150,15 +152,17 @@ class Stock(db.Model):
     )
     balance: so.Mapped[int] = so.mapped_column(sa.Integer, default=0, nullable=False)
 
-    buying_price_per_unit: so.Mapped[sa.Numeric(precision=10, scale=2)] = (
-        so.mapped_column(sa.Numeric(10, 2), nullable=False, default=Decimal("0.00"))
+    buying_price_per_unit: so.Mapped[sa.Numeric] = so.mapped_column(
+        sa.Numeric(10, 2), nullable=False, default=Decimal("0.00")
     )
-    selling_price_per_unit: so.Mapped[sa.Numeric(precision=10, scale=2)] = (
-        so.mapped_column(sa.Numeric(10, 2), nullable=False, default=Decimal("0.00"))
+    selling_price_per_unit: so.Mapped[sa.Numeric] = so.mapped_column(
+        sa.Numeric(10, 2), nullable=False, default=Decimal("0.00")
     )
 
     updated_at: so.Mapped[datetime] = so.mapped_column(
-        default=datetime.utcnow, onupdate=datetime.utcnow
+        sa.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
     purchases: so.Mapped[List["StockPurchase"]] = so.relationship(
@@ -185,12 +189,12 @@ class StockPurchase(db.Model):
     )
 
     # NEW/RENAMED: buying_price_at_purchase (was 'cost' or implied)
-    buying_price_at_purchase: so.Mapped[sa.Numeric(precision=10, scale=2)] = (
-        so.mapped_column(sa.Numeric(10, 2), nullable=False, default=Decimal("0.00"))
+    buying_price_at_purchase: so.Mapped[sa.Numeric] = so.mapped_column(
+        sa.Numeric(precision=10, scale=2), nullable=False, default=Decimal("0.00")
     )
     # This remains: selling_price_at_purchase (price determined for sale at time of purchase)
-    selling_price_at_purchase: so.Mapped[sa.Numeric(precision=10, scale=2)] = (
-        so.mapped_column(sa.Numeric(10, 2), nullable=False)
+    selling_price_at_purchase: so.Mapped[sa.Numeric] = so.mapped_column(
+        sa.Numeric(10, 2), nullable=False
     )
 
     amount_purchased: so.Mapped[int] = so.mapped_column(sa.Integer, nullable=False)
@@ -201,6 +205,9 @@ class StockPurchase(db.Model):
     purchased_by: so.Mapped["User"] = so.relationship(
         back_populates="stock_purchases_made"
     )
+    created_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
 
     created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
 
@@ -208,7 +215,7 @@ class StockPurchase(db.Model):
         return f"<StockPurchase {self.network.value} - {self.amount_purchased} units bought at {self.buying_price_at_purchase} FC, intended sell at {self.selling_price_at_purchase} FC>"
 
 
-# New Sale Model
+# Sale Model
 class Sale(db.Model):
     __tablename__ = "sales"
 
@@ -236,15 +243,15 @@ class Sale(db.Model):
     )
 
     # Total amount due for this entire sale (sum of all SaleItems)
-    total_amount_due: so.Mapped[sa.Numeric(precision=12, scale=2)] = so.mapped_column(
+    total_amount_due: so.Mapped[sa.Numeric] = so.mapped_column(
         sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
     # Amount of cash paid by the client
-    cash_paid: so.Mapped[sa.Numeric(precision=12, scale=2)] = so.mapped_column(
+    cash_paid: so.Mapped[sa.Numeric] = so.mapped_column(
         sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
     # Debt remaining for this sale (total_amount_due - cash_paid)
-    debt_amount: so.Mapped[sa.Numeric(precision=12, scale=2)] = so.mapped_column(
+    debt_amount: so.Mapped[sa.Numeric] = so.mapped_column(
         sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
 
@@ -282,12 +289,12 @@ class SaleItem(db.Model):
     )  # Amount of airtime sold for this network
 
     # Price per unit for this specific sale item (after network reduction)
-    price_per_unit_applied: so.Mapped[sa.Numeric(precision=10, scale=2)] = (
-        so.mapped_column(sa.Numeric(10, 2), nullable=False)
+    price_per_unit_applied: so.Mapped[sa.Numeric] = so.mapped_column(
+        sa.Numeric(10, 2), nullable=False
     )
 
     # Subtotal for this specific SaleItem (quantity * price_per_unit_applied)
-    subtotal: so.Mapped[sa.Numeric(precision=12, scale=2)] = so.mapped_column(
+    subtotal: so.Mapped[sa.Numeric] = so.mapped_column(
         sa.Numeric(12, 2), nullable=False
     )
 
@@ -308,9 +315,7 @@ class CashOutflow(db.Model):
         back_populates="cash_outflows_recorded"
     )
 
-    amount: so.Mapped[sa.Numeric(precision=12, scale=2)] = so.mapped_column(
-        sa.Numeric(12, 2), nullable=False
-    )
+    amount: so.Mapped[sa.Numeric] = so.mapped_column(sa.Numeric(12, 2), nullable=False)
     category: so.Mapped[CashOutflowCategory] = so.mapped_column(
         sa.Enum(CashOutflowCategory), nullable=False
     )
@@ -330,9 +335,7 @@ class CashInflow(db.Model):
         back_populates="cash_inflows_recorded"
     )
 
-    amount: so.Mapped[sa.Numeric(precision=12, scale=2)] = so.mapped_column(
-        sa.Numeric(12, 2), nullable=False
-    )
+    amount: so.Mapped[sa.Numeric] = so.mapped_column(sa.Numeric(12, 2), nullable=False)
     category: so.Mapped[CashInflowCategory] = so.mapped_column(
         sa.Enum(CashInflowCategory),
         nullable=False,
