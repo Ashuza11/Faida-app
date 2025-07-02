@@ -10,7 +10,8 @@ from apps.authentication.models import (
     DailyOverallReport,
 )
 from decimal import Decimal, ROUND_UP, getcontext
-from datetime import date, datetime, timedelta, time
+from datetime import date, datetime, timedelta, time, timezone
+import pytz
 from sqlalchemy import func
 
 # Set precision for Decimal operations
@@ -84,6 +85,50 @@ def custom_round_up(amount: Decimal) -> Decimal:
         return amount
 
 
+# Define the application's timezone once
+APP_TIMEZONE = pytz.timezone("Africa/Lubumbashi")
+
+
+def get_local_timezone_datetime_info():
+    """
+    Returns a tuple containing:
+    (local_now: datetime,
+     today_local_date: date,
+     start_of_local_day_utc: datetime,
+     end_of_local_day_utc: datetime)
+
+    These represent the current time in the app's local timezone,
+    the current local date, and the corresponding UTC start and end
+    datetimes for that local date.
+    """
+    utc_now = datetime.utcnow()
+    local_now = utc_now.astimezone(APP_TIMEZONE)
+    today_local_date = local_now.date()
+
+    # Calculate start and end of the local day in UTC
+    start_of_local_day_dt = datetime(
+        today_local_date.year, today_local_date.month, today_local_date.day, 0, 0, 0
+    )
+    start_of_local_day_utc = APP_TIMEZONE.localize(start_of_local_day_dt).astimezone(
+        pytz.utc
+    )
+
+    end_of_local_day_dt = datetime(
+        today_local_date.year,
+        today_local_date.month,
+        today_local_date.day,
+        23,
+        59,
+        59,
+        999999,
+    )
+    end_of_local_day_utc = APP_TIMEZONE.localize(end_of_local_day_dt).astimezone(
+        pytz.utc
+    )
+
+    return local_now, today_local_date, start_of_local_day_utc, end_of_local_day_utc
+
+
 # Helper function for parsing date parameters (from your blueprint.route)
 def parse_date_param(date_str, default_date):
     if date_str:
@@ -100,7 +145,7 @@ def parse_date_param(date_str, default_date):
 def get_daily_report_data(
     app,
     target_date: date,
-    start_of_utc_range: datetime = None,
+    start_of_utc_range: datetime = None,  # Keep these for explicit overrides if needed, but the primary use for 'today' will be the new utility
     end_of_utc_range: datetime = None,
 ):
     """
@@ -116,34 +161,60 @@ def get_daily_report_data(
         app: Flask app instance.
         target_date (date): The calendar date (local) for which the report is being generated.
         start_of_utc_range (datetime, optional): Explicit UTC datetime for the start of the filter period.
-                                                  Used for live reports to align with local day.
-        end_of_utc_range (datetime, optional): Explicit UTC datetime for the end of the filter period.
                                                 Used for live reports to align with local day.
+        end_of_utc_range (datetime, optional): Explicit UTC datetime for the end of the filter period.
+                                              Used for live reports to align with local day.
     """
     with app.app_context():
         app.logger.info(f"Calculating report data for target date: {target_date}")
 
+        (
+            _,
+            today_local_date_util,
+            start_of_local_day_utc_util,
+            end_of_local_day_utc_util,
+        ) = get_local_timezone_datetime_info()
+
         # Determine the datetime range for filtering.
-        # If explicit UTC ranges are provided (for live today's report), use them.
-        # Otherwise, calculate UTC range based on target_date (for historical daily reports or cron job).
-        if start_of_utc_range and end_of_utc_range:
+        if target_date == today_local_date_util:
+            # If target_date is today, use the live local-day-aligned UTC range from the utility
+            filter_start_dt = start_of_local_day_utc_util
+            filter_end_dt = end_of_local_day_utc_util
+            app.logger.info(
+                f"For target_date (today), using live UTC filter range: {filter_start_dt} to {filter_end_dt}"
+            )
+        elif start_of_utc_range and end_of_utc_range:
+            # Fallback for explicit overrides, although the above 'today' check is usually sufficient
             filter_start_dt = start_of_utc_range
             filter_end_dt = end_of_utc_range
             app.logger.info(
                 f"Using explicit UTC filter range: {filter_start_dt} to {filter_end_dt}"
             )
         else:
-            # For historical reports or scheduled jobs, filter based on the target_date's UTC day
-            # This assumes your historical reports and calculations are consistently UTC-based.
-            # If historical reports also use local-day logic, this part might need adjustment.
-            filter_start_dt = datetime.combine(
-                target_date, time.min, tzinfo=timezone.utc
-            )
-            filter_end_dt = datetime.combine(
-                target_date + timedelta(days=1), time.min, tzinfo=timezone.utc
-            )
+            # For historical reports (target_date is not today), filter based on the target_date's UTC day
+            # This logic assumes historical data timestamps are stored in UTC and correspond directly to a UTC day.
+            # If your historical `report_date` in DailyOverallReport/DailyStockReport refers to a LOCAL date,
+            # but transactions (`created_at`) are UTC, then this needs to properly convert `target_date` (local)
+            # into its corresponding UTC range.
+            # The current way (`datetime.combine(target_date, time.min, tzinfo=timezone.utc)`) assumes target_date
+            # *is* the UTC date, which might not be what you want for historical data that was *generated* for a local day.
+            # Let's adjust this to be robust:
+            filter_start_dt = APP_TIMEZONE.localize(
+                datetime(target_date.year, target_date.month, target_date.day, 0, 0, 0)
+            ).astimezone(pytz.utc)
+            filter_end_dt = APP_TIMEZONE.localize(
+                datetime(
+                    target_date.year,
+                    target_date.month,
+                    target_date.day,
+                    23,
+                    59,
+                    59,
+                    999999,
+                )
+            ).astimezone(pytz.utc)
             app.logger.info(
-                f"Calculating UTC filter range for target_date: {filter_start_dt} to {filter_end_dt}"
+                f"Calculating UTC filter range for historical target_date {target_date}: {filter_start_dt} to {filter_end_dt}"
             )
 
         networks = list(NetworkType.__members__.values())
@@ -165,24 +236,24 @@ def get_daily_report_data(
         live_stock_map = {s.network: s for s in live_stock_items}
 
         # Calculate daily purchases for the target_date
-        daily_purchases_query = (  # Renamed to avoid confusion with the list
+        daily_purchases_query = (
             db.session.query(
                 StockPurchase.network,
                 func.sum(StockPurchase.amount_purchased).label(
                     "total_purchased_amount"
                 ),
             )
-            # CHANGE HERE: Use the determined filter_start_dt and filter_end_dt
             .filter(
                 StockPurchase.created_at >= filter_start_dt,
                 StockPurchase.created_at < filter_end_dt,
-            ).group_by(StockPurchase.network)
+            )
+            .group_by(StockPurchase.network)
         )
         # Add a logger for the SQL query generated
         app.logger.debug(
             f"Daily purchases SQL: {daily_purchases_query.statement.compile(dialect=db.engine.dialect)}"
         )
-        daily_purchases = daily_purchases_query.all()  # Fetch the results here
+        daily_purchases = daily_purchases_query.all()
 
         purchases_by_network = {
             p.network: Decimal(str(p.total_purchased_amount or 0))
@@ -190,13 +261,12 @@ def get_daily_report_data(
         }
 
         # Calculate daily sales (quantity sold) for the target_date
-        daily_sales_quantity_query = (  # Renamed to avoid confusion with the list
+        daily_sales_quantity_query = (
             db.session.query(
                 SaleItem.network,
                 func.sum(SaleItem.quantity).label("total_sold_quantity"),
             )
             .join(Sale)
-            # CHANGE HERE: Use the determined filter_start_dt and filter_end_dt
             .filter(
                 Sale.created_at >= filter_start_dt,
                 Sale.created_at < filter_end_dt,
@@ -207,9 +277,7 @@ def get_daily_report_data(
         app.logger.debug(
             f"Daily sales quantity SQL: {daily_sales_quantity_query.statement.compile(dialect=db.engine.dialect)}"
         )
-        daily_sales_quantity = (
-            daily_sales_quantity_query.all()
-        )  # Fetch the results here
+        daily_sales_quantity = daily_sales_quantity_query.all()
 
         sold_quantities_by_network = {
             s.network: Decimal(str(s.total_sold_quantity or 0))
@@ -223,7 +291,6 @@ def get_daily_report_data(
                 func.sum(SaleItem.subtotal).label("total_sold_value"),
             )
             .join(Sale)
-            # CHANGE HERE: Use the determined filter_start_dt and filter_end_dt
             .filter(
                 Sale.created_at >= filter_start_dt,
                 Sale.created_at < filter_end_dt,
@@ -234,7 +301,7 @@ def get_daily_report_data(
         app.logger.debug(
             f"Daily sales value SQL: {daily_sales_value_query.statement.compile(dialect=db.engine.dialect)}"
         )
-        daily_sales_value = daily_sales_value_query.all()  # Fetch the results here
+        daily_sales_value = daily_sales_value_query.all()
 
         sold_values_by_network = {
             s.network: Decimal(str(s.total_sold_value or 0)) for s in daily_sales_value
@@ -251,8 +318,8 @@ def get_daily_report_data(
                 .filter(
                     SaleItem.network == network,
                     Sale.debt_amount > 0,
-                    # Filter sales that contributed to debt *up to the end of the report period*
-                    Sale.created_at <= filter_end_dt,
+                    Sale.created_at
+                    <= filter_end_dt,  # All outstanding debts up to end of period
                 )
             )
             # Debug SQL for debts as well
@@ -266,18 +333,21 @@ def get_daily_report_data(
         total_debts_overall = sum(network_debts.values(), Decimal("0.00"))
 
         for network in networks:
-            initial_stock = previous_final_stocks_map.get(network, None)
+            initial_stock = previous_final_stocks_map.get(
+                network, Decimal("0.00")
+            )  # Default to 0
 
-            # If no previous day's report, or if target_date is today (and no explicit range provided, meaning it's the cron job for 'today'),
-            # fall back to the live stock balance. This is crucial for real-time reports and the first-ever report.
-            # However, when explicitly passed start_of_utc_range/end_of_utc_range, it implies we are calculating for TODAY.
+            # If no previous day's report, or if target_date is today,
+            # fall back to the live stock balance for initial stock.
+            # This ensures live data for today's report starts from current stock.
+            # For historical reports, we should rely on the previous_final_stocks_map.
             if (
-                initial_stock is None or target_date == date.today()
-            ):  # Added target_date == date.today() check
+                target_date == today_local_date_util and not initial_stock
+            ):  # Check if initial_stock is 0 or not found
                 live_stock = live_stock_map.get(network)
                 initial_stock = live_stock.balance if live_stock else Decimal("0.00")
                 app.logger.debug(
-                    f"No previous day report for {network.name} on {target_date}. "
+                    f"For live report ({target_date}), no previous day report for {network.name}. "
                     f"Using live stock as initial: {initial_stock}"
                 )
 
@@ -285,13 +355,10 @@ def get_daily_report_data(
             sold_stock_quantity = sold_quantities_by_network.get(
                 network, Decimal("0.00")
             )
-            sold_stock_value = sold_values_by_network.get(
-                network, Decimal("0.00")
-            )  # This is total sales value for validation
+            sold_stock_value = sold_values_by_network.get(network, Decimal("0.00"))
 
             final_stock = initial_stock + purchased_stock - sold_stock_quantity
 
-            # Get selling price for virtual value calculation
             selling_price_per_unit = Decimal("0.00")
             if live_stock_map.get(network):
                 selling_price_per_unit = live_stock_map[

@@ -6,10 +6,18 @@ from sqlalchemy.sql import func, cast
 from sqlalchemy.types import Date
 from jinja2 import TemplateNotFound
 from apps.decorators import superadmin_required, vendeur_required
-from apps.home.utils import custom_round_up, parse_date_param, get_daily_report_data
+from apps.home.utils import (
+    custom_round_up,
+    parse_date_param,
+    get_daily_report_data,
+    get_local_timezone_datetime_info,
+    APP_TIMEZONE,
+)
+
 from apps import db
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone, date
+import pytz
 from apps.authentication.models import (
     User,
     RoleType,
@@ -41,38 +49,62 @@ from apps.home.forms import (
 )
 
 
+# Define the timezone for the application
+APP_TIMEZONE = pytz.timezone("Africa/Lubumbashi")
+
+
 @blueprint.route("/index")
 @login_required
 def index():
-    today = date.today()
+    # Use the new utility function to get timezone-aware date/time info
+    local_now, today_local_date, start_of_local_day_utc, end_of_local_day_utc = (
+        get_local_timezone_datetime_info()
+    )
 
     # --- 1. Total Stock for each network (Card stats) ---
-    # Query current stock balances for all networks
     current_stocks = Stock.query.all()
-    total_stocks_data = {}
-    for stock in current_stocks:
-        total_stocks_data[stock.network.value] = stock.balance
+    total_stocks_data = {stock.network.value: stock.balance for stock in current_stocks}
 
     # --- 2. Sales Over Time (Chart 1 - Sales Value) ---
-    # For weekly sales chart (example: last 7 days)
     sales_data_week = {}
-    dates_in_week = [
-        (today - timedelta(days=i)) for i in range(6, -1, -1)
-    ]  # Last 7 days including today
+    # Iterate through local dates, but filter by UTC time range
+    for i in range(6, -1, -1):
+        target_local_date = today_local_date - timedelta(days=i)
+        # Recalculate UTC bounds for each target_local_date using the APP_TIMEZONE
+        start_of_target_day_utc = APP_TIMEZONE.localize(
+            datetime(
+                target_local_date.year,
+                target_local_date.month,
+                target_local_date.day,
+                0,
+                0,
+                0,
+            )
+        ).astimezone(pytz.utc)
+        end_of_target_day_utc = APP_TIMEZONE.localize(
+            datetime(
+                target_local_date.year,
+                target_local_date.month,
+                target_local_date.day,
+                23,
+                59,
+                59,
+                999999,
+            )
+        ).astimezone(pytz.utc)
 
-    for d in dates_in_week:
+        # Query using the UTC datetime range
         daily_sales = (
             db.session.query(func.sum(Sale.total_amount_due))
-            .filter(cast(Sale.created_at, Date) == d)
+            .filter(
+                Sale.created_at >= start_of_target_day_utc,
+                Sale.created_at <= end_of_target_day_utc,
+            )
             .scalar()
         )
-        sales_data_week[d.strftime("%a")] = (
+        sales_data_week[target_local_date.strftime("%a")] = (
             float(daily_sales) if daily_sales else 0.00
-        )  # 'Mon', 'Tue', etc.
-
-    # For monthly sales (example: last 30 days or aggregated by day in month)
-    # This might require more sophisticated charting data, for simplicity, we'll use weekly for the initial chart.
-    # You can expand this logic for monthly aggregation later.
+        )
 
     # --- 3. Sales by Network (Chart 2 - Total Orders/Performance) ---
     sales_by_network = {}
@@ -81,7 +113,9 @@ def index():
             db.session.query(func.sum(SaleItem.subtotal))
             .filter(
                 SaleItem.network == network,
-                cast(SaleItem.created_at, Date) == today,  # Sales for today by network
+                # Filter by UTC datetime range for the current local day
+                SaleItem.created_at >= start_of_local_day_utc,
+                SaleItem.created_at <= end_of_local_day_utc,
             )
             .scalar()
         )
@@ -90,18 +124,25 @@ def index():
         )
 
     # --- 4. Key Performance Indicators (Card Stats) ---
-    # Total Sales (Today)
+    # Total Sales (Today - based on local timezone's definition of "today")
     total_sales_today = (
         db.session.query(func.sum(Sale.total_amount_due))
-        .filter(cast(Sale.created_at, Date) == today)
+        .filter(
+            Sale.created_at >= start_of_local_day_utc,
+            Sale.created_at <= end_of_local_day_utc,
+        )
         .scalar()
     )
     total_sales_today = float(total_sales_today) if total_sales_today else 0.00
 
-    # Total Debt (Currently outstanding)
+    # Total Debt (Currently outstanding) - This query is fine as it's not date-specific
     total_debt = (
         db.session.query(func.sum(Sale.debt_amount))
-        .filter(Sale.debt_amount > 0)
+        .filter(
+            Sale.debt_amount > 0,
+            # If you want to show total debt *as of end of today's local time*, uncomment below:
+            # Sale.created_at <= end_of_local_day_utc,
+        )
         .scalar()
     )
     total_debt = float(total_debt) if total_debt else 0.00
@@ -109,14 +150,18 @@ def index():
     # Total Cash Inflow (Today, from sales collection and other inflows)
     total_cash_inflow_sales = (
         db.session.query(func.sum(Sale.cash_paid))
-        .filter(cast(Sale.created_at, Date) == today)
+        .filter(
+            Sale.created_at >= start_of_local_day_utc,
+            Sale.created_at <= end_of_local_day_utc,
+        )
         .scalar()
     )
     total_cash_inflow_other = (
         db.session.query(func.sum(CashInflow.amount))
         .filter(
-            cast(CashInflow.created_at, Date) == today,
-            CashInflow.category == CashInflowCategory.OTHER,
+            CashInflow.created_at >= start_of_local_day_utc,
+            CashInflow.created_at <= end_of_local_day_utc,
+            # CashInflow.category == CashInflowCategory.OTHER, # Only filter if you specifically want 'other' category
         )
         .scalar()
     )
@@ -129,7 +174,10 @@ def index():
     # Total Cash Outflow (Today)
     total_cash_outflow_today = (
         db.session.query(func.sum(CashOutflow.amount))
-        .filter(cast(CashOutflow.created_at, Date) == today)
+        .filter(
+            CashOutflow.created_at >= start_of_local_day_utc,
+            CashOutflow.created_at <= end_of_local_day_utc,
+        )
         .scalar()
     )
     total_cash_outflow_today = (
@@ -146,11 +194,22 @@ def index():
         .order_by(Sale.created_at.desc())
         .limit(5)
         .all()
-    )  # Get last 5 sales
+    )
 
     # --- 6. Daily Stock Report and Overall Report (Summary Tables) ---
-    daily_stock_reports = DailyStockReport.query.filter_by(report_date=today).all()
-    daily_overall_report = DailyOverallReport.query.filter_by(report_date=today).first()
+    # Query for yesterday's reports for display on the index,
+    # as they are typically generated for the completed previous day.
+    yesterday_local_date = today_local_date - timedelta(days=1)
+
+    daily_stock_reports = DailyStockReport.query.filter_by(
+        report_date=yesterday_local_date
+    ).all()
+    daily_overall_report = DailyOverallReport.query.filter_by(
+        report_date=yesterday_local_date
+    ).first()
+
+    # Optional: If you want to display 'No Report Yet' for today if the cron hasn't run
+    # You could check if daily_overall_report is None and provide a message to the template.
 
     return render_template(
         "home/index.html",
@@ -165,7 +224,7 @@ def index():
         recent_sales=recent_sales,
         daily_stock_reports=daily_stock_reports,
         daily_overall_report=daily_overall_report,
-        NetworkType=NetworkType,  # Pass the Enum to the template for image paths
+        NetworkType=NetworkType,
     )
 
 
@@ -1444,55 +1503,27 @@ def encaisser_dette():
 @superadmin_required
 def rapports():
     page_title = "Rapport Stock & Ventes"
-    local_today = date.today()
 
-    local_timezone_offset_hours = 2  # Example: For CAT (Central Africa Time), UTC+2
-
-    # Start of local today in UTC
-    # Example: If local_today is 2025-06-30 (CAT, UTC+2)
-    # The start of the local day (00:00:00 CAT) is 2025-06-29 22:00:00 UTC
-    start_of_local_today_dt = datetime(
-        local_today.year, local_today.month, local_today.day, 0, 0, 0
-    )
-    start_of_local_today_utc = start_of_local_today_dt - timedelta(
-        hours=local_timezone_offset_hours
+    # Use the new utility function for current local date and UTC bounds
+    _, today_local_date, start_of_local_day_utc, end_of_local_day_utc = (
+        get_local_timezone_datetime_info()
     )
 
-    # End of local today in UTC (just before next local day)
-    # Example: If local_today is 2025-06-30 (CAT, UTC+2)
-    # The end of the local day (23:59:59.999999 CAT) is 2025-06-30 21:59:59.999999 UTC
-    end_of_local_today_dt = datetime(
-        local_today.year, local_today.month, local_today.day, 23, 59, 59, 999999
-    )
-    end_of_local_today_utc = end_of_local_today_dt - timedelta(
-        hours=local_timezone_offset_hours
-    )
-
-    # The rest of your date parsing logic might need to align with this approach
-    # For simplicity in this fix, we will keep selected_start_date and selected_end_date as date objects
-    # but use the calculated UTC datetime ranges for the live query.
-    selected_start_date = (
-        local_today  # For display and non-live data historical queries
-    )
-    selected_end_date = local_today
-
-    # Determine default date range
-    today = date.today()
-    default_start_date = today - timedelta(days=1)
-    default_end_date = today - timedelta(days=1)
+    # Determine default date range for reports
+    default_start_date = today_local_date - timedelta(days=1)
+    default_end_date = today_local_date - timedelta(days=1)
 
     test_report_exists = DailyOverallReport.query.first()
     if not test_report_exists:
         current_app.logger.info(
             "No historical stock reports found. Defaulting report range to today (live data)."
         )
-        default_start_date = today
-        default_end_date = today
+        default_start_date = today_local_date
+        default_end_date = today_local_date
 
     start_date_str = request.args.get("start_date")
     end_date_str = request.args.get("end_date")
 
-    # When parsing, ensure default_date is also UTC-aligned if it comes from here
     selected_start_date = parse_date_param(
         start_date_str, default_date=default_start_date
     )
@@ -1536,9 +1567,18 @@ def rapports():
 
     overall_report_for_display = None
 
-    if selected_start_date == today and selected_end_date == today:
+    if (
+        selected_start_date == today_local_date
+        and selected_end_date == today_local_date
+    ):
         current_app.logger.info("Fetching live report data for today.")
-        calculated_data, total_sales_val, _ = get_daily_report_data(current_app, today)
+        # Pass the calculated UTC ranges from the utility function
+        calculated_data, total_sales_val, total_live_debts = get_daily_report_data(
+            current_app,
+            today_local_date,  # target_date is today's local date
+            start_of_utc_range=start_of_local_day_utc,
+            end_of_utc_range=end_of_local_day_utc,
+        )
 
         for network_name, data in calculated_data.items():
             report_data[network_name].update(
@@ -1558,17 +1598,7 @@ def rapports():
             grand_totals["final_stock"] += data["final_stock"]
             grand_totals["virtual_value"] += data["virtual_value"]
 
-        # --- REVISED QUERY FOR LIVE DEBTS ---
-        # Query using the calculated UTC datetime range
-
-        total_live_debts = (
-            db.session.query(sa.func.sum(Sale.debt_amount))
-            .filter(
-                Sale.created_at >= start_of_local_today_utc,
-                Sale.created_at <= end_of_local_today_utc,
-            )
-            .scalar()
-        )
+        # total_live_debts is now returned directly from get_daily_report_data
         grand_totals["total_debts"] = (
             total_live_debts if total_live_debts is not None else Decimal("0.00")
         )
