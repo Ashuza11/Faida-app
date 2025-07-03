@@ -300,7 +300,21 @@
   <script src="/static/assets/vendor/chart.js/dist/Chart.extension.js"></script>
 
   <script>
-    // Data for Sales Value chart (Last 7 Days)
+    // Set global Chart.js defaults to match the Argon Dashboard design system (if not already done elsewhere)
+    Chart.defaults.global.defaultFontColor = '#8898aa';
+    Chart.defaults.global.defaultFontFamily = 'Open Sans, sans-serif';
+    Chart.defaults.global.defaultFontSize = 13;
+
+    // Helper function for formatting currency
+    function formatCurrency(value) {
+        // Ensure value is a number for toLocaleString
+        const numValue = parseFloat(value);
+        if (isNaN(numValue)) return value; // Return original if not a number
+        return numValue.toLocaleString('fr-CD', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' FC';
+        // Changed to 0 fractional digits as per image, adjust if needed
+    }
+
+    // --- Sales Value chart (Last 7 Days) ---
     var salesDataWeek = {{ sales_data_week | tojson }};
     var salesLabels = Object.keys(salesDataWeek);
     var salesValues = Object.values(salesDataWeek);
@@ -309,61 +323,95 @@
       var $chart = $('#chart-sales-dark');
 
       function init($chart) {
+        // IMPORTANT: Destroy existing chart instance if it exists
+        // This prevents multiple charts from being initialized on the same canvas
+        if ($chart.data('chart')) {
+            $chart.data('chart').destroy();
+        }
+
         var salesChart = new Chart($chart, {
           type: 'line',
           options: {
-            scales: {
-              yAxes: [{
-                gridLines: {
-                  lineWidth: 1,
-                  drawBorder: false,
-                  drawOnChartArea: false,
-                  drawTicks: false
-                },
-                ticks: {
-                  callback: function(value) {
-                    // This will format the y-axis labels to include ' FC'
-                    return value + ' FC';
-                  }
-                }
-              }],
-              xAxes: [{
-                gridLines: {
-                  drawBorder: false,
-                  drawOnChartArea: false,
-                  drawTicks: false
-                },
-                ticks: {
-                  autoSkip: false,
-                  maxRotation: 0,
-                  minRotation: 0,
-                  // Translate month abbreviations to French if needed, assuming salesLabels are month names like 'Jan', 'Feb' etc.
-                  // For daily data (last 7 days), 'salesLabels' are likely short day names (e.g., 'Mon', 'Tue').
-                  // If these labels are coming from the backend as English abbreviations, you'd need to map them here.
-                  // For now, assuming they are already suitable or you handle it in the backend.
-                }
-              }]
+            responsive: true,
+            maintainAspectRatio: false,
+            legend: {
+              display: false
             },
             tooltips: {
+              mode: 'index',
+              intersect: false,
               callbacks: {
                 label: function(item, data) {
                   var label = data.datasets[item.datasetIndex].label || '';
                   var yLabel = item.yLabel;
-                  var content = '';
                   if (data.datasets.length > 1) {
-                    content += '<span class="popover-body-label mr-auto">' + label + '</span>';
+                    label += ': ';
                   }
-                  // Ensure tooltips display ' FC'
-                  return content + yLabel + ' FC';
+                  return label + formatCurrency(yLabel);
                 }
               }
+            },
+            layout: {
+              padding: {
+                left: 0,
+                right: 0,
+                top: 0,
+                bottom: 0
+              }
+            },
+            scales: {
+              yAxes: [{
+                gridLines: {
+                  color: 'rgba(255, 255, 255, .1)',
+                  drawBorder: false,
+                  zeroLineColor: 'rgba(255, 255, 255, .1)',
+                  zeroLineBorderDash: [2],
+                  zeroLineBorderDashOffset: [2]
+                },
+                ticks: {
+                  callback: function(value) {
+                    return formatCurrency(value);
+                  },
+                  fontColor: '#fff'
+                }
+              }],
+              xAxes: [{
+                gridLines: {
+                  color: 'rgba(255, 255, 255, .1)',
+                  drawBorder: false,
+                  zeroLineColor: 'rgba(255, 255, 255, .1)',
+                  zeroLineBorderDash: [2],
+                  zeroLineBorderDashOffset: [2]
+                },
+                ticks: {
+                  fontColor: '#fff',
+                  // Ensure these labels match your backend data's day abbreviations
+                  // If "Lun", "Mar", etc. are coming directly, no mapping needed.
+                  // If backend sends "Mon", "Tue", then uncomment the mapping below:
+                  callback: function(value) {
+                      const dayMap = {"Mon": "Lun", "Tue": "Mar", "Wed": "Mer", "Thu": "Jeu", "Fri": "Ven", "Sat": "Sam", "Sun": "Dim"};
+                      return dayMap[value] || value; // Map to French, or keep as is if not found
+                  }
+                }
+              }]
             }
           },
           data: {
             labels: salesLabels,
             datasets: [{
-              label: 'Ventes', // Translated label
-              data: salesValues
+              label: 'Ventes',
+              data: salesValues,
+              backgroundColor: 'rgba(94, 114, 228, 0.5)',
+              borderColor: '#5e72e4',
+              borderWidth: 3,
+              pointRadius: 6,
+              pointBorderColor: '#fff',
+              pointBackgroundColor: '#5e72e4',
+              pointHoverRadius: 8,
+              pointHoverBorderColor: '#fff',
+              pointHoverBackgroundColor: '#5e72e4',
+              fill: true,
+              lineTension: 0.4
             }]
           }
         });
@@ -375,59 +423,89 @@
       }
     })();
 
-    // Data for Sales by Network chart (Today)
+    // --- Sales by Network chart (Today) ---
     var salesByNetworkData = {{ sales_by_network | tojson }};
     var networkLabels = Object.keys(salesByNetworkData);
     var networkValues = Object.values(salesByNetworkData);
+
+    var displayNetworkLabels = networkLabels.map(label => label.charAt(0).toUpperCase() + label.slice(1));
+
     var networkColors = {
         'airtel': '#F44336', // Red
         'orange': '#FF9800', // Orange
         'vodacom': '#673AB7', // Deep Purple
         'africel': '#4CAF50'  // Green
     };
-    var backgroundColors = networkLabels.map(label => networkColors[label] || '#cccccc'); // Default grey if not found
+    var backgroundColors = networkLabels.map(label => networkColors[label.toLowerCase()] || '#cccccc');
 
     var ChartBars = (function() {
       var $chart = $('#chart-bars');
 
       function init($chart) {
+        // IMPORTANT: Destroy existing chart instance if it exists
+        if ($chart.data('chart')) {
+            $chart.data('chart').destroy();
+        }
+
         var barsChart = new Chart($chart, {
           type: 'bar',
           data: {
-            // Capitalize network names for display. If you need full French names (e.g., 'Airtel' -> 'Airtel'),
-            // you might need a mapping object here or ensure names are translated in the backend.
-            labels: networkLabels.map(label => label.charAt(0).toUpperCase() + label.slice(1)),
+            labels: displayNetworkLabels,
             datasets: [{
-              label: 'Ventes (FC)', // Translated label
+              label: 'Ventes (FC)',
               data: networkValues,
-              backgroundColor: backgroundColors
+              backgroundColor: backgroundColors,
+              borderColor: backgroundColors,
+              borderWidth: 1,
+              barPercentage: 0.7,
+              categoryPercentage: 0.8
             }]
           },
           options: {
-            scales: {
-              yAxes: [{
-                ticks: {
-                  beginAtZero: true,
-                  callback: function(value) {
-                    // Ensure y-axis labels display ' FC'
-                    return value + ' FC';
-                  }
-                }
-              }]
+            responsive: true,
+            maintainAspectRatio: false,
+            legend: {
+              display: false
             },
             tooltips: {
+              mode: 'index',
+              intersect: false,
               callbacks: {
                 label: function(item, data) {
                   var label = data.datasets[item.datasetIndex].label || '';
                   var yLabel = item.yLabel;
-                  var content = '';
                   if (data.datasets.length > 1) {
-                    content += '<span class="popover-body-label mr-auto">' + label + '</span>';
+                    label += ': ';
                   }
-                  // Ensure tooltips display ' FC'
-                  return content + yLabel + ' FC';
+                  return label + formatCurrency(yLabel);
                 }
               }
+            },
+            scales: {
+              yAxes: [{
+                gridLines: {
+                  color: 'rgba(0, 0, 0, .05)',
+                  drawBorder: false,
+                  zeroLineColor: 'rgba(0, 0, 0, .05)',
+                  zeroLineBorderDash: [2],
+                  zeroLineBorderDashOffset: [2]
+                },
+                ticks: {
+                  beginAtZero: true,
+                  callback: function(value) {
+                    return formatCurrency(value);
+                  }
+                }
+              }],
+              xAxes: [{
+                gridLines: {
+                  display: false,
+                  drawBorder: false
+                },
+                ticks: {
+                  // Standard text color from global defaults
+                }
+              }]
             }
           }
         });
@@ -439,5 +517,4 @@
       }
     })();
   </script>
-
-{% endblock javascripts %}
+{% endblock %}
