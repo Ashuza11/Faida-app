@@ -344,7 +344,7 @@ def user_edit(user_id):
         user_edit_form.username.data = user.username
         user_edit_form.email.data = user.email
         user_edit_form.role.data = user.role.value
-        user_edit_form.is_active.data = user.is_activeH
+        user_edit_form.is_active.data = user.is_active
 
     users = User.query.all()
     return render_template(
@@ -423,7 +423,7 @@ def client_management():
                 address=client_form.address.data,
                 gps_lat=gps_lat,  # Use the retrieved GPS data
                 gps_long=gps_long,  # Use the retrieved GPS data
-                discount_rate=client_form.discount_rate.data,
+                # discount_rate=client_form.discount_rate.data,
                 vendeur=current_user,
             )
             db.session.add(new_client)
@@ -1861,4 +1861,54 @@ def profile():
         num_clients_created=num_clients_created,
         num_sales_made=num_sales_made,
         num_stock_purchases=num_stock_purchases,
+    )
+
+
+# Client Map route
+@blueprint.route("/client-map", methods=["GET"])
+@login_required
+@vendeur_required
+def client_map():
+    """
+    Renders a map displaying clients based on their GPS coordinates.
+    Retrieves clients accessible to the current user (all for superadmin, own for vendeur).
+    """
+    # Fetch all clients for Superadmin
+    clients = Client.query.filter(
+        Client.gps_lat.isnot(None), Client.gps_long.isnot(None)
+    ).all()
+    # Prepare client data for JavaScript
+    client_locations = [
+        {
+            "id": client.id,
+            "name": client.name,
+            "lat": float(client.gps_lat),  # Ensure float for JS
+            "lng": float(client.gps_long),  # Ensure float for JS
+            "address": client.address if client.address else "Non spécifiée",
+            "phone_airtel": client.phone_airtel if client.phone_airtel else "N/A",
+            # Add other client details you want to show in info windows
+        }
+        for client in clients
+        if client.gps_lat is not None and client.gps_long is not None
+    ]
+
+    # Default center for Kisangani, DRC if no clients or to provide a starting point
+    # You might want to calculate an average center if you have many clients
+    default_center_lat = -0.5167
+    default_center_lng = 25.1999
+
+    if client_locations:
+        # Calculate approximate center of clients if available
+        # This is a very basic average, for more complex scenarios, use bounding box
+        avg_lat = sum(loc["lat"] for loc in client_locations) / len(client_locations)
+        avg_lng = sum(loc["lng"] for loc in client_locations) / len(client_locations)
+        default_center_lat = avg_lat
+        default_center_lng = avg_lng
+
+    return render_template(
+        "home/client_map.html",
+        client_locations=client_locations,
+        default_center_lat=default_center_lat,
+        default_center_lng=default_center_lng,
+        segment="client_map",
     )

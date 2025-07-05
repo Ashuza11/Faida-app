@@ -41,7 +41,6 @@
                   <th scope="col">Num Orange</th>
                   <th scope="col">Num Vodacom</th>
                   <th scope="col">Adresse</th>
-                  <th scope="col">Remise (%)</th>
                   <th scope="col">Statut</th>
                   <th scope="col">Actions</th>
                 </tr>
@@ -55,7 +54,6 @@
                     <td>{{ client.phone_orange if client.phone_orange else 'N/A' }}</td>
                     <td>{{ client.phone_vodacom if client.phone_vodacom else 'N/A' }}</td>
                     <td>{{ client.address if client.address else 'N/A' }}</td>
-                    <td>{{ client.discount_rate | default(0.0) }}%</td>
                     <td>
                       <span class="badge badge-dot mr-4">
                         <span class="status">
@@ -72,19 +70,19 @@
                         <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
                           {% if current_user.role.value == 'superadmin' or current_user.id == client.vendeur_id %}
                             <a class="dropdown-item edit-client-btn" href="#"
-                               data-toggle="modal" data-target="#editClientModal"
-                               data-id="{{ client.id }}"
-                               data-name="{{ client.name }}"
-                               data-email="{{ client.email }}"
-                               data-phone-airtel="{{ client.phone_airtel }}"
-                               data-phone-africel="{{ client.phone_africel }}"
-                               data-phone-orange="{{ client.phone_orange }}"
-                               data-phone-vodacom="{{ client.phone_vodacom }}"
-                               data-address="{{ client.address }}"
-                               data-gps-lat="{{ client.gps_lat }}"
-                               data-gps-long="{{ client.gps_long }}"
-                               data-discount-rate="{{ client.discount_rate }}"
-                               data-is-active="{{ 'true' if client.is_active else 'false' }}">
+                                data-toggle="modal" data-target="#editClientModal"
+                                data-id="{{ client.id }}"
+                                data-name="{{ client.name }}"
+                                data-email="{{ client.email }}"
+                                data-phone-airtel="{{ client.phone_airtel }}"
+                                data-phone-africel="{{ client.phone_africel }}"
+                                data-phone-orange="{{ client.phone_orange }}"
+                                data-phone-vodacom="{{ client.phone_vodacom }}"
+                                data-address="{{ client.address }}"
+                                data-gps-lat="{{ client.gps_lat }}"
+                                data-gps-long="{{ client.gps_long }}"
+                                data-discount-rate="{{ client.discount_rate }}"
+                                data-is-active="{{ 'true' if client.is_active else 'false' }}">
                                 Editer
                             </a>
                             <form action="{{ url_for('home_blueprint.client_toggle_active', client_id=client.id) }}" method="post" class="d-inline">
@@ -116,7 +114,6 @@
   {% set modal_id = 'addClientModal' %}
   {% set modal_title = 'Ajouter un nouveau Client' %}
   {% set form = client_form %} {# Pass the client_form #}
-  {# Add hidden fields for GPS coordinates inside the form for Add Client #}
   <div class="modal fade" id="{{ modal_id }}" tabindex="-1" role="dialog" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered" role="document">
       <div class="modal-content">
@@ -142,9 +139,22 @@
               {% endif %}
             {% endfor %}
 
-            {# Hidden fields for GPS coordinates - These will be populated by JavaScript #}
-            <input type="hidden" id="add_gps_lat" name="gps_lat">
-            <input type="hidden" id="add_gps_long" name="gps_long">
+            {# GPS coordinates display and "Get Location" button #}
+            <div class="form-group">
+                <label class="form-control-label">Localisation GPS (Optionnel)</label>
+                <div class="input-group mb-3">
+                    <input type="text" id="add_gps_lat" name="gps_lat" class="form-control" placeholder="Latitude" readonly>
+                    <input type="text" id="add_gps_long" name="gps_long" class="form-control ml-2" placeholder="Longitude" readonly>
+                    <div class="input-group-append">
+                        <button class="btn btn-outline-primary" type="button" id="getGeolocationBtn">
+                            <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                            Obtenir ma position
+                        </button>
+                    </div>
+                </div>
+                <small class="form-text text-muted" id="geolocation_status_message">Cliquez sur le bouton pour obtenir les coordonnées GPS actuelles.</small>
+            </div>
+
 
             {# CSRF token for security #}
             {{ form.csrf_token }} 
@@ -162,6 +172,7 @@
   {% set modal_id = 'editClientModal' %}
   {% set modal_title = 'Editer le client' %}
   {% set form = client_edit_form %}
+  {# The modal_form.html should correctly render all fields, including gps_lat/long #}
   {% include 'includes/modal_form.html' %} 
 
 {% endblock content %}
@@ -170,31 +181,70 @@
   {{ super() }}
   <script>
     $(document).ready(function() {
-      // // --- Geolocation for Add Client Modal ---
-      // $('#addClientModal').on('show.bs.modal', function (e) {
-      //   // Only attempt to get location if the fields are empty or not set
-      //   if (!($('#add_gps_lat').val() && $('#add_gps_long').val())) {
-      //     if (navigator.geolocation) {
-      //       navigator.geolocation.getCurrentPosition(function(position) {
-      //         $('#add_gps_lat').val(position.coords.latitude);
-      //         $('#add_gps_long').val(position.coords.longitude);
-      //         console.log("GPS coordinates populated:", position.coords.latitude, position.coords.longitude);
-      //       }, function(error) {
-      //         console.warn('ERROR(' + error.code + '): ' + error.message);
-      //         // Inform the user, but don't prevent form submission
-      //         // Optionally, you could show a message to the user that location could not be obtained
-      //         alert("Impossible d'obtenir la localisation actuelle. Veuillez l'entrer manuellement si nécessaire.");
-      //       }, {
-      //         enableHighAccuracy: true,
-      //         timeout: 10000, // 10 seconds
-      //         maximumAge: 0 // No cached location
-      //       });
-      //     } else {
-      //       console.log("Geolocation is not supported by this browser.");
-      //       alert("Votre navigateur ne prend pas en charge la géolocalisation.");
-      //     }
-      //   }
-      // });
+      // Function to get geolocation
+      function getGeolocation() {
+        const latField = $('#add_gps_lat');
+        const longField = $('#add_gps_long');
+        const statusMessage = $('#geolocation_status_message');
+        const getBtn = $('#getGeolocationBtn');
+        const spinner = getBtn.find('.spinner-border');
+
+        if (navigator.geolocation) {
+          spinner.removeClass('d-none'); // Show spinner
+          getBtn.prop('disabled', true); // Disable button
+          statusMessage.text("Acquisition de la position en cours...");
+
+          navigator.geolocation.getCurrentPosition(function(position) {
+            latField.val(position.coords.latitude);
+            longField.val(position.coords.longitude);
+            statusMessage.text("Coordonnées GPS obtenues avec succès.");
+            console.log("GPS coordinates populated:", position.coords.latitude, position.coords.longitude);
+            spinner.addClass('d-none'); // Hide spinner
+            getBtn.prop('disabled', false); // Re-enable button
+          }, function(error) {
+            let errorMessage = "Erreur lors de l'obtention de la localisation.";
+            switch(error.code) {
+              case error.PERMISSION_DENIED:
+                errorMessage = "Géolocalisation refusée par l'utilisateur. Veuillez l'activer dans les paramètres de votre navigateur.";
+                break;
+              case error.POSITION_UNAVAILABLE:
+                errorMessage = "Informations de localisation indisponibles.";
+                break;
+              case error.TIMEOUT:
+                errorMessage = "La demande de localisation a expiré.";
+                break;
+              case error.UNKNOWN_ERROR:
+                errorMessage = "Une erreur inconnue est survenue lors de la géolocalisation.";
+                break;
+            }
+            statusMessage.text(errorMessage + " Veuillez entrer les coordonnées manuellement si nécessaire.");
+            console.warn('ERROR(' + error.code + '): ' + error.message);
+            spinner.addClass('d-none'); // Hide spinner
+            getBtn.prop('disabled', false); // Re-enable button
+          }, {
+            enableHighAccuracy: true,
+            timeout: 10000, // 10 seconds
+            maximumAge: 0 // No cached location
+          });
+        } else {
+          statusMessage.text("Votre navigateur ne prend pas en charge la géolocalisation.");
+          console.log("Geolocation is not supported by this browser.");
+        }
+      }
+
+      // --- Geolocation for Add Client Modal ---
+      // When the add client modal is shown
+      $('#addClientModal').on('show.bs.modal', function (e) {
+        // If fields are empty, attempt to get location immediately
+        if (!($('#add_gps_lat').val() && $('#add_gps_long').val())) {
+          getGeolocation();
+        }
+      });
+
+      // When the "Get Current Location" button is clicked
+      $('#getGeolocationBtn').on('click', function() {
+        getGeolocation();
+      });
 
       // Show add client modal if there are form errors on initial load
       {% if client_form.errors %}
@@ -213,7 +263,7 @@
         var address = $(this).data('address');
         var gpsLat = $(this).data('gps-lat');
         var gpsLong = $(this).data('gps-long');
-        var discountRate = $(this).data('discount-rate');
+        // var discountRate = $(this).data('discount-rate');
         var isActive = $(this).data('is-active') === true; 
 
         var $modalForm = $('#editClientModal form');

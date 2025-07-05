@@ -1,0 +1,136 @@
+{% extends 'layouts/base.html' %}
+
+{% block title %} Carte des Clients {% endblock title %}
+
+{% block content %}
+
+    <div class="header bg-primary pb-6">
+      <div class="container-fluid">
+        <div class="header-body">
+          <div class="row align-items-center py-4">
+            <div class="col-lg-6 col-7">
+              <h6 class="h2 text-white d-inline-block mb-0">Terrain</h6>
+              <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
+                <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
+                  <li class="breadcrumb-item"><a href="{{ url_for('home_blueprint.index') }}"><i class="fas fa-home"></i></a></li>
+                  <li class="breadcrumb-item"><a href="{{ url_for('home_blueprint.client_management') }}">Clients</a></li>
+                  <li class="breadcrumb-item active" aria-current="page">Terrain</li>
+                </ol>
+              </nav>
+            </div>
+            {# You might add filters or search here if needed for the map #}
+            <div class="col-lg-6 col-5 text-right">
+              {# <a href="#" class="btn btn-sm btn-neutral">New</a> #}
+              {# <a href="#" class="btn btn-sm btn-neutral">Filters</a> #}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="container-fluid mt--6">
+      <div class="row">
+        <div class="col">
+          <div class="card border-0">
+            {# The map-canvas div will be the container for our Google Map #}
+            {# Data attributes are used to pass the default center from Flask #}
+            <div id="map-canvas" class="map-canvas" 
+                 data-lat="{{ default_center_lat }}" 
+                 data-lng="{{ default_center_lng }}" 
+                 style="height: 600px;"></div>
+          </div>
+        </div>
+      </div>
+
+      {% include "includes/footer.html" %}
+      
+    </div>
+
+{% endblock content %}
+
+{% block javascripts %}
+  {{ super() }} {# Keep any parent JavaScripts #}
+
+  {# Google Maps API Key - Ensure it's secure and restricted in production! #}
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDTTfWur0PDbZWPr7Pmq8K3jiDp0_xUziI"></script>
+
+  <script>
+    function initMap() {
+      // Get default center from data attributes
+      const mapDiv = document.getElementById('map-canvas');
+      const defaultLat = parseFloat(mapDiv.dataset.lat);
+      const defaultLng = parseFloat(mapDiv.dataset.lng);
+
+      // Create a LatLng object for the map center
+      const center = { lat: defaultLat, lng: defaultLng };
+
+      // Initialize the map
+      const map = new google.maps.Map(mapDiv, {
+        zoom: 12, // Initial zoom level
+        center: center,
+        mapTypeId: 'roadmap' // 'satellite', 'hybrid', 'terrain'
+      });
+
+      // Get client locations passed from Flask
+      const clientLocations = {{ client_locations | tojson }};
+      console.log("Client Locations:", clientLocations); // For debugging
+
+      const infoWindow = new google.maps.InfoWindow();
+
+      // Add markers for each client
+      clientLocations.forEach(function(client) {
+        const marker = new google.maps.Marker({
+          position: { lat: client.lat, lng: client.lng },
+          map: map,
+          title: client.name
+        });
+
+        // Add info window to display client details on marker click
+        marker.addListener("click", () => {
+          const contentString = `
+            <div class="info-window-content">
+              <h5>${client.name}</h5>
+              <p><strong>Adresse:</strong> ${client.address}</p>
+              <p><strong>Téléphone Airtel:</strong> ${client.phone_airtel}</p>
+              <p><strong>Lat:</strong> ${client.lat.toFixed(6)}<br><strong>Long:</strong> ${client.lng.toFixed(6)}</p>
+              {# Add more client details here as needed #}
+            </div>
+          `;
+          infoWindow.setContent(contentString);
+          infoWindow.open(map, marker);
+        });
+      });
+
+      // Optional: Adjust map bounds to fit all markers
+      if (clientLocations.length > 0) {
+        const bounds = new google.maps.LatLngBounds();
+        clientLocations.forEach(client => {
+          bounds.extend(new google.maps.LatLng(client.lat, client.lng));
+        });
+        map.fitBounds(bounds);
+        // If there's only one marker, fitBounds might zoom in too much.
+        // You can add a check here to ensure a minimum zoom if only one marker.
+        if (clientLocations.length === 1) {
+            map.setZoom(15); // Adjust this value as needed for a single marker
+        } else if (map.getZoom() > 15) { // Prevent excessive zoom for tightly clustered markers
+            map.setZoom(15);
+        }
+      }
+    }
+
+    // Call initMap when the Google Maps API is loaded
+    // This assumes the script tag is loaded before this script block.
+    // A more robust way is to use the `callback` parameter in the API script URL.
+    // For simplicity, we'll assume it's loaded by the time document is ready.
+    $(document).ready(function() {
+      // Check if google.maps is available, if not, wait for it
+      if (typeof google !== 'undefined' && typeof google.maps !== 'undefined') {
+        initMap();
+      } else {
+        // Fallback if the script takes longer to load, though typically it's fast
+        console.warn("Google Maps API not yet loaded. Retrying in 100ms...");
+        setTimeout(initMap, 100); 
+      }
+    });
+
+  </script>
+{% endblock javascripts %}

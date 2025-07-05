@@ -122,11 +122,6 @@ class ClientForm(FlaskForm):
     address = StringField(
         "Adresse (Optionnel)", validators=[Optional(), Length(max=255)]
     )
-    discount_rate = DecimalField(
-        "Taux de Remise (%)",
-        validators=[Optional(), NumberRange(min=0, max=100)],
-        default=0.0,
-    )
     submit = SubmitField("Ajouter Client")
 
 
@@ -158,11 +153,6 @@ class ClientEditForm(FlaskForm):
         "Longitude GPS (Optionnel)", validators=[Optional()]
     )  # Keep for editing
     is_active = BooleanField("Actif")
-    discount_rate = DecimalField(
-        "Taux de Remise (%)",
-        validators=[Optional(), NumberRange(min=0, max=100)],
-        default=0.0,
-    )
     submit = SubmitField("Mettre à jour")
 
 
@@ -344,7 +334,7 @@ class SaleForm(FlaskForm):
     cash_paid = DecimalField(
         "Argent donné (FC)",
         validators=[
-            Optional(),  # Make it optional here
+            Optional(),
             NumberRange(
                 min=Decimal("0.00"), message="L'argent donné ne peut pas être négatif."
             ),

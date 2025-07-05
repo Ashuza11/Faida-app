@@ -48,10 +48,10 @@
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link {% if 'map' in segment %} active {% endif %}" href="/map.html">
+            <a class="nav-link {% if 'client_map' in sub_segment %}active{% endif %}" href="{{ url_for('home_blueprint.client_map') }}">
               <i class="ni ni-map-big text-primary"></i>
-              <span class="nav-link-text">Terrain</span>
-            </a>
+                <span class="nav-link-text">Terrain</span>
+              </a>
           </li>
           <li class="nav-item">
             <a class="nav-link {% if segment == 'rapports' %} active {% endif %}" href="{{ url_for('home_blueprint.rapports') }}"> 
