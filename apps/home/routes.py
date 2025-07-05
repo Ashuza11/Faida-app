@@ -46,6 +46,7 @@ from apps.home.forms import (
     SaleForm,
     CashOutflowForm,
     DebtCollectionForm,
+    EditProfileForm,
 )
 
 
@@ -161,7 +162,6 @@ def index():
         .filter(
             CashInflow.created_at >= start_of_local_day_utc,
             CashInflow.created_at <= end_of_local_day_utc,
-            # CashInflow.category == CashInflowCategory.OTHER, # Only filter if you specifically want 'other' category
         )
         .scalar()
     )
@@ -1775,4 +1775,90 @@ def rapports():
         grand_totals=grand_totals,
         selected_start_date=selected_start_date.strftime("%Y-%m-%d"),
         selected_end_date=selected_end_date.strftime("%Y-%m-%d"),
+    )
+
+
+@blueprint.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    form = EditProfileForm(
+        original_username=current_user.username, original_email=current_user.email
+    )
+
+    if form.validate_on_submit():
+        # Handle form submission for username, email, phone
+        if current_user.username != form.username.data:
+            current_user.username = form.username.data
+        if current_user.email != form.email.data:
+            current_user.email = form.email.data
+        if current_user.phone != form.phone.data:
+            current_user.phone = form.phone.data
+
+        # Handle password change (your existing logic with translated flashes)
+        if form.current_password.data or form.new_password.data:
+            if not form.current_password.data:
+                flash(
+                    "Veuillez entrer votre mot de passe actuel pour changer le mot de passe.",
+                    "danger",
+                )
+                return redirect(url_for("home_blueprint.profile"))
+            if not current_user.check_password(form.current_password.data):
+                flash("Mot de passe actuel incorrect.", "danger")
+                return redirect(url_for("home_blueprint.profile"))
+            if not form.new_password.data:
+                flash("Veuillez entrer un nouveau mot de passe.", "danger")
+                return redirect(url_for("home_blueprint.profile"))
+            if form.new_password.data != form.confirm_new_password.data:
+                flash("Les nouveaux mots de passe ne correspondent pas.", "danger")
+                return redirect(url_for("home_blueprint.profile"))
+
+            current_user.set_password(form.new_password.data)
+            flash("Votre mot de passe a été mis à jour !", "success")
+
+        try:
+            db.session.commit()
+            flash("Votre profil a été mis à jour !", "success")
+            return redirect(url_for("home_blueprint.profile"))
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Une erreur est survenue : {e}", "danger")
+
+    elif request.method == "GET":
+        # Pre-populate form fields when page is loaded (GET request)
+        form.username.data = current_user.username
+        form.email.data = current_user.email
+        form.phone.data = current_user.phone
+        if hasattr(current_user, "about_me"):  # Pre-populate about_me if it exists
+            form.about_me.data = current_user.about_me
+        if hasattr(form, "role") and current_user.role:
+            form.role.data = (
+                current_user.role.name
+            )  # Pre-select the current role using its name (e.g., 'SUPERADMIN')
+        if hasattr(form, "is_active"):
+            form.is_active.data = current_user.is_active
+
+    # Fetch additional data for the profile page
+    num_clients_created = (
+        len(current_user.clients)
+        if hasattr(current_user, "clients") and current_user.clients is not None
+        else 0
+    )
+    num_sales_made = (
+        len(current_user.sales)
+        if hasattr(current_user, "sales") and current_user.sales is not None
+        else 0
+    )
+    num_stock_purchases = (
+        current_user.stock_purchases_made.count()
+        if hasattr(current_user, "stock_purchases_made")
+        else 0
+    )
+
+    return render_template(
+        "home/profile.html",
+        segment="profile",
+        form=form,
+        num_clients_created=num_clients_created,
+        num_sales_made=num_sales_made,
+        num_stock_purchases=num_stock_purchases,
     )

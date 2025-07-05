@@ -18,8 +18,15 @@ from wtforms.validators import (
     Length,
     NumberRange,
     ValidationError,
+    EqualTo,
 )
-from apps.authentication.models import NetworkType, Sale, CashOutflowCategory, RoleType
+from apps.authentication.models import (
+    NetworkType,
+    Sale,
+    CashOutflowCategory,
+    RoleType,
+    User,
+)
 import enum
 from decimal import Decimal
 
@@ -353,15 +360,15 @@ class SaleForm(FlaskForm):
 
         if self.client_choice.data == "existing":
             if not self.existing_client_id.data:
-                self.existing_client_id.errors.append(
-                    "Veuillez sélectionner un client existant."
-                )
+                errors = list(self.existing_client_id.errors)
+                errors.append("Veuillez sélectionner un client existant.")
+                self.existing_client_id.errors = errors
                 return False
         elif self.client_choice.data == "new":
             if not self.new_client_name.data:
-                self.new_client_name.errors.append(
-                    "Veuillez entrer le nom du nouveau client."
-                )
+                errors = list(self.new_client_name.errors)
+                errors.append("Veuillez entrer le nom du nouveau client.")
+                self.new_client_name.errors = errors
                 return False
         return True
 
@@ -412,4 +419,58 @@ class DebtCollectionForm(FlaskForm):
 
     def __init__(self, *args, **kwargs):
         super(DebtCollectionForm, self).__init__(*args, **kwargs)
-        self.sale_id.choices = get_sales_with_debt()
+        self.sale_id.choices = [
+            (str(sale[0]), sale[1]) for sale in get_sales_with_debt()
+        ]
+
+
+# User Profile Form
+class EditProfileForm(FlaskForm):
+    username = StringField(
+        "Nom d'utilisateur", validators=[DataRequired(), Length(min=3, max=64)]
+    )
+    email = StringField(
+        "Adresse e-mail", validators=[DataRequired(), Email(), Length(max=120)]
+    )
+    phone = StringField(
+        "Numéro de téléphone (Facultatif)", validators=[Optional(), Length(max=20)]
+    )
+
+    # Include 'about_me' only if you have this column in your User model
+    about_me = TextAreaField("À propos de moi", validators=[Length(min=0, max=140)])
+
+    current_password = PasswordField(
+        "Mot de passe actuel (pour les modifications)", validators=[Optional()]
+    )
+    new_password = PasswordField(
+        "Nouveau mot de passe", validators=[Optional(), Length(min=6)]
+    )
+    confirm_new_password = PasswordField(
+        "Confirmer le nouveau mot de passe",
+        validators=[
+            EqualTo("new_password", message="Les mots de passe doivent correspondre")
+        ],
+    )
+
+    submit = SubmitField("Mettre à jour le profil")
+
+    def __init__(self, original_username, original_email, *args, **kwargs):
+        super(EditProfileForm, self).__init__(*args, **kwargs)
+        self.original_username = original_username
+        self.original_email = original_email
+
+    def validate_username(self, username):
+        if username.data != self.original_username:
+            user = User.query.filter_by(username=self.username.data).first()
+            if user:
+                raise ValidationError(
+                    "Ce nom d'utilisateur est déjà pris. Veuillez en choisir un autre."
+                )
+
+    def validate_email(self, email):
+        if email.data != self.original_email:
+            user = User.query.filter_by(email=self.email.data).first()
+            if user:
+                raise ValidationError(
+                    "Cette adresse e-mail est déjà utilisée. Veuillez en choisir une autre."
+                )
