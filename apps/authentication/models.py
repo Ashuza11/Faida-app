@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Optional, List
 from enum import Enum as PyEnum
 from flask_login import UserMixin
@@ -8,7 +8,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import sqlalchemy as sa
 import sqlalchemy.orm as so
 from decimal import Decimal
-from datetime import datetime, timezone
 
 
 # Enum for user roles
@@ -46,9 +45,15 @@ class User(db.Model, UserMixin):
     __tablename__ = "users"
 
     id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
-    created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.now())
+    # FIX: Use lambda for dynamic default, and timezone.utc for consistency
+    created_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    # FIX: Use lambda for default and onupdate, and timezone.utc
     updated_at: so.Mapped[datetime] = so.mapped_column(
-        default=datetime.now(), onupdate=datetime.now()
+        sa.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
     username: so.Mapped[str] = so.mapped_column(
@@ -63,7 +68,10 @@ class User(db.Model, UserMixin):
     created_by: so.Mapped[Optional[int]] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=True
     )
-    last_login: so.Mapped[Optional[datetime]] = so.mapped_column(nullable=True)
+    # FIX: Ensure last_login also uses timezone.utc if it's stored dynamically
+    last_login: so.Mapped[Optional[datetime]] = so.mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
     is_active: so.Mapped[bool] = so.mapped_column(default=True)
 
     creator = so.relationship(
@@ -109,10 +117,12 @@ class Client(db.Model):
     __tablename__ = "clients"
 
     id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+    # Already correct, but explicitly add timezone=True for consistency with storage
     created_at: so.Mapped[datetime] = so.mapped_column(
-        default=lambda: datetime.now(timezone.utc)
+        sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     updated_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
@@ -128,7 +138,8 @@ class Client(db.Model):
     is_active: so.Mapped[bool] = so.mapped_column(default=True)
     # Client-specific discount, separate from network's reduction rate
     discount_rate: so.Mapped[sa.Numeric] = so.mapped_column(
-        sa.Numeric(precision=5, scale=4), default=0.00
+        sa.Numeric(precision=5, scale=4),
+        default=Decimal("0.00"),  # Changed default to Decimal
     )
 
     vendeur_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey("users.id"))
@@ -159,6 +170,7 @@ class Stock(db.Model):
         sa.Numeric(10, 2), nullable=False, default=Decimal("0.00")
     )
 
+    # Already correct, good!
     updated_at: so.Mapped[datetime] = so.mapped_column(
         sa.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -188,11 +200,9 @@ class StockPurchase(db.Model):
         sa.Enum(NetworkType), nullable=False
     )
 
-    # NEW/RENAMED: buying_price_at_purchase (was 'cost' or implied)
     buying_price_at_purchase: so.Mapped[sa.Numeric] = so.mapped_column(
         sa.Numeric(precision=10, scale=2), nullable=False, default=Decimal("0.00")
     )
-    # This remains: selling_price_at_purchase (price determined for sale at time of purchase)
     selling_price_at_purchase: so.Mapped[sa.Numeric] = so.mapped_column(
         sa.Numeric(10, 2), nullable=False
     )
@@ -205,11 +215,13 @@ class StockPurchase(db.Model):
     purchased_by: so.Mapped["User"] = so.relationship(
         back_populates="stock_purchases_made"
     )
+    # This was the first created_at, keep this one and ensure lambda and timezone.utc
     created_at: so.Mapped[datetime] = so.mapped_column(
         sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
-    created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
+    # FIX: REMOVE THIS DUPLICATE AND INCORRECT created_at
+    # created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
 
     def __repr__(self) -> str:
         return f"<StockPurchase {self.network.value} - {self.amount_purchased} units bought at {self.buying_price_at_purchase} FC, intended sell at {self.selling_price_at_purchase} FC>"
@@ -220,9 +232,15 @@ class Sale(db.Model):
     __tablename__ = "sales"
 
     id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
-    created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
+    # FIX: Use lambda and timezone.utc
+    created_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    # FIX: Use lambda and timezone.utc
     updated_at: so.Mapped[datetime] = so.mapped_column(
-        default=datetime.utcnow, onupdate=datetime.utcnow
+        sa.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
     vendeur_id: so.Mapped[int] = so.mapped_column(
@@ -233,29 +251,22 @@ class Sale(db.Model):
     client_id: so.Mapped[Optional[int]] = so.mapped_column(
         sa.ForeignKey("clients.id"), nullable=True
     )
-    # The client for this sale. Can be null if it's an unregistered (adhoc) client.
     client: so.Mapped[Optional[Client]] = so.relationship(back_populates="sales")
 
-    # If client is not registered, their name can be captured here.
-    # This ensures a name is always associated with a sale, even if not a registered client.
     client_name_adhoc: so.Mapped[Optional[str]] = so.mapped_column(
         sa.String(128), nullable=True
     )
 
-    # Total amount due for this entire sale (sum of all SaleItems)
     total_amount_due: so.Mapped[sa.Numeric] = so.mapped_column(
         sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
-    # Amount of cash paid by the client
     cash_paid: so.Mapped[sa.Numeric] = so.mapped_column(
         sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
-    # Debt remaining for this sale (total_amount_due - cash_paid)
     debt_amount: so.Mapped[sa.Numeric] = so.mapped_column(
         sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
 
-    # Relationship to individual SaleItems
     sale_items: so.Mapped[List["SaleItem"]] = so.relationship(
         back_populates="sale", cascade="all, delete-orphan"
     )
@@ -269,12 +280,15 @@ class Sale(db.Model):
         return f"<Sale ID:{self.id} to {client_info} by {self.vendeur.username}>"
 
 
-# New SaleItem Model (One Sale can have multiple SaleItems for different networks)
+# New SaleItem Model
 class SaleItem(db.Model):
     __tablename__ = "sale_items"
 
     id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
-    created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
+    # FIX: Use lambda and timezone.utc
+    created_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
 
     sale_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("sales.id"), nullable=False
@@ -284,16 +298,10 @@ class SaleItem(db.Model):
     network: so.Mapped[NetworkType] = so.mapped_column(
         sa.Enum(NetworkType), nullable=False
     )
-    quantity: so.Mapped[int] = so.mapped_column(
-        sa.Integer, nullable=False
-    )  # Amount of airtime sold for this network
-
-    # Price per unit for this specific sale item (after network reduction)
+    quantity: so.Mapped[int] = so.mapped_column(sa.Integer, nullable=False)
     price_per_unit_applied: so.Mapped[sa.Numeric] = so.mapped_column(
         sa.Numeric(10, 2), nullable=False
     )
-
-    # Subtotal for this specific SaleItem (quantity * price_per_unit_applied)
     subtotal: so.Mapped[sa.Numeric] = so.mapped_column(
         sa.Numeric(12, 2), nullable=False
     )
@@ -307,7 +315,10 @@ class CashOutflow(db.Model):
     __tablename__ = "cash_outflows"
 
     id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
-    created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
+    # FIX: Use lambda and timezone.utc
+    created_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
     recorded_by_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False
     )
@@ -327,7 +338,10 @@ class CashInflow(db.Model):
     __tablename__ = "cash_inflows"
 
     id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
-    created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
+    # FIX: Use lambda and timezone.utc
+    created_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
     recorded_by_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False
     )
@@ -344,7 +358,6 @@ class CashInflow(db.Model):
     description: so.Mapped[str] = so.mapped_column(sa.String(255), nullable=True)
 
     sale_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey("sales.id"), nullable=True)
-    # ADDED: Relationship back to Sale
     sale: so.Mapped["Sale"] = so.relationship(back_populates="cash_inflows")
 
 
@@ -409,9 +422,6 @@ class DailyOverallReport(db.Model):
         sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
     total_debts: so.Mapped[Decimal] = so.mapped_column(
-        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
-    )
-    total_capital_circulant: so.Mapped[Decimal] = so.mapped_column(
         sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
 

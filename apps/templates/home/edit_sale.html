@@ -1,16 +1,19 @@
 {% extends "layouts/base.html" %}
 
-{% block title %} Vente Stock {% endblock %}
+{% block title %} Modifier Vente {% endblock %} {# Changed title #}
 
 {% block content %}
 
     {# Render the Page Header #}
-    {% set page_title = 'Gestion Ventes' %}
     {% set breadcrumb_items = [
-        {'text': 'Ventes', 'url': url_for('home_blueprint.vente_stock')},
-        {'text': 'Nouvelle Vente', 'url': url_for('home_blueprint.vente_stock')}
+        {'text': 'Ventes', 'url': url_for('home_blueprint.vente_stock')}
     ] %}
-    {% include 'includes/page_header.html' %}
+    {% if sale is defined and sale.id is not none %} {# Check if sale and sale.id exist #}
+        {% set _ = breadcrumb_items.append({'text': 'Modifier Vente', 'url': url_for('home_blueprint.edit_sale', sale_id=sale.id)}) %}
+    {% else %}
+        {# Fallback if sale is not defined, e.g., for initial page load or error states where sale isn't passed #}
+        {% set _ = breadcrumb_items.append({'text': 'Modifier Vente', 'url': '#'}) %}
+    {% endif %}
 
     <div class="container-fluid mt--6">
         <div class="row">
@@ -19,17 +22,16 @@
                     <div class="card-header">
                         <div class="row align-items-center">
                             <div class="col-8">
-                                <h3 class="mb-0">Enregistrer une Nouvelle Vente</h3>
+                                <h3 class="mb-0">Modifier une Vente (ID: {{ sale.id }})</h3> {# Added Sale ID for clarity #}
                             </div>
                             <div class="col-4 text-right">
-                                {# Removed: <button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#addSaleModal"> #}
-                                {# <i class="fas fa-plus"></i> Ajouter Vente #}
-                                {# </button> #}
+                                {# No "Add Sale" button needed on an edit page #}
                             </div>
                         </div>
                     </div>
                     <div class="card-body">
-                        <form method="post" action="{{ url_for('home_blueprint.vente_stock') }}">
+                        {# THIS IS THE MOST CRUCIAL CHANGE: Update the form's action #}
+                        <form method="post" action="{{ url_for('home_blueprint.edit_sale', sale_id=sale.id) }}">
                             {{ form.hidden_tag() }}
 
                             <h6 class="heading-small text-muted mb-4">Informations sur le Client</h6>
@@ -71,8 +73,11 @@
                             <h6 class="heading-small text-muted mb-4">Stock à Vendre</h6>
                             <div class="pl-lg-4">
                                 <div id="sale-items-container">
+                                    {# This loop will now render the pre-populated items on GET #}
+                                    {# And the submitted items (with errors if any) on POST #}
                                     {% for item_field in form.sale_items %}
                                         <div class="form-row align-items-end mb-3 network-item-group" id="sale-item-{{ loop.index0 }}">
+                                            {# Ensure 'form' attribute is checked for nested fields #}
                                             {% set current_item_form = item_field %}
                                             {% if item_field.form is defined %}
                                                 {% set current_item_form = item_field.form %}
@@ -81,37 +86,38 @@
                                             <div class="col-md-3">
                                                 <div class="form-group">
                                                     {{ current_item_form.network.label(class="form-control-label") }}
-                                                    {{ current_item_form.network(class="form-control") }}
+                                                    {{ current_item_form.network(class="form-control" + (" is-invalid" if current_item_form.network.errors else "")) }} {# Added is-invalid class #}
+                                                    {% for error in current_item_form.network.errors %} <div class="invalid-feedback d-block">{{ error }}</div> {% endfor %}
                                                 </div>
                                             </div>
                                             <div class="col-md-2">
                                                 <div class="form-group">
                                                     {{ current_item_form.quantity.label(class="form-control-label") }}
-                                                    {{ current_item_form.quantity(class="form-control") }}
+                                                    {{ current_item_form.quantity(class="form-control" + (" is-invalid" if current_item_form.quantity.errors else "")) }} {# Added is-invalid class #}
+                                                    {% for error in current_item_form.quantity.errors %} <div class="invalid-feedback d-block">{{ error }}</div> {% endfor %}
                                                 </div>
                                             </div>
                                             <div class="col-md-2">
                                                 <div class="form-group">
                                                     {{ current_item_form.price_per_unit_applied.label(class="form-control-label") }}
-                                                    {{ current_item_form.price_per_unit_applied(class="form-control") }}
+                                                    {{ current_item_form.price_per_unit_applied(class="form-control" + (" is-invalid" if current_item_form.price_per_unit_applied.errors else "")) }} {# Added is-invalid class #}
+                                                    {% for error in current_item_form.price_per_unit_applied.errors %} <div class="invalid-feedback d-block">{{ error }}</div> {% endfor %}
                                                 </div>
                                             </div>
                                             <div class="col-md-1">
                                                 {# Placeholder for potential future display or removed entirely for simplicity #}
                                             </div>
                                             <div class="col-md-1">
-                                                <button type="button" class="btn btn-danger btn-sm remove-sale-item-btn" {% if loop.index0 == 0 %}disabled{% endif %}>
+                                                <button type="button" class="btn btn-danger btn-sm remove-sale-item-btn" {% if loop.index0 == 0 and form.sale_items|length == 1 %}disabled{% endif %}>
+                                                {# Disable remove button only if it's the *only* item #}
                                                     <i class="fas fa-times"></i>
                                                 </button>
                                             </div>
-                                            {# Display errors for fields within the item form #}
-                                            {% for error in current_item_form.network.errors %} <div class="text-danger d-block col-12">{{ error }}</div> {% endfor %}
-                                            {% for error in current_item_form.quantity.errors %} <div class="text-danger d-block col-12">{{ error }}</div> {% endfor %}
-                                            {% for error in current_item_form.price_per_unit_applied.errors %} <div class="text-danger d-block col-12">{{ error }}</div> {% endfor %}
+                                            {# Removed duplicate error display, now integrated into the form-group div #}
                                         </div>
                                     {% endfor %}
                                 </div>
-                                <button type="button" class="btn btn-sm btn-primary mt-3" id="add-sale-item-btn">Ajouter</button>
+                                <button type="button" class="btn btn-sm btn-primary mt-3" id="add-sale-item-btn">Ajouter un article</button> {# More descriptive button text #}
                             </div>
 
                             <hr class="my-4" />
@@ -131,7 +137,8 @@
                             </div>
 
                             <div class="text-right">
-                                {{ form.submit(class="btn btn-primary my-4") }}
+                                <a href="{{ url_for('home_blueprint.vente_stock') }}" class="btn btn-secondary my-4">Annuler</a> {# Add a Cancel button #}
+                                {{ form.submit(class="btn btn-primary my-4", value="Mettre à jour la Vente") }} {# Changed button text #}
                             </div>
                         </form>
                     </div>
@@ -139,84 +146,28 @@
             </div>
         </div>
 
-        {# Table for displaying sales #}
-        <div class="row mt-5">
-            <div class="col-xl-12">
-                <div class="card">
-                    <div class="card-header border-0">
-                        <div class="row align-items-center">
-                            <div class="col">
-                                <h3 class="mb-0">Historique des Ventes</h3>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="table align-items-center table-flush">
-                            <thead class="thead-light">
-                                <tr>
-                                    <th scope="col">ID Vente</th>
-                                    <th scope="col">Client</th>
-                                    <th scope="col">Vendeur</th>
-                                    <th scope="col">Détails des Articles</th>
-                                    <th scope="col">Total Dû (FC)</th>
-                                    <th scope="col">Argent Donné (FC)</th>
-                                    <th scope="col">Dette (FC)</th>
-                                    <th scope="col">Date & Heure</th>
-                                    <th scope="col">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for sale in sales %}
-                                    <tr>
-                                        <td>{{ sale.id }}</td>
-                                        <td>{{ sale.client.name if sale.client else sale.client_name_adhoc }}</td>
-                                        <td>{{ sale.vendeur.username }}</td>
-                                        <td>
-                                            {% for item in sale.sale_items %}
-                                                <div>
-                                                    <strong>{{ item.network.value|capitalize }}:</strong> {{ item.quantity }} unités @ {{ "{:,.2f}".format(item.price_per_unit_applied) }} FC
-                                                    - Sous-total: {{ "{:,.2f}".format(item.subtotal) }} FC
-                                                </div>
-                                            {% endfor %}
-                                        </td>
-                                        <td>{{ "{:,.2f}".format(sale.total_amount_due) }}</td>
-                                        <td>
-                                            <span id="cash-paid-{{ sale.id }}">{{ "{:,.2f}".format(sale.cash_paid) }}</span>
-                                            <button type="button" class="btn btn-sm btn-info btn-edit-cash ml-2" data-sale-id="{{ sale.id }}" data-current-cash="{{ sale.cash_paid }}">
-                                                <i class="fas fa-edit"></i>
-                                            </button>
-                                        </td>
-                                        <td><span id="debt-amount-{{ sale.id }}">{{ "{:,.2f}".format(sale.debt_amount) }}</span></td>
-                                        <td>{{ sale.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                                        <td>
-                                            <div class="dropdown">
-                                                <a class="btn btn-sm btn-icon-only text-light" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                                                    <i class="fas fa-ellipsis-v"></i>
-                                                </a>
-                                                <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
-                                                    <a class="dropdown-item" href="{{ url_for('home_blueprint.view_sale_details', sale_id=sale.id) }}">Détails</a>
-                                                    <a class="dropdown-item" href="{{ url_for('home_blueprint.edit_sale', sale_id=sale.id) }}">Modifier</a>
-                                                    <a class="dropdown-item text-danger" href="{{ url_for('home_blueprint.delete_sale', sale_id=sale.id) }}">Supprimer</a>
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                {% else %}
-                                    <tr>
-                                        <td colspan="9" class="text-center">Aucune vente enregistrée.</td>
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+        {# REMOVED: Table for displaying sales - This belongs in vente_stock.html #}
+        {# The entire block below this line:
+            <div class="row mt-5">
+                <div class="col-xl-12">
+                    <div class="card">
+                        ... (all the sales table content) ...
                     </div>
                 </div>
             </div>
-        </div>
+        #}
 
+        {# The cash edit modal should probably remain in vente_stock.html as well,
+           unless you specifically want to update cash on the edit sale page.
+           For a cleaner separation, consider moving it.
+           For now, let's keep it if your workflow requires it on *this* page.
+           If it's only for the sales list, move it. #}
         {% include "includes/footer.html" %}
 
     </div>
 
+    {# MODAL for editing cash - Decide if this is needed here or only on vente_stock.html #}
+    {# If you keep it, ensure the route '/update-sale-cash/<int:sale_id>' exists and handles it #}
     <div class="modal fade" id="editCashModal" tabindex="-1" role="dialog" aria-labelledby="editCashModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered" role="document">
             <div class="modal-content">
@@ -246,7 +197,7 @@
 {% endblock content %}
 
 {% block javascripts %}
-    {{ super() }} 
+    {{ super() }}
 
     <script>
         $(document).ready(function() {
@@ -282,8 +233,10 @@
                 }
 
                 // Simulate adding a new form entry by duplicating the last one and clearing values
+                // Use a template for new items if possible for cleaner HTML cloning
+                // For now, cloning the last is okay if it's the only one rendered
                 var lastItem = container.find('.network-item-group').last();
-                var newItem = lastItem.clone();
+                var newItem = lastItem.clone(true, true); // Clone with data and events
 
                 var newIndex = currentCount; // The index for the new form field list entry
 
@@ -307,7 +260,14 @@
 
                 // Enable the remove button for the new item and ensure first item always has it disabled
                 newItem.find('.remove-sale-item-btn').prop('disabled', false);
-                container.find('.network-item-group').first().find('.remove-sale-item-btn').prop('disabled', true);
+                // After adding, re-evaluate all remove buttons
+                container.find('.network-item-group').each(function(idx) {
+                    if (idx === 0 && container.find('.network-item-group').length === 1) {
+                        $(this).find('.remove-sale-item-btn').prop('disabled', true);
+                    } else {
+                        $(this).find('.remove-sale-item-btn').prop('disabled', false);
+                    }
+                });
 
                 // Update data-index for the new row (useful for debugging, not strictly necessary for WTForms)
                 newItem.attr('data-index', newIndex);
@@ -345,6 +305,9 @@
                     // Ensure the first item's remove button is disabled if only one remains
                     if (container.find('.network-item-group').length === 1) {
                         container.find('.network-item-group').first().find('.remove-sale-item-btn').prop('disabled', true);
+                    } else {
+                        // Re-enable all if there's more than one
+                        container.find('.network-item-group').find('.remove-sale-item-btn').prop('disabled', false);
                     }
                 } else {
                     Swal.fire({
@@ -357,25 +320,26 @@
             });
 
 
-            // Edit Cash Paid functionality
+            // Edit Cash Paid functionality - ONLY KEEP THIS IF you intend to update cash
+            // directly from the *edit sale* page's context.
+            // If cash updates are *only* done from the main sales list, remove this modal and JS.
             $('.btn-edit-cash').on('click', function() {
                 var saleId = $(this).data('sale-id');
                 var currentCash = $(this).data('current-cash');
 
                 $('#sale_id_hidden').val(saleId); // Store sale ID in a hidden field
                 $('#new_cash_input').val(currentCash); // Populate with current cash
-                
+
                 // Set the form action dynamically
-                $('#editCashForm').attr('action', '/update-sale-cash/' + saleId);
+                $('#editCashForm').attr('action', '/update-sale-cash/' + saleId); // Ensure this route exists in Flask
 
                 $('#editCashModal').modal('show');
             });
 
-            // You might already have this for general form submission
-            // But ensure it handles success/error messages appropriately
             $('#editCashForm').on('submit', function(e) {
-                // You can add AJAX submission here if you don't want a full page reload
-                // For now, let's assume it submits normally and Flask flashes messages.
+                // This will trigger a full page reload or an AJAX call to your Flask route
+                // If you want AJAX, implement e.preventDefault() and a $.ajax call.
+                // Otherwise, Flask's flash messages will handle feedback after redirect.
             });
         });
     </script>

@@ -518,10 +518,10 @@ def seed_initial_stock_balances(app, seed_report_date: date):
     Also ensures the live Stock table has corresponding initial balances.
     """
     initial_balances_for_seed = {
-        NetworkType.AIRTEL: Decimal("11731.00"),
-        NetworkType.ORANGE: Decimal("4694.00"),
-        NetworkType.VODACOM: Decimal("8533.00"),
-        NetworkType.AFRICEL: Decimal("4073.00"),
+        NetworkType.AIRTEL: Decimal("48.00"),
+        NetworkType.ORANGE: Decimal("4034.00"),
+        NetworkType.VODACOM: Decimal("2.00"),
+        NetworkType.AFRICEL: Decimal("4397.00"),
     }
 
     with app.app_context():

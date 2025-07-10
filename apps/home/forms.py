@@ -464,3 +464,9 @@ class EditProfileForm(FlaskForm):
                 raise ValidationError(
                     "Cette adresse e-mail est déjà utilisée. Veuillez en choisir une autre."
                 )
+
+
+# Form for confirming deletion of a sale
+class DeleteConfirmForm(FlaskForm):
+    submit = SubmitField("Oui, Supprimer", validators=[DataRequired()])
+    # You don't need a separate CSRF field, Flask-WTF handles it automatically

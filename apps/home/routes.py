@@ -47,6 +47,7 @@ from apps.home.forms import (
     CashOutflowForm,
     DebtCollectionForm,
     EditProfileForm,
+    DeleteConfirmForm,
 )
 
 
@@ -1085,12 +1086,12 @@ def update_sale_cash(sale_id):
 
 @blueprint.route("/edit_sale/<int:sale_id>", methods=["GET", "POST"])
 @login_required
-@superadmin_required
+@vendeur_required
 def edit_sale(sale_id):
     sale = Sale.query.get_or_404(sale_id)
     form = SaleForm()
 
-    # Populate client choices (same as vente_stock)
+    # Populate client choices
     clients = Client.query.filter_by(is_active=True).order_by(Client.name).all()
     client_choices = [("", "Sélectionnez un client existant")]
     client_choices.extend([(str(client.id), client.name) for client in clients])
@@ -1106,47 +1107,40 @@ def edit_sale(sale_id):
             form.new_client_name.data = sale.client_name_adhoc
 
         # Populate SaleItems FieldList
-        # Clear any existing empty entries that might have been appended by default
         while len(form.sale_items) > 0:
             form.sale_items.pop_entry()
 
         for item in sale.sale_items:
-            # Append a new entry and populate it
             item_form = form.sale_items.append_entry()
-            item_form.network.data = item.network.name  # Use .name for Enum
+            item_form.network.data = item.network.name
             item_form.quantity.data = item.quantity
             item_form.price_per_unit_applied.data = item.price_per_unit_applied
-            # If you re-introduce reduction_rate_applied, populate it here too
 
         form.cash_paid.data = sale.cash_paid
 
     if form.validate_on_submit():
-        # --- Start Transaction for Atomicity ---
-        # This is critical for complex updates involving multiple models and stock.
-        # If any step fails, we must revert all changes.
         db.session.begin_nested()  # Start a nested transaction / savepoint
 
         try:
-            # 1. Revert old stock changes:
-            # Iterate through current sale_items, add their quantities back to stock
-            for old_item in sale.sale_items:
-                old_stock_item = Stock.query.filter_by(network=old_item.network).first()
-                if old_stock_item:
-                    old_stock_item.balance += old_item.quantity
-                    db.session.add(old_stock_item)
-                    print(
-                        f"Reverted stock for {old_item.network.value}: New balance is {old_stock_item.balance}"
-                    )
+            # Store old quantities per network for precise reversion
+            old_quantities_map = {
+                item.network: item.quantity for item in sale.sale_items
+            }
 
-            # 2. Delete old SaleItems:
-            # Using cascade="all, delete-orphan" on the relationship is cleaner,
-            # but explicitly deleting ensures they are removed before new ones are added.
-            for item_to_delete in sale.sale_items:
+            # 1. Delete old SaleItems associated with this sale
+            for item_to_delete in list(sale.sale_items):
                 db.session.delete(item_to_delete)
-            # Make sure sale.sale_items is refreshed/cleared after deletion for new items to be added clean
-            sale.sale_items = (
-                []
-            )  # Important: Clear the relationship on the parent object
+            # SQLAlchemy will handle clearing the relationship on `sale` after commit/flush
+
+            # 2. Revert stock based on old quantities *after* deleting SaleItems
+            for network, quantity in old_quantities_map.items():
+                stock_item = Stock.query.filter_by(network=network).first()
+                if stock_item:
+                    stock_item.balance += quantity
+                    db.session.add(stock_item)
+                    print(
+                        f"Reverted stock for {network.value}: New balance is {stock_item.balance}"
+                    )
 
             # 3. Update Sale header data
             client = None
@@ -1170,9 +1164,9 @@ def edit_sale(sale_id):
 
             total_amount_due = Decimal("0.00")
             sale_items_to_add = []
-            errors_during_sale = []  # Collect errors for a single flash message later
+            errors_during_sale = []
 
-            # 4. Process new sale items (similar to original vente_stock logic)
+            # 4. Process new sale items and link to the existing sale
             for item_data in form.sale_items.entries:
                 if not item_data.form.validate():
                     for field_name, field_errors in item_data.form.errors.items():
@@ -1182,7 +1176,15 @@ def edit_sale(sale_id):
                             )
                     continue
 
-                network_type = NetworkType[item_data.form.network.data]
+                # Ensure NetworkType is correctly parsed from the form data string
+                try:
+                    network_type = NetworkType[item_data.form.network.data]
+                except KeyError:
+                    errors_during_sale.append(
+                        f"Type de réseau invalide: {item_data.form.network.data}"
+                    )
+                    continue
+
                 quantity = item_data.form.quantity.data
                 price_per_unit_applied = item_data.form.price_per_unit_applied.data
 
@@ -1194,27 +1196,19 @@ def edit_sale(sale_id):
                     )
                     continue
 
-                if quantity > stock_item.balance + (
-                    old_item.quantity if old_item.network == network_type else 0
-                ):
-                    # For edit, balance check must account for stock reverted from the same item
-                    # This is a simplified check. More robust would be to track old quantities per network.
-                    # For simplicity, if editing the same network, add back its original quantity before checking.
-                    # This logic needs careful consideration if quantities change across networks within the same sale.
-                    # A more robust approach might be to calculate net change in stock.
-                    # For now, let's assume we reverted all old quantities, so balance is correct.
-                    if (
-                        quantity > stock_item.balance
-                    ):  # This check is now after reversion
-                        errors_during_sale.append(
-                            f"Quantité insuffisante pour {network_type.value}. Disponible: {stock_item.balance}, Demandé: {quantity}."
-                        )
-                        continue
+                # IMPORTANT:
+                if quantity > stock_item.balance:
+                    errors_during_sale.append(
+                        f"Quantité insuffisante pour {network_type.value}. Disponible: {stock_item.balance}, Demandé: {quantity}."
+                    )
+                    continue
 
                 # Determine the price_per_unit_applied (from previous logic)
                 if price_per_unit_applied is None:
-                    if stock_item.price_per_unit_applied is not None:
-                        price_per_unit_applied = stock_item.price_per_unit_applied
+                    if (
+                        stock_item.selling_price_per_unit is not None
+                    ):  # Prefer current selling price from stock
+                        price_per_unit_applied = stock_item.selling_price_per_unit
                     else:
                         latest_purchase = (
                             StockPurchase.query.filter_by(stock_item=stock_item)
@@ -1234,20 +1228,26 @@ def edit_sale(sale_id):
                             )
                             continue
 
+                # Ensure price_per_unit_applied is Decimal
                 if not isinstance(price_per_unit_applied, Decimal):
                     price_per_unit_applied = Decimal(str(price_per_unit_applied))
 
-                # Calculate rounded subtotal
-                subtotal = calculate_rounded_subtotal(
-                    quantity=quantity, price_per_unit=price_per_unit_applied
-                )
+                # Calculate rounded subtotal using your custom_round_up function
+                if price_per_unit_applied is None:
+                    flash(
+                        f"Prix unitaire non défini pour '{network_type.value}'.",
+                        "danger",
+                    )
+                    continue
+                item_subtotal_unrounded = quantity * price_per_unit_applied
+                subtotal = custom_round_up(amount=item_subtotal_unrounded)
 
                 new_sale_item = SaleItem(
                     network=network_type,
                     quantity=quantity,
                     price_per_unit_applied=price_per_unit_applied,
                     subtotal=subtotal,
-                    sale=sale,  # Link to the existing sale object
+                    sale=sale,
                 )
                 sale_items_to_add.append(new_sale_item)
                 total_amount_due += subtotal
@@ -1257,58 +1257,54 @@ def edit_sale(sale_id):
                 db.session.add(stock_item)
 
             if errors_during_sale:
-                db.session.rollback()  # Rollback transaction
+                db.session.rollback()
                 for error in errors_during_sale:
                     flash(error, "danger")
+                # Render the edit template, not the create template
                 return render_template(
-                    "home/vente_stock.html",
-                    form=form,
-                    sale=sale,  # Pass sale object to re-populate form on GET (or to keep context)
-                    segment="stock",
-                    sub_segment="vente_stock",
-                )
-
-            if not sale_items_to_add:
-                db.session.rollback()  # Rollback if no items
-                flash("Veuillez ajouter au moins un article à la vente.", "danger")
-                return render_template(
-                    "home/vente_stock.html",
+                    "home/edit_sale.html",
                     form=form,
                     sale=sale,
                     segment="stock",
                     sub_segment="vente_stock",
                 )
 
-            # Add new sale items to the sale
-            sale.sale_items.extend(sale_items_to_add)
+            if not sale_items_to_add:
+                db.session.rollback()
+                flash("Veuillez ajouter au moins un article à la vente.", "danger")
+                return render_template(
+                    "home/edit_sale.html",
+                    form=form,
+                    sale=sale,
+                    segment="stock",
+                    sub_segment="vente_stock",
+                )
+
+            # Add new sale items to the sale (SQLAlchemy will link them)
+            for item in sale_items_to_add:
+                db.session.add(item)
 
             # 5. Update total_amount_due, cash_paid, debt_amount on the Sale
-            sale.total_amount_due = total_amount_duesale
+            sale.total_amount_due = total_amount_due
             cash_paid = form.cash_paid.data
             if cash_paid is None:
                 cash_paid = Decimal("0.00")
             sale.cash_paid = cash_paid
             sale.debt_amount = total_amount_due - cash_paid
-            if sale.debt_amount < 0:
+            if sale.debt_amount < Decimal("0.00"):
                 raise ValueError(
                     "L'argent donné ne peut pas dépasser le montant total dû."
                 )
 
-            db.session.add(
-                sale
-            )  # Re-add the sale object to session to ensure its state is managed
-
-            db.session.commit()  # Commit the transaction
+            db.session.commit()
             flash("Vente modifiée avec succès!", "success")
-            return redirect(
-                url_for("home_blueprint.vente_stock")
-            )  # Redirect to prevent re-submission
+            return redirect(url_for("home_blueprint.vente_stock"))
 
-        except ValueError as e:  # Catch custom validation errors we raised
+        except ValueError as e:
             db.session.rollback()
             flash(f"Erreur lors de la modification de la vente: {e}", "danger")
             return render_template(
-                "home/vente_stock.html",
+                "home/edit_sale.html",
                 form=form,
                 sale=sale,
                 segment="stock",
@@ -1321,7 +1317,7 @@ def edit_sale(sale_id):
             )
             print(f"Error during sale edit: {e}")
             return render_template(
-                "home/vente_stock.html",
+                "home/edit_sale.html",
                 form=form,
                 sale=sale,
                 segment="stock",
@@ -1329,12 +1325,68 @@ def edit_sale(sale_id):
             )
 
     return render_template(
-        "home/vente_stock.html",
+        "home/edit_sale.html",
         form=form,
-        sales=Sale.query.order_by(Sale.created_at.desc()).all(),
+        sale=sale,
         segment="stock",
         sub_segment="vente_stock",
-        sale_to_edit=sale,
+    )
+
+
+@blueprint.route("/delete_sale/<int:sale_id>", methods=["GET", "POST"])
+@login_required
+@vendeur_required
+def delete_sale(sale_id):
+    sale = Sale.query.get_or_404(sale_id)
+    confirm_form = DeleteConfirmForm()
+
+    if request.method == "POST":
+        print("POST request received! Trying to delete...")
+
+        try:
+            db.session.begin_nested()
+
+            for sale_item in sale.sale_items:
+                stock_item = Stock.query.filter_by(network=sale_item.network).first()
+                if stock_item:
+                    stock_item.balance += sale_item.quantity
+                    db.session.add(stock_item)
+                    print(
+                        f"Reverted stock for {sale_item.network.value}: New balance is {stock_item.balance}"
+                    )
+                else:
+                    current_app.logger.warning(
+                        f"Warning: Stock item for network {sale_item.network.value} not found while deleting sale {sale_id}. Stock not fully reverted."
+                    )
+
+            for item_to_delete in list(sale.sale_items):
+                db.session.delete(item_to_delete)
+
+            db.session.delete(sale)
+            db.session.commit()
+            print("Sale deleted successfully!")
+            flash(f"Vente #{sale_id} supprimée avec succès!", "success")
+            return redirect(url_for("home_blueprint.vente_stock"))
+
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(
+                f"Error deleting sale {sale_id}: {e}", exc_info=True
+            )
+            flash(
+                f"Une erreur est survenue lors de la suppression de la vente: {e}",
+                "danger",
+            )
+            return redirect(url_for("home_blueprint.vente_stock"))
+
+    flash("Confirmez la suppression de la vente.", "warning")
+    return render_template(
+        "home/confirm_delete_sale.html",
+        sale=sale,
+        confirm_form=confirm_form,
+        page_title="Confirmer Suppression Vente",
+        segment="stock",
+        sub_segment="vente_stock",
     )
 
 
@@ -1365,14 +1417,20 @@ def sorties_cash():
         else Decimal("0.00")
     )
 
-    # Now, total_inflow is simply the sum of all CashInflow records
-    total_inflow = (
+    # Note: The previous logic for total_inflow was overwritten here.
+    # total_inflow should combine actual CashInflow records AND cash_paid from sales.
+    total_cash_inflows_records = (
         sum(inflow.amount for inflow in all_inflows) if all_inflows else Decimal("0.00")
     )
 
     # Get total cash paid directly from Sales (initial payment at sale time)
-    all_sales_cash_paid = db.session.query(db.func.sum(Sale.cash_paid)).scalar()
-    total_inflow = all_sales_cash_paid if all_sales_cash_paid else Decimal("0.00")
+    # Use scalar() to get the sum directly, it will be None if no sales, so handle it.
+    all_sales_cash_paid_sum = db.session.query(db.func.sum(Sale.cash_paid)).scalar()
+    total_sales_cash_paid = (
+        all_sales_cash_paid_sum if all_sales_cash_paid_sum else Decimal("0.00")
+    )
+
+    total_inflow = total_cash_inflows_records + total_sales_cash_paid
 
     return render_template(
         "home/sorties_cash.html",
@@ -1382,47 +1440,6 @@ def sorties_cash():
         total_inflow=total_inflow,
         segment="stock",
         sub_segment="Sorties_Cash",
-    )
-
-
-# Enregistrer une Sortie (Cash Outflow)
-@blueprint.route("/sorties_cash/enregistrer_sortie", methods=["GET", "POST"])
-@login_required
-def enregistrer_sortie():
-    form = CashOutflowForm()
-
-    if form.validate_on_submit():
-        try:
-            amount = form.amount.data
-            category = CashOutflowCategory[form.category.data]
-            description = form.description.data
-
-            new_outflow = CashOutflow(
-                amount=amount,
-                category=category,
-                description=description,
-                recorded_by=current_user,
-            )
-            db.session.add(new_outflow)
-            db.session.commit()
-            flash(
-                f"Sortie de {amount:,.2f} FC ({category.value}) enregistrée avec succès.",
-                "success",
-            )
-            return redirect(
-                url_for("home_blueprint.sorties_cash")
-            )  # Redirect back to overview
-        except Exception as e:
-            db.session.rollback()
-            flash(f"Erreur lors de l'enregistrement de la sortie: {e}", "danger")
-            print(f"Error recording cash outflow: {e}")
-
-    return render_template(
-        "home/enregistrer_sortie.html",
-        form=form,
-        segment="stock",
-        sub_segment="Sorties_Cash",
-        sub_page_title="Enregistrer Sortie",
     )
 
 
@@ -1602,10 +1619,6 @@ def rapports():
         grand_totals["total_debts"] = (
             total_live_debts if total_live_debts is not None else Decimal("0.00")
         )
-        current_app.logger.info(
-            f"++++++++++++++++ This is the total live debts {total_live_debts} ++++++++++++++++++++++++++++++++++"
-        )
-
         grand_totals["total_calculated_sold_stock"] = (
             grand_totals["initial_stock"]
             + grand_totals["purchased_stock"]
@@ -1873,10 +1886,11 @@ def client_map():
     Renders a map displaying clients based on their GPS coordinates.
     Retrieves clients accessible to the current user (all for superadmin, own for vendeur).
     """
-    # Fetch all clients for Superadmin
+
     clients = Client.query.filter(
         Client.gps_lat.isnot(None), Client.gps_long.isnot(None)
     ).all()
+
     # Prepare client data for JavaScript
     client_locations = [
         {
@@ -1892,10 +1906,9 @@ def client_map():
         if client.gps_lat is not None and client.gps_long is not None
     ]
 
-    # Default center for Kisangani, DRC if no clients or to provide a starting point
-    # You might want to calculate an average center if you have many clients
-    default_center_lat = -0.5167
-    default_center_lng = 25.1999
+    # Default center for Bukavu, DRC
+    default_center_lat = -2.5074  # Latitude de Bukavu
+    default_center_lng = 29.2152  # Longitude de Bukavu
 
     if client_locations:
         # Calculate approximate center of clients if available

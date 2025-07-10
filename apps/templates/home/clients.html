@@ -102,6 +102,11 @@
                     </td>
                   </tr>
                 {% endfor %}
+                {% if not clients %}
+                  <tr>
+                    <td colspan="8" class="text-center">Aucun client trouvé.</td>
+                  </tr>
+                {% endif %}
               </tbody>
             </table>
           </div>

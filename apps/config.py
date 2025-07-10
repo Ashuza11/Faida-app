@@ -3,17 +3,20 @@ from decouple import config
 
 
 class Config(object):
+    """Base configuration class with default settings."""
 
     basedir = os.path.abspath(os.path.dirname(__file__))
-
-    # Set up the App SECRET_KEY
     SECRET_KEY = config("SECRET_KEY", default="S#perS3crEt_007")
 
-    # This will create a file in <app> FOLDER
-    SQLALCHEMY_DATABASE_URI = "sqlite:///" + os.path.join(basedir, "db.sqlite3")
+    # Use DATABASE_URL from environment directly
+    SQLALCHEMY_DATABASE_URI = os.environ.get(
+        "DATABASE_URL"
+    ) or "sqlite:///" + os.path.join(
+        basedir, "db.sqlite3"
+    )  # Fallback to SQLite if DATABASE_URL is not set
+
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    # APScheduler Configuration
     SCHEDULER_API_ENABLED = True
     SCHEDULER_JOB_DEFAULTS = {
         "coalesce": True,
@@ -32,25 +35,43 @@ class Config(object):
 class ProductionConfig(Config):
     DEBUG = False
 
-    # Security
     SESSION_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_DURATION = 3600
 
-    # PostgreSQL database
-    SQLALCHEMY_DATABASE_URI = "{}://{}:{}@{}:{}/{}".format(
-        config("DB_ENGINE", default="postgresql"),
-        config("DB_USERNAME", default="appseed"),
-        config("DB_PASS", default="pass"),
-        config("DB_HOST", default="localhost"),
-        config("DB_PORT", default=5432),
-        config("DB_NAME", default="appseed-flask"),
-    )
+    # No need to redefine SQLALCHEMY_DATABASE_URI if it's set via DATABASE_URL in the base Config
+    # If you still want to explicitly define it here and override the base, ensure it's correct.
+    # For now, let's assume DATABASE_URL in docker-compose.yml is the source of truth.
+
+    # If you absolutely need to override, you can do:
+    # SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL") # This would be redundant if base class handles it
+    # OR if you prefer the decouple way:
+    # SQLALCHEMY_DATABASE_URI = "{}://{}:{}@{}:{}/{}".format(
+    #     config("DB_ENGINE", default="postgresql"),
+    #     config("DB_USERNAME", default="user"),
+    #     config("DB_PASS", default="password"),
+    #     config("DB_HOST", default="db_service"),
+    #     config("DB_PORT", default=5432),
+    #     config("DB_NAME", default="mydatabase"),
+    # )
 
 
 class DebugConfig(Config):
     DEBUG = True
 
+    # No need to redefine SQLALCHEMY_DATABASE_URI if it's set via DATABASE_URL in the base Config
+    # If you absolutely need to override, you can do:
+    # SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL")
+    # OR if you prefer the decouple way:
+    # SQLALCHEMY_DATABASE_URI = "{}://{}:{}@{}:{}/{}".format(
+    #     config("DB_ENGINE", default="postgresql"),
+    #     config("DB_USERNAME", default="user"),
+    #     config("DB_PASS", default="password"),
+    #     config("DB_HOST", default="db_service"),
+    #     config("DB_PORT", default=5432),
+    #     config("DB_NAME", default="mydatabase"),
+    # )
 
-# Load all possible configurations
+
+# The rest of your config remains the same.
 config_dict = {"Production": ProductionConfig, "Debug": DebugConfig}

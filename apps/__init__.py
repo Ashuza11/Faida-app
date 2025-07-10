@@ -15,7 +15,7 @@ import click
 db = SQLAlchemy()
 login_manager = LoginManager()
 scheduler = APScheduler()
-migrate = Migrate()  # Flask-Migrate instance
+migrate = Migrate()
 app_logger = logging.getLogger(__name__)
 
 # Basic logging config for the entire app, including CLI
@@ -27,7 +27,7 @@ logging.basicConfig(
 def register_extensions(app):
     db.init_app(app)
     login_manager.init_app(app)
-    migrate.init_app(app, db)  # Initialize Flask-Migrate with the app and db
+    migrate.init_app(app, db)
 
     from apps.authentication.models import User
 
@@ -90,7 +90,7 @@ def register_cli_commands(app):
 
         click.echo(f"Attempting to seed reports for {seed_date}...")
         try:
-            with app.app_context():  # Ensure app context is active for db operations
+            with app.app_context():
                 seed_initial_stock_balances(app, seed_date)
             click.echo(f"Successfully seeded reports for {seed_date}.")
         except Exception as e:
@@ -221,7 +221,7 @@ def register_cli_commands(app):
             click.echo("Transaction simulation complete.")
 
 
-def create_app(config_object=DebugConfig):  # This is your main app factory
+def create_app(config_object=DebugConfig):
     app = Flask(__name__)
     app.config.from_object(config_object)
     app.logger.setLevel(logging.INFO)
@@ -229,7 +229,7 @@ def create_app(config_object=DebugConfig):  # This is your main app factory
     register_extensions(app)
     register_blueprints(app)
     configure_database(app)
-    register_cli_commands(app)  # <--- NEW: Register CLI commands here
+    register_cli_commands(app)
 
     with app.app_context():
         db.create_all()
