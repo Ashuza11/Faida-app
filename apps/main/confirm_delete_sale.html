@@ -30,12 +30,12 @@
                             </li>
                         </ul>
 
-                        <form method="POST" action="{{ url_for('home_blueprint.delete_sale', sale_id=sale.id) }}">
+                        <form method="POST" action="{{ url_for('main_bp.delete_sale', sale_id=sale.id) }}">
                             {# Render the CSRF token using the form object #}
                             {{ confirm_form.csrf_token }} 
                             <div class="text-right mb-3">
                                 <button type="submit" class="btn btn-danger">Oui, Supprimer</button>
-                                <a href="{{ url_for('home_blueprint.vente_stock') }}" class="btn btn-secondary">Annuler</a>
+                                <a href="{{ url_for('main_bp.vente_stock') }}" class="btn btn-secondary">Annuler</a>
                             </div>
                         </form>
                     </div>

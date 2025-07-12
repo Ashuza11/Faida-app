@@ -1,6 +1,6 @@
 {% extends 'layouts/base-fullscreen.html' %}
 
-{% block title %} Error 404 - Page Non Trouvée {% endblock title %}
+{% block title %} Error 500 - Erreur Serveur {% endblock title %}
 
 {% block content %}
 
@@ -10,17 +10,17 @@
           <div class="card bg-secondary shadow border-0">
             <div class="card-body px-lg-5 py-lg-5 text-center"> {# Added text-center #}
               <div class="text-muted text-center mt-2 mb-1">
-                <img src="{{ url_for('static', filename='assets/img/errors/404.svg') }}" 
-                     alt="Error 404 Illustration" 
+                <img src="{{ url_for('static', filename='assets/img/errors/500.svg') }}" 
+                     alt="Error 500 Illustration" 
                      class="img-fluid mb-4" 
                      style="max-width: 300px;"> {# Adjust max-width as needed #}
-                <!-- <h1 class="display-1 text-warning">404</h1> -->
-                <p class="lead text-darker">Oups! Page Non Trouvée</p>
+                <!-- <h1 class="display-1 text-danger">500</h1> -->
+                <p class="lead text-darker">Oups! Erreur Serveur</p>
               </div>
 
               <div class="text-center mb-4">
-                <p>Nous n'avons pas pu trouver la page que vous recherchiez.</p>
-                <p>Il se peut que l'adresse soit incorrecte ou que la page ait été déplacée.</p>
+                <p>Une erreur inattendue s'est produite sur le serveur.</p>
+                <p>Notre équipe a été informée. Veuillez réessayer plus tard ou contacter le support.</p>
                 <a href="{{ url_for('main_bp.index') }}" class="btn btn-primary my-4">Retour à l'accueil</a>
               </div>
 
@@ -28,7 +28,7 @@
           </div>
           <div class="row mt-3">
             <div class="col-6">
-              <a href="{{ url_for('main_bp.index') }}" class="text-light"><small>Retour à l'accueil</small></a>
+              <a href="{{ url_for('main_bp.index.index') }}" class="text-light"><small>Retour à l'accueil</small></a>
             </div>
             <div class="col-6 text-right">
               <a target="_blank" href="https://appseed.us/support" class="text-light"><small>Obtenir de l'aide</small></a>

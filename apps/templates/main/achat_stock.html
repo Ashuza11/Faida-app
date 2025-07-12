@@ -11,8 +11,8 @@
     {# Render the Page Header #}
     {% set page_title = 'Gestion Stock' %}
     {% set breadcrumb_items = [
-        {'text': 'Stock', 'url': url_for('home_blueprint.Achat_stock')},
-        {'text': 'Achat stock', 'url': url_for('home_blueprint.Achat_stock')}
+        {'text': 'Stock', 'url': url_for('main_bp.Achat_stock')},
+        {'text': 'Achat stock', 'url': url_for('main_bp.Achat_stock')}
     ] %}
     {% include 'includes/page_header.html' %}
 
@@ -64,8 +64,8 @@
                                                 <i class="fas fa-ellipsis-v"></i>
                                             </a>
                                             <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
-                                                <a class="dropdown-item" href="{{ url_for('home_blueprint.edit_stock_purchase', purchase_id=purchase.id) }}">Editer</a>
-                                                <a class="dropdown-item text-danger" href="{{ url_for('home_blueprint.delete_stock_purchase', purchase_id=purchase.id) }}">Supprimer</a>
+                                                <a class="dropdown-item" href="{{ url_for('main_bp.edit_stock_purchase', purchase_id=purchase.id) }}">Editer</a>
+                                                <a class="dropdown-item text-danger" href="{{ url_for('main_bp.delete_stock_purchase', purchase_id=purchase.id) }}">Supprimer</a>
                                             </div>
                                         </div>
                                     </td>
@@ -96,7 +96,7 @@
                     </button>
                 </div>
                 {# The form itself for Stock Purchase #}
-                <form method="post" action="{{ url_for('home_blueprint.Achat_stock') }}">
+                <form method="post" action="{{ url_for('main_bp.Achat_stock') }}">
                     <div class="modal-body"> {# Or just remove this div if it's no longer in a modal #}
                         {{ form.hidden_tag() }} {# CSRF token #}
 

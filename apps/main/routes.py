@@ -1,12 +1,10 @@
-from apps.home import blueprint
+from apps.main import bp
 from flask import render_template, request, flash, redirect, url_for, abort, current_app
 from flask_login import login_required, current_user
 import sqlalchemy as sa
-from sqlalchemy.sql import func, cast
-from sqlalchemy.types import Date
 from jinja2 import TemplateNotFound
 from apps.decorators import superadmin_required, vendeur_required
-from apps.home.utils import (
+from apps.main.utils import (
     custom_round_up,
     parse_date_param,
     get_daily_report_data,
@@ -18,7 +16,7 @@ from apps import db
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone, date
 import pytz
-from apps.authentication.models import (
+from apps.models import (
     User,
     RoleType,
     Client,
@@ -37,7 +35,7 @@ from apps.authentication.models import (
     DailyStockReport,
 )
 
-from apps.home.forms import (
+from apps.main.forms import (
     StockerForm,
     UserEditForm,
     ClientForm,
@@ -55,7 +53,7 @@ from apps.home.forms import (
 APP_TIMEZONE = pytz.timezone("Africa/Lubumbashi")
 
 
-@blueprint.route("/index")
+@bp.route("/index")
 @login_required
 def index():
     # Use the new utility function to get timezone-aware date/time info
@@ -229,7 +227,7 @@ def index():
     )
 
 
-@blueprint.route("/<template>")
+@bp.route("/<template>")
 @login_required
 def route_template(template):
     try:
@@ -263,7 +261,7 @@ def get_segment(request):
 
 
 # User management
-@blueprint.route("/admin/stocker", methods=["GET", "POST"])
+@bp.route("/admin/stocker", methods=["GET", "POST"])
 @login_required
 @superadmin_required
 def stocker_management():
@@ -294,7 +292,7 @@ def stocker_management():
             db.session.add(new_user)
             db.session.commit()
             flash("Utilisateur créé avec succès!", "success")
-            return redirect(url_for("home_blueprint.stocker_management"))
+            return redirect(url_for("main_bp.stocker_management"))
 
     users = User.query.all()
     return render_template(
@@ -307,14 +305,14 @@ def stocker_management():
     )
 
 
-@blueprint.route("/admin/user/edit/<int:user_id>", methods=["GET", "POST"])
+@bp.route("/admin/user/edit/<int:user_id>", methods=["GET", "POST"])
 @login_required
 @superadmin_required
 def user_edit(user_id):
     user = db.session.get(User, user_id)
     if not user:
         flash("Utilisateur non trouvé.", "danger")
-        return redirect(url_for("home_blueprint.stocker_management"))
+        return redirect(url_for("main_bp.stocker_management"))
 
     user_edit_form = UserEditForm()
     stocker_form = StockerForm()
@@ -339,7 +337,7 @@ def user_edit(user_id):
             user.is_active = user_edit_form.is_active.data
             db.session.commit()
             flash("Utilisateur mis à jour avec succès!", "success")
-            return redirect(url_for("home_blueprint.stocker_management"))
+            return redirect(url_for("main_bp.index.stocker_management"))
     elif request.method == "GET":
         # Pre-populate form with existing user data on GET request
         user_edit_form.username.data = user.username
@@ -358,7 +356,7 @@ def user_edit(user_id):
     )
 
 
-@blueprint.route("/admin/user/toggle_active/<int:user_id>", methods=["POST"])
+@bp.route("/admin/user/toggle_active/<int:user_id>", methods=["POST"])
 @login_required
 @superadmin_required
 def user_toggle_active(user_id):
@@ -378,11 +376,11 @@ def user_toggle_active(user_id):
                 flash(
                     f"Utilisateur '{user.username}' désactivé avec succès!", "success"
                 )
-    return redirect(url_for("home_blueprint.stocker_management"))
+    return redirect(url_for("main_bp.index.stocker_management"))
 
 
 # Client Management
-@blueprint.route("/admin/clients", methods=["GET", "POST"])
+@bp.route("/admin/clients", methods=["GET", "POST"])
 @login_required
 @vendeur_required
 def client_management():
@@ -430,7 +428,7 @@ def client_management():
             db.session.add(new_client)
             db.session.commit()
             flash("Client créé avec succès!", "success")
-            return redirect(url_for("home_blueprint.client_management"))
+            return redirect(url_for("main_bp.index.client_management"))
 
     # Query clients
     if current_user.role == RoleType.SUPERADMIN:
@@ -448,7 +446,7 @@ def client_management():
     )
 
 
-@blueprint.route("/admin/clients/edit/<int:client_id>", methods=["POST"])
+@bp.route("/admin/clients/edit/<int:client_id>", methods=["POST"])
 @login_required
 @vendeur_required
 def client_edit(client_id):
@@ -463,7 +461,7 @@ def client_edit(client_id):
         and client.vendeur_id != current_user.id
     ):
         flash("Vous n'êtes pas autorisé à modifier ce client.", "danger")
-        return redirect(url_for("home_blueprint.client_management"))
+        return redirect(url_for("main_bp.index.client_management"))
 
     client_edit_form = ClientEditForm()
     if client_edit_form.validate_on_submit():
@@ -483,7 +481,7 @@ def client_edit(client_id):
 
         db.session.commit()
         flash("Client mis à jour avec succès!", "success")
-        return redirect(url_for("home_blueprint.client_management"))
+        return redirect(url_for("main_bp.index.client_management"))
     else:
         # If validation fails, repopulate the form with existing data and show errors
         # This is where the modal JS will pick up errors and reopen the modal
@@ -494,10 +492,10 @@ def client_edit(client_id):
         # Pre-populate form for re-rendering if validation fails (important for modal)
         # This part is handled by the data attributes in the JS when the modal is re-opened.
         # However, if you redirect with errors, you might want to flash them more specifically.
-    return redirect(url_for("home_blueprint.client_management"))
+    return redirect(url_for("main_bp.index.client_management"))
 
 
-@blueprint.route("/admin/clients/toggle-active/<int:client_id>", methods=["POST"])
+@bp.route("/admin/clients/toggle-active/<int:client_id>", methods=["POST"])
 @login_required
 @vendeur_required
 def client_toggle_active(client_id):
@@ -512,16 +510,16 @@ def client_toggle_active(client_id):
         and client.vendeur_id != current_user.id
     ):
         flash("Vous n'êtes pas autorisé à modifier le statut de ce client.", "danger")
-        return redirect(url_for("home_blueprint.client_management"))
+        return redirect(url_for("main_bp.index.client_management"))
 
     client.is_active = not client.is_active
     db.session.commit()
     status_message = "activé" if client.is_active else "désactivé"
     flash(f"Client {client.name} {status_message} avec succès!", "success")
-    return redirect(url_for("home_blueprint.client_management"))
+    return redirect(url_for("main_bp.index.client_management"))
 
 
-@blueprint.route("/achat_stock", methods=["GET", "POST"])
+@bp.route("/achat_stock", methods=["GET", "POST"])
 @login_required
 @superadmin_required
 def Achat_stock():
@@ -614,7 +612,7 @@ def Achat_stock():
             db.session.commit()
 
             flash("Achat de stock enregistré avec succès!", "success")
-            return redirect(url_for("home_blueprint.Achat_stock"))
+            return redirect(url_for("main_bp.index.Achat_stock"))
 
         except Exception as e:
             # --- General Error Handling (Database or unexpected server errors) ---
@@ -649,7 +647,7 @@ def Achat_stock():
 
 
 # Edit Stock Purchase
-@blueprint.route("/achat_stock/editer/<int:purchase_id>", methods=["GET", "POST"])
+@bp.route("/achat_stock/editer/<int:purchase_id>", methods=["GET", "POST"])
 @login_required
 @superadmin_required
 def edit_stock_purchase(purchase_id):
@@ -774,7 +772,7 @@ def edit_stock_purchase(purchase_id):
 
             db.session.commit()
             flash("Achat de stock mis à jour avec succès!", "success")
-            return redirect(url_for("home_blueprint.Achat_stock"))
+            return redirect(url_for("main_bp.index.Achat_stock"))
 
         except Exception as e:
             db.session.rollback()
@@ -794,7 +792,7 @@ def edit_stock_purchase(purchase_id):
 
 
 # Delete Stock Purchase
-@blueprint.route("/achat_stock/supprimer/<int:purchase_id>", methods=["GET", "POST"])
+@bp.route("/achat_stock/supprimer/<int:purchase_id>", methods=["GET", "POST"])
 @login_required
 @superadmin_required
 def delete_stock_purchase(purchase_id):
@@ -817,12 +815,12 @@ def delete_stock_purchase(purchase_id):
                     "Erreur: L'article de stock correspondant est introuvable.",
                     "danger",
                 )
-                return redirect(url_for("home_blueprint.Achat_stock"))
+                return redirect(url_for("main_bp.index.Achat_stock"))
 
             db.session.delete(purchase)
             db.session.commit()
             flash(f"Achat de stock #{purchase_id} supprimé avec succès!", "success")
-            return redirect(url_for("home_blueprint.Achat_stock"))
+            return redirect(url_for("main_bp.index.Achat_stock"))
 
         except Exception as e:
             db.session.rollback()
@@ -830,7 +828,7 @@ def delete_stock_purchase(purchase_id):
                 f"Error deleting stock purchase {purchase_id}: {e}"
             )
             flash(f"Une erreur est survenue lors de la suppression: {e}", "danger")
-            return redirect(url_for("home_blueprint.Achat_stock"))
+            return redirect(url_for("main_bp.index.Achat_stock"))
 
     flash("Confirmez la suppression de l'achat de stock.", "warning")
     return render_template(
@@ -842,7 +840,7 @@ def delete_stock_purchase(purchase_id):
     )
 
 
-@blueprint.route("/vente_stock", methods=["GET", "POST"])
+@bp.route("/vente_stock", methods=["GET", "POST"])
 @login_required
 @vendeur_required
 def vente_stock():
@@ -1011,7 +1009,7 @@ def vente_stock():
             db.session.add(new_sale)
             db.session.commit()
             flash("Vente enregistrée avec succès!", "success")
-            return redirect(url_for("home_blueprint.vente_stock"))
+            return redirect(url_for("main_bp.index.vente_stock"))
         except Exception as e:
             db.session.rollback()
             flash(f"Erreur lors de l'enregistrement de la vente: {e}", "danger")
@@ -1045,7 +1043,7 @@ def vente_stock():
     )
 
 
-@blueprint.route("/update-sale-cash/<int:sale_id>", methods=["POST"])
+@bp.route("/update-sale-cash/<int:sale_id>", methods=["POST"])
 @login_required
 @superadmin_required
 @vendeur_required
@@ -1056,18 +1054,18 @@ def update_sale_cash(sale_id):
         new_cash = Decimal(request.form.get("new_cash", "0.00"))
     except InvalidOperation:
         flash("Paiement invalide.", "danger")
-        return redirect(url_for("home_blueprint.vente_stock"))
+        return redirect(url_for("main_bp.index.vente_stock"))
 
     if new_cash < 0:
         flash("Le paiement ne peut pas être négatif.", "danger")
-        return redirect(url_for("home_blueprint.vente_stock"))
+        return redirect(url_for("main_bp.index.vente_stock"))
 
     # Calculate new debt
     new_debt = sale.total_amount_due - new_cash
 
     if new_debt < 0:
         flash("Le paiement ne peut pas dépasser le montant total dû.", "danger")
-        return redirect(url_for("home_blueprint.vente_stock"))
+        return redirect(url_for("main_bp.index.vente_stock"))
 
     sale.cash_paid = new_cash
     sale.debt_amount = new_debt
@@ -1081,10 +1079,10 @@ def update_sale_cash(sale_id):
         flash(f"Erreur lors de la mise à jour: {e}", "danger")
         print(f"Error updating cash: {e}")
 
-    return redirect(url_for("home_blueprint.vente_stock"))
+    return redirect(url_for("main_bp.index.vente_stock"))
 
 
-@blueprint.route("/edit_sale/<int:sale_id>", methods=["GET", "POST"])
+@bp.route("/edit_sale/<int:sale_id>", methods=["GET", "POST"])
 @login_required
 @vendeur_required
 def edit_sale(sale_id):
@@ -1298,7 +1296,7 @@ def edit_sale(sale_id):
 
             db.session.commit()
             flash("Vente modifiée avec succès!", "success")
-            return redirect(url_for("home_blueprint.vente_stock"))
+            return redirect(url_for("main_bp.index.vente_stock"))
 
         except ValueError as e:
             db.session.rollback()
@@ -1333,7 +1331,7 @@ def edit_sale(sale_id):
     )
 
 
-@blueprint.route("/delete_sale/<int:sale_id>", methods=["GET", "POST"])
+@bp.route("/delete_sale/<int:sale_id>", methods=["GET", "POST"])
 @login_required
 @vendeur_required
 def delete_sale(sale_id):
@@ -1366,7 +1364,7 @@ def delete_sale(sale_id):
             db.session.commit()
             print("Sale deleted successfully!")
             flash(f"Vente #{sale_id} supprimée avec succès!", "success")
-            return redirect(url_for("home_blueprint.vente_stock"))
+            return redirect(url_for("main_bp.index.vente_stock"))
 
         except Exception as e:
             db.session.rollback()
@@ -1377,7 +1375,7 @@ def delete_sale(sale_id):
                 f"Une erreur est survenue lors de la suppression de la vente: {e}",
                 "danger",
             )
-            return redirect(url_for("home_blueprint.vente_stock"))
+            return redirect(url_for("main_bp.index.vente_stock"))
 
     flash("Confirmez la suppression de la vente.", "warning")
     return render_template(
@@ -1390,7 +1388,7 @@ def delete_sale(sale_id):
     )
 
 
-@blueprint.route("/view_sale_details/<int:sale_id>", methods=["GET"])
+@bp.route("/view_sale_details/<int:sale_id>", methods=["GET"])
 @login_required
 def view_sale_details(sale_id):
     sale = Sale.query.get_or_404(sale_id)
@@ -1403,7 +1401,7 @@ def view_sale_details(sale_id):
 
 
 # sorties_cash route
-@blueprint.route("/sorties_cash", methods=["GET"])
+@bp.route("/sorties_cash", methods=["GET"])
 @login_required
 def sorties_cash():
     # Fetch all cash movements for display
@@ -1444,7 +1442,7 @@ def sorties_cash():
 
 
 # Enregistre une Sortie (Cash Outflow)
-@blueprint.route("/enregistrer_sortie", methods=["GET", "POST"])
+@bp.route("/enregistrer_sortie", methods=["GET", "POST"])
 @login_required
 @vendeur_required
 def enregistrer_sortie():
@@ -1466,7 +1464,7 @@ def enregistrer_sortie():
                 db.session.commit()
 
                 flash("Sortie de caisse enregistrée avec succès!", "success")
-                return redirect(url_for("home_blueprint.sorties_cash"))
+                return redirect(url_for("main_bp.index.sorties_cash"))
 
             except Exception as e:
                 db.session.rollback()
@@ -1493,7 +1491,7 @@ def enregistrer_sortie():
 
 
 # Encaisser une Dette (Debt Collection)
-@blueprint.route("/sorties_cash/encaisser_dette", methods=["GET", "POST"])
+@bp.route("/sorties_cash/encaisser_dette", methods=["GET", "POST"])
 @login_required
 def encaisser_dette():
     form = DebtCollectionForm()
@@ -1541,7 +1539,7 @@ def encaisser_dette():
                 "success",
             )
             return redirect(
-                url_for("home_blueprint.sorties_cash")
+                url_for("main_bp.index.sorties_cash")
             )  # Redirect back to overview
         except InvalidOperation:
             flash("Montant invalide. Veuillez entrer un nombre valide.", "danger")
@@ -1564,7 +1562,7 @@ def encaisser_dette():
 
 
 # Rapports route
-@blueprint.route("/rapports", methods=["GET"])
+@bp.route("/rapports", methods=["GET"])
 @login_required
 @superadmin_required
 def rapports():
@@ -1840,7 +1838,7 @@ def rapports():
     )
 
 
-@blueprint.route("/profile", methods=["GET", "POST"])
+@bp.route("/profile", methods=["GET", "POST"])
 @login_required
 def profile():
     form = EditProfileForm(
@@ -1863,16 +1861,16 @@ def profile():
                     "Veuillez entrer votre mot de passe actuel pour changer le mot de passe.",
                     "danger",
                 )
-                return redirect(url_for("home_blueprint.profile"))
+                return redirect(url_for("main_bp.index.profile"))
             if not current_user.check_password(form.current_password.data):
                 flash("Mot de passe actuel incorrect.", "danger")
-                return redirect(url_for("home_blueprint.profile"))
+                return redirect(url_for("main_bp.index.profile"))
             if not form.new_password.data:
                 flash("Veuillez entrer un nouveau mot de passe.", "danger")
-                return redirect(url_for("home_blueprint.profile"))
+                return redirect(url_for("main_bp.index.profile"))
             if form.new_password.data != form.confirm_new_password.data:
                 flash("Les nouveaux mots de passe ne correspondent pas.", "danger")
-                return redirect(url_for("home_blueprint.profile"))
+                return redirect(url_for("main_bp.index.profile"))
 
             current_user.set_password(form.new_password.data)
             flash("Votre mot de passe a été mis à jour !", "success")
@@ -1880,7 +1878,7 @@ def profile():
         try:
             db.session.commit()
             flash("Votre profil a été mis à jour !", "success")
-            return redirect(url_for("home_blueprint.profile"))
+            return redirect(url_for("main_bp.index.profile"))
         except Exception as e:
             db.session.rollback()
             flash(f"Une erreur est survenue : {e}", "danger")
@@ -1927,69 +1925,66 @@ def profile():
 
 
 # Client Map route
-@blueprint.route("/client-map", methods=["GET"])
+@bp.route("/client-map", methods=["GET"])
 @login_required
 @vendeur_required
 def client_map():
     """
     Renders a map displaying clients based on their GPS coordinates.
-    Temporarily uses hardcoded data for demonstration.
     """
-
-    # --- HARDCODED CLIENT LOCATIONS FOR PANZI, BUKAVU ---
-    # These are example coordinates around the Panzi hospital area in Bukavu.
-    # I've slightly varied them to show multiple markers.
+    # Replace hardcoded_client_locations with actual client data from DB
+    # For now, keeping it for demonstration as you did previously
     hardcoded_client_locations = [
         {
-            "id": 101,
-            "name": "Client A (Panzi)",
-            "lat": -2.5180,  # Near Panzi Hospital
-            "lng": 29.2150,
-            "address": "Avenue Ndendere, Panzi",
-            "phone_airtel": "+243 851234567",
+            "name": "Client A",
+            "address": "123 Main St, Panzi",
+            "lat": -2.5300,
+            "lng": 28.8550,
+            "phone_airtel": "0991234567",
         },
         {
-            "id": 102,
-            "name": "Client B (Panzi)",
-            "lat": -2.5195,  # Slightly south
-            "lng": 29.2165,
-            "address": "Rue du Marché, Panzi",
-            "phone_airtel": "+243 857654321",
+            "name": "Client B",
+            "address": "456 Oak Ave, Panzi",
+            "lat": -2.5450,
+            "lng": 28.8650,
+            "phone_airtel": "0997654321",
         },
         {
-            "id": 103,
-            "name": "Client C (Panzi)",
-            "lat": -2.5170,  # Slightly north-east
-            "lng": 29.2130,
-            "address": "Route de Cyangugu, Panzi",
-            "phone_airtel": "+243 859876543",
+            "name": "Client C",
+            "address": "789 Pine Rd, Panzi",
+            "lat": -2.5420,
+            "lng": 28.8600,
+            "phone_airtel": "0991122334",
         },
-        {
-            "id": 104,
-            "name": "Client D (Panzi)",
-            "lat": -2.5200,  # Further south
-            "lng": 29.2140,
-            "address": "Quartier Lumumba, Panzi",
-            "phone_airtel": "+243 851122334",
-        },
+        # Add more clients with coordinates within or around Panzi
     ]
 
     client_locations = hardcoded_client_locations
 
-    # Default center for Panzi, Bukavu (more specific than just Bukavu city center)
-    default_center_lat = -2.5185  # Latitude of Panzi area
-    default_center_lng = 29.2145  # Longitude of Panzi area
+    # Set default center specifically for Panzi Quarter
+    # These coordinates are derived from the OpenStreetMap image you provided for Panzi.
+    default_center_lat = -2.540219
+    default_center_lng = 28.8594693
 
-    # If you still want to calculate average for hardcoded clients (optional)
+    # Your logic for calculating average coordinates will override these
+    # if client_locations is not empty.
+    # If you want Panzi to ALWAYS be the initial center, remove or modify this block
+    # or set the zoom level to show Panzi even if fitBounds changes it.
     if client_locations:
+        # You might want to remove this calculation if you want a fixed Panzi center
+        # and only use fitBounds to show all markers *within* that context
         avg_lat = sum(loc["lat"] for loc in client_locations) / len(client_locations)
         avg_lng = sum(loc["lng"] for loc in client_locations) / len(client_locations)
-        default_center_lat = avg_lat
-        default_center_lng = avg_lng
-        # You might want to adjust the default_center_lat/lng slightly
-        # if you want the initial view to be slightly offset from the exact average
-        # to ensure all markers are immediately visible without fitting bounds.
-        # However, fitBounds usually handles this well.
+        # Consider a scenario where all clients are in one corner,
+        # the average might not be the visual center of Panzi.
+        # So, if clients are sparse, relying on Panzi's center is better for initial load.
+        # If your clients truly define the area of interest, keep this.
+        # For a fixed "Panzi quarter" view, you might want to stick to the hardcoded Panzi center.
+        # For this example, let's prioritize Panzi's fixed center unless there are clients.
+        if True:  # You can add a condition here, e.g., if you only have a few clients
+            default_center_lat = avg_lat
+            default_center_lng = avg_lng
+        # You can add a check if avg_lat/lng are far from Panzi, then maybe reset to Panzi's center
 
     return render_template(
         "home/client_map.html",

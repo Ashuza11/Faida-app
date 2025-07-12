@@ -12,8 +12,8 @@
               <h6 class="h2 text-white d-inline-block mb-0">Gestion Stock</h6>
               <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
                 <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
-                  <li class="breadcrumb-item"><a href="{{ url_for('home_blueprint.index') }}"><i class="fas fa-home"></i></a></li>
-                  <li class="breadcrumb-item"><a href="{{ url_for('home_blueprint.Achat_stock') }}">Achats Stock</a></li>
+                  <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}"><i class="fas fa-home"></i></a></li>
+                  <li class="breadcrumb-item"><a href="{{ url_for('main_bp.Achat_stock') }}">Achats Stock</a></li>
                   <li class="breadcrumb-item active" aria-current="page">{{ page_title }}</li>
                 </ol>
               </nav>
@@ -40,9 +40,9 @@
                 <li class="list-group-item"><strong>Date d'Achat:</strong> {{ purchase.created_at.strftime('%Y-%m-%d %H:%M') }}</li>
               </ul>
 
-              <form method="post" action="{{ url_for('home_blueprint.delete_stock_purchase', purchase_id=purchase.id) }}">
+              <form method="post" action="{{ url_for('main_bp.delete_stock_purchase', purchase_id=purchase.id) }}">
                 <div class="text-right">
-                  <a href="{{ url_for('home_blueprint.Achat_stock') }}" class="btn btn-secondary">Annuler</a>
+                  <a href="{{ url_for('main_bp.Achat_stock') }}" class="btn btn-secondary">Annuler</a>
                   <button type="submit" class="btn btn-danger">Oui, Supprimer</button>
                 </div>
               </form>

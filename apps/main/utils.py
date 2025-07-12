@@ -1,6 +1,6 @@
 from apps import db
 from flask import current_app
-from apps.authentication.models import (
+from apps.models import (
     DailyStockReport,
     NetworkType,
     Stock,

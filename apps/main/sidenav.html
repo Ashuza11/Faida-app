@@ -74,7 +74,7 @@
               <ul class="nav nav-sm flex-column">
                 {% if current_user.is_authenticated and current_user.role.value == 'superadmin' %}
                   <li class="nav-item">
-                    <a class="nav-link {% if sub_segment == 'stocker' %}active{% endif %}" href="{{ url_for('.stocker_management') }}">
+                    <a class="nav-link {% if sub_segment == 'stocker' %}active{% endif %}" href="{{ url_for('main_bp.stocker_management') }}">
                       <i class="fas fa-user-tie"></i>
                       <span class="nav-link-text">Utilisateur</span>
                     </a>
@@ -82,7 +82,7 @@
                 {% endif %}
                 {% if current_user.is_authenticated and (current_user.role.value == 'superadmin' or current_user.role.value == 'vendeur') %}
                   <li class="nav-item">
-                    <a class="nav-link {% if sub_segment == 'client' %}active{% endif %}" href="{{ url_for('.client_management') }}">
+                    <a class="nav-link {% if sub_segment == 'client' %}active{% endif %}" href="{{ url_for('main_bp.client_management') }}">
                       <i class="fas fa-user"></i>
                       <span class="nav-link-text">Client</span>
                     </a>
@@ -98,7 +98,7 @@
         <!-- Heading -->
         <ul class="navbar-nav mb-md-3">
           <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('authentication_blueprint.logout') }}">
+            <a class="nav-link" href="{{ url_for('auth_bp.logout') }}">
               <i class="fas fa-sign-out-alt text-primary"></i>
               <span class="nav-link-text">Deconexion</span>
             </a>

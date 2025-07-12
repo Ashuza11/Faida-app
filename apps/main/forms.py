@@ -20,7 +20,7 @@ from wtforms.validators import (
     ValidationError,
     EqualTo,
 )
-from apps.authentication.models import (
+from apps.models import (
     NetworkType,
     Sale,
     CashOutflowCategory,

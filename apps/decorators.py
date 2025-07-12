@@ -1,7 +1,7 @@
 from functools import wraps
 from flask import abort, flash, redirect, url_for
 from flask_login import current_user
-from apps.authentication.models import RoleType
+from apps.models import RoleType
 
 
 def roles_required(*roles):

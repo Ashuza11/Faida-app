@@ -39,38 +39,9 @@ class ProductionConfig(Config):
     REMEMBER_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_DURATION = 3600
 
-    # No need to redefine SQLALCHEMY_DATABASE_URI if it's set via DATABASE_URL in the base Config
-    # If you still want to explicitly define it here and override the base, ensure it's correct.
-    # For now, let's assume DATABASE_URL in docker-compose.yml is the source of truth.
-
-    # If you absolutely need to override, you can do:
-    # SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL") # This would be redundant if base class handles it
-    # OR if you prefer the decouple way:
-    # SQLALCHEMY_DATABASE_URI = "{}://{}:{}@{}:{}/{}".format(
-    #     config("DB_ENGINE", default="postgresql"),
-    #     config("DB_USERNAME", default="user"),
-    #     config("DB_PASS", default="password"),
-    #     config("DB_HOST", default="db_service"),
-    #     config("DB_PORT", default=5432),
-    #     config("DB_NAME", default="mydatabase"),
-    # )
-
 
 class DebugConfig(Config):
     DEBUG = True
-
-    # No need to redefine SQLALCHEMY_DATABASE_URI if it's set via DATABASE_URL in the base Config
-    # If you absolutely need to override, you can do:
-    # SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL")
-    # OR if you prefer the decouple way:
-    # SQLALCHEMY_DATABASE_URI = "{}://{}:{}@{}:{}/{}".format(
-    #     config("DB_ENGINE", default="postgresql"),
-    #     config("DB_USERNAME", default="user"),
-    #     config("DB_PASS", default="password"),
-    #     config("DB_HOST", default="db_service"),
-    #     config("DB_PORT", default=5432),
-    #     config("DB_NAME", default="mydatabase"),
-    # )
 
 
 # The rest of your config remains the same.

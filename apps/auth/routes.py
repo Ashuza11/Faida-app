@@ -1,19 +1,17 @@
 from flask import render_template, redirect, request, url_for, flash
 from flask_login import current_user, login_user, logout_user
-
-from apps import db, login_manager
-from apps.authentication import blueprint
-from apps.authentication.forms import LoginForm, CreateAccountForm
-from apps.authentication.models import User
+from apps.auth import bp
+from apps.auth.forms import LoginForm, CreateAccountForm
+from apps.models import User
 
 
-@blueprint.route("/")
+@bp.route("/")
 def route_default():
-    return redirect(url_for("authentication_blueprint.login"))
+    return redirect(url_for("auth_bp.login"))
 
 
 # Login & Registration
-@blueprint.route("/login", methods=["GET", "POST"])
+@bp.route("/login", methods=["GET", "POST"])
 def login():
     login_form = LoginForm(request.form)
     if "login" in request.form:
@@ -28,7 +26,7 @@ def login():
             flash(f"Bienvenue {user.username} !", "success")
 
             # Templates will handle role-based UI
-            return redirect(url_for("home_blueprint.index"))
+            return redirect(url_for("main_bp.index"))
 
         return render_template(
             "accounts/login.html", msg="Identifiants invalides", form=login_form
@@ -36,10 +34,10 @@ def login():
 
     if not current_user.is_authenticated:
         return render_template("accounts/login.html", form=login_form)
-    return redirect(url_for("home_blueprint.index"))
+    return redirect(url_for("main_bp.index"))
 
 
-@blueprint.route("/register", methods=["GET", "POST"])
+@bp.route("/register", methods=["GET", "POST"])
 def register():
     return render_template(
         "accounts/register.html",
@@ -49,7 +47,7 @@ def register():
     )
 
 
-@blueprint.route("/logout")
+@bp.route("/logout")
 def logout():
     logout_user()
-    return redirect(url_for("authentication_blueprint.login"))
+    return redirect(url_for("auth_bp.login"))

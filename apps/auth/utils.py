@@ -1,5 +1,5 @@
 def create_superadmin():
-    from apps.authentication.models import User, RoleType
+    from apps.models import User, RoleType
     from apps import db
 
     try:
