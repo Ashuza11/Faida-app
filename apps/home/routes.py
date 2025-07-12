@@ -1443,6 +1443,55 @@ def sorties_cash():
     )
 
 
+# Enregistre une Sortie (Cash Outflow)
+@blueprint.route("/enregistrer_sortie", methods=["GET", "POST"])
+@login_required
+@vendeur_required
+def enregistrer_sortie():
+    form = CashOutflowForm(request.form)
+    page_title = "Gestion Cash"
+    sub_page_title = "Enregistrer une Nouvelle Sortie"
+
+    if "submit" in request.form:
+        if form.validate_on_submit():
+            try:
+                new_outflow = CashOutflow(
+                    amount=form.amount.data,
+                    category=form.category.data,
+                    description=form.description.data,
+                    # FIX IS HERE: Assign the User object, not its ID
+                    recorded_by=current_user,  # Assign the current_user object (which is a User model instance)
+                )
+                db.session.add(new_outflow)
+                db.session.commit()
+
+                flash("Sortie de caisse enregistrée avec succès!", "success")
+                return redirect(url_for("home_blueprint.sorties_cash"))
+
+            except Exception as e:
+                db.session.rollback()
+                flash(
+                    f"Erreur lors de l'enregistrement de la sortie: {str(e)}", "danger"
+                )
+                print(f"Error saving cash outflow: {e}")  # Keep this for debugging
+
+        else:
+            for field, errors in form.errors.items():
+                for error in errors:
+                    flash(
+                        f"Erreur dans le champ '{form[field].label.text}': {error}",
+                        "danger",
+                    )
+
+    return render_template(
+        "home/enregistrer_sortie.html",
+        form=form,
+        page_title=page_title,
+        sub_page_title=sub_page_title,
+        segment="enregistrer_sortie",
+    )
+
+
 # Encaisser une Dette (Debt Collection)
 @blueprint.route("/sorties_cash/encaisser_dette", methods=["GET", "POST"])
 @login_required
@@ -1884,39 +1933,63 @@ def profile():
 def client_map():
     """
     Renders a map displaying clients based on their GPS coordinates.
-    Retrieves clients accessible to the current user (all for superadmin, own for vendeur).
+    Temporarily uses hardcoded data for demonstration.
     """
 
-    clients = Client.query.filter(
-        Client.gps_lat.isnot(None), Client.gps_long.isnot(None)
-    ).all()
-
-    # Prepare client data for JavaScript
-    client_locations = [
+    # --- HARDCODED CLIENT LOCATIONS FOR PANZI, BUKAVU ---
+    # These are example coordinates around the Panzi hospital area in Bukavu.
+    # I've slightly varied them to show multiple markers.
+    hardcoded_client_locations = [
         {
-            "id": client.id,
-            "name": client.name,
-            "lat": float(client.gps_lat),  # Ensure float for JS
-            "lng": float(client.gps_long),  # Ensure float for JS
-            "address": client.address if client.address else "Non spécifiée",
-            "phone_airtel": client.phone_airtel if client.phone_airtel else "N/A",
-            # Add other client details you want to show in info windows
-        }
-        for client in clients
-        if client.gps_lat is not None and client.gps_long is not None
+            "id": 101,
+            "name": "Client A (Panzi)",
+            "lat": -2.5180,  # Near Panzi Hospital
+            "lng": 29.2150,
+            "address": "Avenue Ndendere, Panzi",
+            "phone_airtel": "+243 851234567",
+        },
+        {
+            "id": 102,
+            "name": "Client B (Panzi)",
+            "lat": -2.5195,  # Slightly south
+            "lng": 29.2165,
+            "address": "Rue du Marché, Panzi",
+            "phone_airtel": "+243 857654321",
+        },
+        {
+            "id": 103,
+            "name": "Client C (Panzi)",
+            "lat": -2.5170,  # Slightly north-east
+            "lng": 29.2130,
+            "address": "Route de Cyangugu, Panzi",
+            "phone_airtel": "+243 859876543",
+        },
+        {
+            "id": 104,
+            "name": "Client D (Panzi)",
+            "lat": -2.5200,  # Further south
+            "lng": 29.2140,
+            "address": "Quartier Lumumba, Panzi",
+            "phone_airtel": "+243 851122334",
+        },
     ]
 
-    # Default center for Bukavu, DRC
-    default_center_lat = -2.5074  # Latitude de Bukavu
-    default_center_lng = 29.2152  # Longitude de Bukavu
+    client_locations = hardcoded_client_locations
 
+    # Default center for Panzi, Bukavu (more specific than just Bukavu city center)
+    default_center_lat = -2.5185  # Latitude of Panzi area
+    default_center_lng = 29.2145  # Longitude of Panzi area
+
+    # If you still want to calculate average for hardcoded clients (optional)
     if client_locations:
-        # Calculate approximate center of clients if available
-        # This is a very basic average, for more complex scenarios, use bounding box
         avg_lat = sum(loc["lat"] for loc in client_locations) / len(client_locations)
         avg_lng = sum(loc["lng"] for loc in client_locations) / len(client_locations)
         default_center_lat = avg_lat
         default_center_lng = avg_lng
+        # You might want to adjust the default_center_lat/lng slightly
+        # if you want the initial view to be slightly offset from the exact average
+        # to ensure all markers are immediately visible without fitting bounds.
+        # However, fitBounds usually handles this well.
 
     return render_template(
         "home/client_map.html",

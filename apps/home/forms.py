@@ -389,7 +389,7 @@ class CashOutflowForm(FlaskForm):
     description = StringField(
         "Description", render_kw={"placeholder": "Ex: Achat fournitures bureau"}
     )
-    submit = SubmitField("Enregistrer la Sortie")  # Generic name 'submit'
+    submit = SubmitField("Enregistrer la Sortie")
 
 
 class DebtCollectionForm(FlaskForm):
@@ -469,4 +469,3 @@ class EditProfileForm(FlaskForm):
 # Form for confirming deletion of a sale
 class DeleteConfirmForm(FlaskForm):
     submit = SubmitField("Oui, Supprimer", validators=[DataRequired()])
-    # You don't need a separate CSRF field, Flask-WTF handles it automatically
