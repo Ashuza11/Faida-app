@@ -10,8 +10,8 @@ services:
       - FLASK_ENV=development
       - DATABASE_URL=postgresql://user:password@db_service:5432/airtfastdb
     depends_on:
-      db_service:
-        condition: service_healthy 
+      db_service: # Changed from - db_service to db_service:
+        condition: service_healthy # <--- ADD THIS LINE
     volumes:
       - .:/app
 
@@ -27,7 +27,7 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
-    healthcheck: 
+    healthcheck: # <--- ADD THIS WHOLE BLOCK
       test: ["CMD-SHELL", "pg_isready -U user -d airtfastdb"]
       interval: 5s
       timeout: 5s
