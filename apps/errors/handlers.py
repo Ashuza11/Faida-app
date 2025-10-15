@@ -22,6 +22,6 @@ def internal_error(error):
     return render_template("errors/500.html"), 500
 
 
-@bp.app_errorhandler(401)
-def unauthorized_error(error):
-    return render_template("errors/401.html"), 401
+# @bp.app_errorhandler(401)
+# def unauthorized_error(error):
+#     return render_template("errors/401.html"), 401

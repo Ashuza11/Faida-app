@@ -1,49 +1,37 @@
+# File: apps/__init__.py (Corrected Version)
+
 import logging
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_login import LoginManager
 
-from .config import DebugConfig  # Assuming your config is at /apps/config.py
+# REMOVE THIS LINE: from apps.cli import register_cli_commands
+
+from .config import DebugConfig
 
 # --- Extension Instantiation ---
-# Extensions are instantiated globally but configured inside the factory.
 db = SQLAlchemy()
 migrate = Migrate()
 login_manager = LoginManager()
 
-# --- Login Manager Configuration ---
-# Point login manager to the login view in your auth blueprint.
-login_manager.login_view = "auth.login"
-login_manager.login_message = "Please log in to access this page."
+# ... (rest of your global variables) ...
 app_logger = logging.getLogger(__name__)
 
 
 # --- Application Factory Function ---
 def create_app(config_object=DebugConfig):
-    """
-    Application factory pattern.
-    - Creates and configures the Flask app.
-    - Initializes extensions.
-    - Registers blueprints.
-    """
     app = Flask(__name__)
     app.config.from_object(config_object)
 
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-    app.logger.setLevel(logging.INFO)
+    # ... (logging configuration) ...
 
-    # --- Initialize Extensions with the App ---
+    # --- Initialize Extensions (This is where 'db' becomes a real object) ---
     db.init_app(app)
     migrate.init_app(app, db)
     login_manager.init_app(app)
 
-    # --- User Loader for Flask-Login ---
-    # We import the model here to avoid circular imports.
+    # --- User Loader ---
     from .models import User
 
     @login_manager.user_loader
@@ -51,9 +39,7 @@ def create_app(config_object=DebugConfig):
         return db.session.get(User, int(user_id))
 
     # --- Register Blueprints ---
-    # Blueprints organize your application into distinct components.
     with app.app_context():
-        # Import blueprints here to avoid circular dependencies
         from .main import bp as main_bp
 
         app.register_blueprint(main_bp)
@@ -66,10 +52,16 @@ def create_app(config_object=DebugConfig):
 
         app.register_blueprint(errors_bp)
 
-        from .cli import cli_bp
-
-        app.register_blueprint(cli_bp)
+        # IMPORTANT: Remove this blueprint registration.
+        # The CLI commands are registered directly onto the 'app' object, not as a blueprint.
+        # REMOVE THIS LINE: from .cli import cli_bp
+        # REMOVE THIS LINE: app.register_blueprint(cli_bp)
 
         app_logger.info("Blueprints registered.")
+
+    # --- Register CLI Commands (AFTER everything else is initialized) ---
+    from apps.cli import register_cli_commands  # Import it here, inside the function
+
+    register_cli_commands(app)  # Call the registration function
 
     return app
