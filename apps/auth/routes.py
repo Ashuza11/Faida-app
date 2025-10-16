@@ -29,18 +29,18 @@ def login():
             return redirect(url_for("main_bp.index"))
 
         return render_template(
-            "accounts/login.html", msg="Identifiants invalides", form=login_form
+            "auth/login.html", msg="Identifiants invalides", form=login_form
         )
 
     if not current_user.is_authenticated:
-        return render_template("accounts/login.html", form=login_form)
+        return render_template("auth/login.html", form=login_form)
     return redirect(url_for("main_bp.index"))
 
 
 @bp.route("/register", methods=["GET", "POST"])
 def register():
     return render_template(
-        "accounts/register.html",
+        "auth/register.html",
         msg="Contacter l'admin pour créer votre compte",
         form=CreateAccountForm(request.form),
         disabled=True,

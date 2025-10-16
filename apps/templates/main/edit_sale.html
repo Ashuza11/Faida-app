@@ -6,10 +6,10 @@
 
     {# Render the Page Header #}
     {% set breadcrumb_items = [
-        {'text': 'Ventes', 'url': url_for('home_blueprint.vente_stock')}
+        {'text': 'Ventes', 'url': url_for('main_bp.vente_stock')}
     ] %}
     {% if sale is defined and sale.id is not none %} {# Check if sale and sale.id exist #}
-        {% set _ = breadcrumb_items.append({'text': 'Modifier Vente', 'url': url_for('home_blueprint.edit_sale', sale_id=sale.id)}) %}
+        {% set _ = breadcrumb_items.append({'text': 'Modifier Vente', 'url': url_for('main_bp.edit_sale', sale_id=sale.id)}) %}
     {% else %}
         {# Fallback if sale is not defined, e.g., for initial page load or error states where sale isn't passed #}
         {% set _ = breadcrumb_items.append({'text': 'Modifier Vente', 'url': '#'}) %}
@@ -31,7 +31,7 @@
                     </div>
                     <div class="card-body">
                         {# THIS IS THE MOST CRUCIAL CHANGE: Update the form's action #}
-                        <form method="post" action="{{ url_for('home_blueprint.edit_sale', sale_id=sale.id) }}">
+                        <form method="post" action="{{ url_for('main_bp.edit_sale', sale_id=sale.id) }}">
                             {{ form.hidden_tag() }}
 
                             <h6 class="heading-small text-muted mb-4">Informations sur le Client</h6>
@@ -137,7 +137,7 @@
                             </div>
 
                             <div class="text-right">
-                                <a href="{{ url_for('home_blueprint.vente_stock') }}" class="btn btn-secondary my-4">Annuler</a> {# Add a Cancel button #}
+                                <a href="{{ url_for('main_bp.vente_stock') }}" class="btn btn-secondary my-4">Annuler</a> {# Add a Cancel button #}
                                 {{ form.submit(class="btn btn-primary my-4", value="Mettre à jour la Vente") }} {# Changed button text #}
                             </div>
                         </form>

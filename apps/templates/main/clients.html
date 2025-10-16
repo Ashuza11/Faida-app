@@ -85,7 +85,7 @@
                                 data-is-active="{{ 'true' if client.is_active else 'false' }}">
                                 Editer
                             </a>
-                            <form action="{{ url_for('main_bp.index.client_toggle_active', client_id=client.id) }}" method="post" class="d-inline">
+                            <form action="{{ url_for('main_bp.client_toggle_active', client_id=client.id) }}" method="post" class="d-inline">
                               <button type="submit" class="dropdown-item">
                                 {% if client.is_active %}
                                   Désactiver
@@ -129,7 +129,7 @@
           </button>
         </div>
         {# The form itself #}
-        <form method="post" action="{{ url_for('main_bp.index.client_management') }}">
+        <form method="post" action="{{ url_for('main_bp.client_management') }}">
           <div class="modal-body">
             {# Render all form fields from client_form #}
             {% for field in form %}
@@ -273,7 +273,7 @@
 
         var $modalForm = $('#editClientModal form');
 
-        $modalForm.attr('action', '{{ url_for("main_bp.index.client_edit", client_id=0) }}'.replace('0', clientId));
+        $modalForm.attr('action', '{{ url_for("main_bp.client_edit", client_id=0) }}'.replace('0', clientId));
 
         // Populate the form fields inside the modal
         $modalForm.find('#name').val(name); 

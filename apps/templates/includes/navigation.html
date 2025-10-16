@@ -105,7 +105,7 @@
             <div class="dropdown-header noti-title">
               <h6 class="text-overflow m-0">Welcome!</h6>
             </div>
-            <a href="{{ url_for('main_bp.index.profile') }}" class="dropdown-item">
+            <a href="{{ url_for('main_bp.profile') }}" class="dropdown-item">
               <i class="ni ni-single-02"></i>
               <span>Mom profile</span>
             </a>
@@ -114,7 +114,7 @@
               <span>Support</span>
             </a>
             <div class="dropdown-divider"></div>
-            <a class="nav-link" href="{{ url_for('authentication_blueprint.logout') }}">
+            <a class="nav-link" href="{{ url_for('auth_bp.logout') }}">
               <i class="fas fa-sign-out-alt text-primary"></i>
               <span class="nav-link-text">Deconexion</span>
             </a>

@@ -2,6 +2,7 @@ from apps.main import bp
 from flask import render_template, request, flash, redirect, url_for, abort, current_app
 from flask_login import login_required, current_user
 import sqlalchemy as sa
+from sqlalchemy import func
 from jinja2 import TemplateNotFound
 from apps.decorators import superadmin_required, vendeur_required
 from apps.main.utils import (
@@ -211,7 +212,7 @@ def index():
     # You could check if daily_overall_report is None and provide a message to the template.
 
     return render_template(
-        "home/index.html",
+        "main/index.html",
         segment="index",
         total_stocks_data=total_stocks_data,
         sales_data_week=sales_data_week,
@@ -235,7 +236,7 @@ def route_template(template):
             template += ".html"
 
         segment = get_segment(request)
-        return render_template("home/" + template, segment=segment)
+        return render_template("main/" + template, segment=segment)
 
     except TemplateNotFound:
         abort(404)
@@ -296,7 +297,7 @@ def stocker_management():
 
     users = User.query.all()
     return render_template(
-        "home/user.html",
+        "main/user.html",
         users=users,
         stocker_form=stocker_form,
         user_edit_form=user_edit_form,
@@ -347,7 +348,7 @@ def user_edit(user_id):
 
     users = User.query.all()
     return render_template(
-        "home/user.html",
+        "main/user.html",
         users=users,
         stocker_form=stocker_form,
         user_edit_form=user_edit_form,
@@ -428,7 +429,7 @@ def client_management():
             db.session.add(new_client)
             db.session.commit()
             flash("Client créé avec succès!", "success")
-            return redirect(url_for("main_bp.index.client_management"))
+            return redirect(url_for("main_bp.client_management"))
 
     # Query clients
     if current_user.role == RoleType.SUPERADMIN:
@@ -437,7 +438,7 @@ def client_management():
         clients = Client.query.filter_by(vendeur_id=current_user.id).all()
 
     return render_template(
-        "home/clients.html",
+        "main/clients.html",
         clients=clients,
         client_form=client_form,
         client_edit_form=client_edit_form,
@@ -540,7 +541,7 @@ def Achat_stock():
                     StockPurchase.created_at.desc()
                 ).all()
                 return render_template(
-                    "home/achat_stock.html",
+                    "main/achat_stock.html",
                     stock_purchases=stock_purchases,
                     form=form,
                     segment="stock",
@@ -574,7 +575,7 @@ def Achat_stock():
                     StockPurchase.created_at.desc()
                 ).all()
                 return render_template(
-                    "home/achat_stock.html",
+                    "main/achat_stock.html",
                     stock_purchases=stock_purchases,
                     form=form,
                     segment="stock",
@@ -627,7 +628,7 @@ def Achat_stock():
                 StockPurchase.created_at.desc()
             ).all()
             return render_template(
-                "home/achat_stock.html",
+                "main/achat_stock.html",
                 stock_purchases=stock_purchases,
                 form=form,
                 segment="stock",
@@ -638,7 +639,7 @@ def Achat_stock():
         StockPurchase.created_at.desc()
     ).all()
     return render_template(
-        "home/achat_stock.html",
+        "main/achat_stock.html",
         stock_purchases=stock_purchases,
         form=form,
         segment="stock",
@@ -695,7 +696,7 @@ def edit_stock_purchase(purchase_id):
                     "danger",
                 )
                 return render_template(
-                    "home/edit_stock_purchase.html",
+                    "main/edit_stock_purchase.html",
                     form=form,
                     purchase=purchase,
                     page_title="Editer Achat de Stock",
@@ -727,7 +728,7 @@ def edit_stock_purchase(purchase_id):
                     "danger",
                 )
                 return render_template(
-                    "home/edit_stock_purchase.html",
+                    "main/edit_stock_purchase.html",
                     form=form,
                     purchase=purchase,
                     page_title="Editer Achat de Stock",
@@ -782,7 +783,7 @@ def edit_stock_purchase(purchase_id):
             flash(f"Une erreur est survenue lors de la mise à jour: {e}", "danger")
 
     return render_template(
-        "home/edit_stock_purchase.html",
+        "main/edit_stock_purchase.html",
         form=form,
         purchase=purchase,
         page_title="Editer Achat de Stock",
@@ -832,7 +833,7 @@ def delete_stock_purchase(purchase_id):
 
     flash("Confirmez la suppression de l'achat de stock.", "warning")
     return render_template(
-        "home/confirm_delete_stock_purchase.html",
+        "main/confirm_delete_stock_purchase.html",
         purchase=purchase,
         page_title="Confirmer Suppression",
         segment="stock",
@@ -869,7 +870,7 @@ def vente_stock():
                 if not client:
                     flash("Client existant sélectionné invalide.", "danger")
                     return render_template(
-                        "home/vente_stock.html",
+                        "main/vente_stock.html",
                         form=form,
                         segment="stock",
                         sub_segment="vente_stock",
@@ -877,7 +878,7 @@ def vente_stock():
             else:
                 flash("Veuillez sélectionner un client existant.", "danger")
                 return render_template(
-                    "home/vente_stock.html",
+                    "main/vente_stock.html",
                     form=form,
                     segment="stock",
                     sub_segment="vente_stock",
@@ -887,7 +888,7 @@ def vente_stock():
             if not client_name_adhoc:
                 flash("Veuillez entrer le nom du nouveau client.", "danger")
                 return render_template(
-                    "home/vente_stock.html",
+                    "main/vente_stock.html",
                     form=form,
                     segment="stock",
                     sub_segment="vente_stock",
@@ -967,7 +968,7 @@ def vente_stock():
             for error in errors_during_sale:
                 flash(error, "error")
             return render_template(
-                "home/vente_stock.html",
+                "main/vente_stock.html",
                 form=form,
                 segment="stock",
                 sub_segment="vente_stock",
@@ -976,7 +977,7 @@ def vente_stock():
         if not sale_items_to_add:
             flash("Veuillez ajouter au moins un article à la vente.", "danger")
             return render_template(
-                "home/vente_stock.html",
+                "main/vente_stock.html",
                 form=form,
                 segment="stock",
                 sub_segment="vente_stock",
@@ -989,7 +990,7 @@ def vente_stock():
         if debt_amount < 0:
             flash("L'argent donné ne peut pas dépasser le montant total dû.", "danger")
             return render_template(
-                "home/vente_stock.html",
+                "main/vente_stock.html",
                 form=form,
                 segment="stock",
                 sub_segment="vente_stock",
@@ -1035,7 +1036,7 @@ def vente_stock():
     sales = Sale.query.order_by(Sale.created_at.desc()).all()
 
     return render_template(
-        "home/vente_stock.html",
+        "main/vente_stock.html",
         form=form,
         sales=sales,
         segment="stock",
@@ -1260,7 +1261,7 @@ def edit_sale(sale_id):
                     flash(error, "danger")
                 # Render the edit template, not the create template
                 return render_template(
-                    "home/edit_sale.html",
+                    "main/edit_sale.html",
                     form=form,
                     sale=sale,
                     segment="stock",
@@ -1271,7 +1272,7 @@ def edit_sale(sale_id):
                 db.session.rollback()
                 flash("Veuillez ajouter au moins un article à la vente.", "danger")
                 return render_template(
-                    "home/edit_sale.html",
+                    "main/edit_sale.html",
                     form=form,
                     sale=sale,
                     segment="stock",
@@ -1302,7 +1303,7 @@ def edit_sale(sale_id):
             db.session.rollback()
             flash(f"Erreur lors de la modification de la vente: {e}", "danger")
             return render_template(
-                "home/edit_sale.html",
+                "main/edit_sale.html",
                 form=form,
                 sale=sale,
                 segment="stock",
@@ -1315,7 +1316,7 @@ def edit_sale(sale_id):
             )
             print(f"Error during sale edit: {e}")
             return render_template(
-                "home/edit_sale.html",
+                "main/edit_sale.html",
                 form=form,
                 sale=sale,
                 segment="stock",
@@ -1323,7 +1324,7 @@ def edit_sale(sale_id):
             )
 
     return render_template(
-        "home/edit_sale.html",
+        "main/edit_sale.html",
         form=form,
         sale=sale,
         segment="stock",
@@ -1379,7 +1380,7 @@ def delete_sale(sale_id):
 
     flash("Confirmez la suppression de la vente.", "warning")
     return render_template(
-        "home/confirm_delete_sale.html",
+        "main/confirm_delete_sale.html",
         sale=sale,
         confirm_form=confirm_form,
         page_title="Confirmer Suppression Vente",
@@ -1393,7 +1394,7 @@ def delete_sale(sale_id):
 def view_sale_details(sale_id):
     sale = Sale.query.get_or_404(sale_id)
     return render_template(
-        "home/sale_details.html",
+        "main/sale_details.html",
         sale=sale,
         segment="stock",
         sub_segment="vente_stock",
@@ -1431,7 +1432,7 @@ def sorties_cash():
     total_inflow = total_cash_inflows_records + total_sales_cash_paid
 
     return render_template(
-        "home/sorties_cash.html",
+        "main/sorties_cash.html",
         outflows=all_outflows,
         inflows=all_inflows,
         total_outflow=total_outflow,
@@ -1482,7 +1483,7 @@ def enregistrer_sortie():
                     )
 
     return render_template(
-        "home/enregistrer_sortie.html",
+        "main/enregistrer_sortie.html",
         form=form,
         page_title=page_title,
         sub_page_title=sub_page_title,
@@ -1553,7 +1554,7 @@ def encaisser_dette():
             print(f"Error recording debt collection: {e}")
 
     return render_template(
-        "home/encaisser_dette.html",
+        "main/encaisser_dette.html",
         form=form,
         segment="stock",
         sub_segment="Sorties_Cash",
@@ -1828,7 +1829,7 @@ def rapports():
             )
 
     return render_template(
-        "home/rapports.html",
+        "main/rapports.html",
         page_title=page_title,
         networks=networks,
         report_data=report_data,
@@ -1915,7 +1916,7 @@ def profile():
     )
 
     return render_template(
-        "home/profile.html",
+        "main/profile.html",
         segment="profile",
         form=form,
         num_clients_created=num_clients_created,
@@ -1987,7 +1988,7 @@ def client_map():
         # You can add a check if avg_lat/lng are far from Panzi, then maybe reset to Panzi's center
 
     return render_template(
-        "home/client_map.html",
+        "main/client_map.html",
         client_locations=client_locations,
         default_center_lat=default_center_lat,
         default_center_lng=default_center_lng,
