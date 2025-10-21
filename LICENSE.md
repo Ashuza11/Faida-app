@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2019 - present Creative-Tim / [AppSeed.us](https://appseed.us)
+Copyright (c) 2019 - present Creative-Tim / [AppSeed-generator](https://app-generator.dev/)
 Copyright (c) 2025 - present AirtFast
 
 Permission is hereby granted, free of charge, to any person obtaining a copy

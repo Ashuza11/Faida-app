@@ -72,6 +72,7 @@ def register_cli_commands(app):
     @with_appcontext
     @click.option(
         "--date",
+        "date_str",
         default=None,
         help="Optional seed date (YYYY-MM-DD). Defaults to 2 days ago.",
     )

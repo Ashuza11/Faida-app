@@ -1,5 +1,5 @@
 # Use a Python base image
-FROM python:3.9-slim-buster
+FROM python:3.11-slim
 
 # Set the working directory in the container
 WORKDIR /app
@@ -16,7 +16,7 @@ COPY . .
 
 # Expose the port your Flask app runs on
 EXPOSE 5000 
-# Gunicorn will run on 5005, but your app exposes 5000, align this or clarify where gunicorn-cfg.py specifies 5005. For now, matching docker-compose.yml.
+
 
 # Command to run the application using Gunicorn
 CMD ["gunicorn", "--config", "gunicorn-cfg.py", "run:app"]

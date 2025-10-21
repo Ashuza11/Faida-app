@@ -30,6 +30,7 @@ class Config(object):
         }
     }
     SCHEDULER_TIMEZONE = "Africa/Lubumbashi"
+    SALES_PER_PAGE = 5
 
 
 class ProductionConfig(Config):

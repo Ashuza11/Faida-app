@@ -1,3 +1,4 @@
+from select import select
 from apps.main import bp
 from flask import render_template, request, flash, redirect, url_for, abort, current_app
 from flask_login import login_required, current_user
@@ -30,7 +31,6 @@ from apps.models import (
     SaleItem,
     CashOutflow,
     CashInflow,
-    CashOutflowCategory,
     CashInflowCategory,
     DailyOverallReport,
     DailyStockReport,
@@ -54,6 +54,7 @@ from apps.main.forms import (
 APP_TIMEZONE = pytz.timezone("Africa/Lubumbashi")
 
 
+@bp.route("/")
 @bp.route("/index")
 @login_required
 def index():
@@ -338,7 +339,7 @@ def user_edit(user_id):
             user.is_active = user_edit_form.is_active.data
             db.session.commit()
             flash("Utilisateur mis à jour avec succès!", "success")
-            return redirect(url_for("main_bp.index.stocker_management"))
+            return redirect(url_for("main_bp.stocker_management"))
     elif request.method == "GET":
         # Pre-populate form with existing user data on GET request
         user_edit_form.username.data = user.username
@@ -377,7 +378,7 @@ def user_toggle_active(user_id):
                 flash(
                     f"Utilisateur '{user.username}' désactivé avec succès!", "success"
                 )
-    return redirect(url_for("main_bp.index.stocker_management"))
+    return redirect(url_for("main_bp.stocker_management"))
 
 
 # Client Management
@@ -462,7 +463,7 @@ def client_edit(client_id):
         and client.vendeur_id != current_user.id
     ):
         flash("Vous n'êtes pas autorisé à modifier ce client.", "danger")
-        return redirect(url_for("main_bp.index.client_management"))
+        return redirect(url_for("main_bp.client_management"))
 
     client_edit_form = ClientEditForm()
     if client_edit_form.validate_on_submit():
@@ -482,7 +483,7 @@ def client_edit(client_id):
 
         db.session.commit()
         flash("Client mis à jour avec succès!", "success")
-        return redirect(url_for("main_bp.index.client_management"))
+        return redirect(url_for("main_bp.client_management"))
     else:
         # If validation fails, repopulate the form with existing data and show errors
         # This is where the modal JS will pick up errors and reopen the modal
@@ -493,7 +494,7 @@ def client_edit(client_id):
         # Pre-populate form for re-rendering if validation fails (important for modal)
         # This part is handled by the data attributes in the JS when the modal is re-opened.
         # However, if you redirect with errors, you might want to flash them more specifically.
-    return redirect(url_for("main_bp.index.client_management"))
+    return redirect(url_for("main_bp.client_management"))
 
 
 @bp.route("/admin/clients/toggle-active/<int:client_id>", methods=["POST"])
@@ -511,13 +512,13 @@ def client_toggle_active(client_id):
         and client.vendeur_id != current_user.id
     ):
         flash("Vous n'êtes pas autorisé à modifier le statut de ce client.", "danger")
-        return redirect(url_for("main_bp.index.client_management"))
+        return redirect(url_for("main_bp.client_management"))
 
     client.is_active = not client.is_active
     db.session.commit()
     status_message = "activé" if client.is_active else "désactivé"
     flash(f"Client {client.name} {status_message} avec succès!", "success")
-    return redirect(url_for("main_bp.index.client_management"))
+    return redirect(url_for("main_bp.client_management"))
 
 
 @bp.route("/achat_stock", methods=["GET", "POST"])
@@ -613,7 +614,7 @@ def Achat_stock():
             db.session.commit()
 
             flash("Achat de stock enregistré avec succès!", "success")
-            return redirect(url_for("main_bp.index.Achat_stock"))
+            return redirect(url_for("main_bp.Achat_stock"))
 
         except Exception as e:
             # --- General Error Handling (Database or unexpected server errors) ---
@@ -773,7 +774,7 @@ def edit_stock_purchase(purchase_id):
 
             db.session.commit()
             flash("Achat de stock mis à jour avec succès!", "success")
-            return redirect(url_for("main_bp.index.Achat_stock"))
+            return redirect(url_for("main_bp.Achat_stock"))
 
         except Exception as e:
             db.session.rollback()
@@ -816,12 +817,12 @@ def delete_stock_purchase(purchase_id):
                     "Erreur: L'article de stock correspondant est introuvable.",
                     "danger",
                 )
-                return redirect(url_for("main_bp.index.Achat_stock"))
+                return redirect(url_for("main_bp.Achat_stock"))
 
             db.session.delete(purchase)
             db.session.commit()
             flash(f"Achat de stock #{purchase_id} supprimé avec succès!", "success")
-            return redirect(url_for("main_bp.index.Achat_stock"))
+            return redirect(url_for("main_bp.Achat_stock"))
 
         except Exception as e:
             db.session.rollback()
@@ -829,7 +830,7 @@ def delete_stock_purchase(purchase_id):
                 f"Error deleting stock purchase {purchase_id}: {e}"
             )
             flash(f"Une erreur est survenue lors de la suppression: {e}", "danger")
-            return redirect(url_for("main_bp.index.Achat_stock"))
+            return redirect(url_for("main_bp.Achat_stock"))
 
     flash("Confirmez la suppression de l'achat de stock.", "warning")
     return render_template(
@@ -1010,7 +1011,7 @@ def vente_stock():
             db.session.add(new_sale)
             db.session.commit()
             flash("Vente enregistrée avec succès!", "success")
-            return redirect(url_for("main_bp.index.vente_stock"))
+            return redirect(url_for("main_bp.vente_stock"))
         except Exception as e:
             db.session.rollback()
             flash(f"Erreur lors de l'enregistrement de la vente: {e}", "danger")
@@ -1033,14 +1034,70 @@ def vente_stock():
                             "danger",
                         )
 
-    sales = Sale.query.order_by(Sale.created_at.desc()).all()
+    # --- Fetch Paginated Sales (GET request) ---
+    page = request.args.get(
+        "page", 1, type=int
+    )  # Get page number from URL query ?page=...
 
+    # Define the query to fetch sales, ordered by most recent first
+    sales_query = Sale.query.order_by(Sale.created_at.desc())
+
+    # Use db.paginate to get the sales for the current page
+    sales_pagination = db.paginate(
+        sales_query,
+        page=page,
+        # Get SALES_PER_PAGE from config, default to 10 if not set
+        per_page=current_app.config.get("SALES_PER_PAGE", 10),
+        error_out=False,  # Show empty page instead of 404 if page number is invalid
+    )
+
+    # Generate URLs for the 'Next' and 'Previous' pagination links
+    next_url = (
+        url_for("main_bp.vente_stock", page=sales_pagination.next_num)
+        if sales_pagination.has_next
+        else None
+    )
+    prev_url = (
+        url_for("main_bp.vente_stock", page=sales_pagination.prev_num)
+        if sales_pagination.has_prev
+        else None
+    )  # --- Fetch Paginated Sales (GET request) ---
+    page = request.args.get(
+        "page", 1, type=int
+    )  # Get page number from URL query ?page=...
+
+    # Define the query to fetch sales, ordered by most recent first
+    sales_query = db.session.query(Sale).order_by(Sale.created_at.desc())
+
+    # Use db.paginate to get the sales for the current page
+    sales_pagination = db.paginate(
+        sales_query,
+        page=page,
+        # Get SALES_PER_PAGE from config, default to 10 if not set
+        per_page=current_app.config.get("SALES_PER_PAGE", 3),
+        error_out=False,  # Show empty page instead of 404 if page number is invalid
+    )
+
+    # Generate URLs for the 'Next' and 'Previous' pagination links
+    next_url = (
+        url_for("main_bp.vente_stock", page=sales_pagination.next_num)
+        if sales_pagination.has_next
+        else None
+    )
+    prev_url = (
+        url_for("main_bp.vente_stock", page=sales_pagination.prev_num)
+        if sales_pagination.has_prev
+        else None
+    )
+
+    # --- Render the Template ---
     return render_template(
-        "main/vente_stock.html",
+        "main/vente_stock.html",  # Make sure this path is correct
+        title="Gestion Ventes",
         form=form,
-        sales=sales,
-        segment="stock",
-        sub_segment="vente_stock",
+        sales_pagination=sales_pagination,  # Pass the whole pagination object
+        next_url=next_url,
+        prev_url=prev_url,
     )
 
 
@@ -1055,18 +1112,18 @@ def update_sale_cash(sale_id):
         new_cash = Decimal(request.form.get("new_cash", "0.00"))
     except InvalidOperation:
         flash("Paiement invalide.", "danger")
-        return redirect(url_for("main_bp.index.vente_stock"))
+        return redirect(url_for("main_bp.vente_stock"))
 
     if new_cash < 0:
         flash("Le paiement ne peut pas être négatif.", "danger")
-        return redirect(url_for("main_bp.index.vente_stock"))
+        return redirect(url_for("main_bp.vente_stock"))
 
     # Calculate new debt
     new_debt = sale.total_amount_due - new_cash
 
     if new_debt < 0:
         flash("Le paiement ne peut pas dépasser le montant total dû.", "danger")
-        return redirect(url_for("main_bp.index.vente_stock"))
+        return redirect(url_for("auth_bpe.vente_stock"))
 
     sale.cash_paid = new_cash
     sale.debt_amount = new_debt
@@ -1080,7 +1137,7 @@ def update_sale_cash(sale_id):
         flash(f"Erreur lors de la mise à jour: {e}", "danger")
         print(f"Error updating cash: {e}")
 
-    return redirect(url_for("main_bp.index.vente_stock"))
+    return redirect(url_for("auth_bpe.vente_stock"))
 
 
 @bp.route("/edit_sale/<int:sale_id>", methods=["GET", "POST"])
@@ -1297,7 +1354,7 @@ def edit_sale(sale_id):
 
             db.session.commit()
             flash("Vente modifiée avec succès!", "success")
-            return redirect(url_for("main_bp.index.vente_stock"))
+            return redirect(url_for("auth_bpe.vente_stock"))
 
         except ValueError as e:
             db.session.rollback()
@@ -1365,7 +1422,7 @@ def delete_sale(sale_id):
             db.session.commit()
             print("Sale deleted successfully!")
             flash(f"Vente #{sale_id} supprimée avec succès!", "success")
-            return redirect(url_for("main_bp.index.vente_stock"))
+            return redirect(url_for("auth_bpe.vente_stock"))
 
         except Exception as e:
             db.session.rollback()
@@ -1376,7 +1433,7 @@ def delete_sale(sale_id):
                 f"Une erreur est survenue lors de la suppression de la vente: {e}",
                 "danger",
             )
-            return redirect(url_for("main_bp.index.vente_stock"))
+            return redirect(url_for("auth_bpe.vente_stock"))
 
     flash("Confirmez la suppression de la vente.", "warning")
     return render_template(
@@ -1465,14 +1522,14 @@ def enregistrer_sortie():
                 db.session.commit()
 
                 flash("Sortie de caisse enregistrée avec succès!", "success")
-                return redirect(url_for("main_bp.index.sorties_cash"))
+                return redirect(url_for("auth_bpe.sorties_cash"))
 
             except Exception as e:
                 db.session.rollback()
                 flash(
                     f"Erreur lors de l'enregistrement de la sortie: {str(e)}", "danger"
                 )
-                print(f"Error saving cash outflow: {e}")  # Keep this for debugging
+                print(f"Error saving cash outflow: {e}")
 
         else:
             for field, errors in form.errors.items():
@@ -1540,7 +1597,7 @@ def encaisser_dette():
                 "success",
             )
             return redirect(
-                url_for("main_bp.index.sorties_cash")
+                url_for("auth_bpe.sorties_cash")
             )  # Redirect back to overview
         except InvalidOperation:
             flash("Montant invalide. Veuillez entrer un nombre valide.", "danger")
@@ -1862,16 +1919,16 @@ def profile():
                     "Veuillez entrer votre mot de passe actuel pour changer le mot de passe.",
                     "danger",
                 )
-                return redirect(url_for("main_bp.index.profile"))
+                return redirect(url_for("auth_bpe.profile"))
             if not current_user.check_password(form.current_password.data):
                 flash("Mot de passe actuel incorrect.", "danger")
-                return redirect(url_for("main_bp.index.profile"))
+                return redirect(url_for("auth_bpe.profile"))
             if not form.new_password.data:
                 flash("Veuillez entrer un nouveau mot de passe.", "danger")
-                return redirect(url_for("main_bp.index.profile"))
+                return redirect(url_for("auth_bpe.profile"))
             if form.new_password.data != form.confirm_new_password.data:
                 flash("Les nouveaux mots de passe ne correspondent pas.", "danger")
-                return redirect(url_for("main_bp.index.profile"))
+                return redirect(url_for("auth_bpe.profile"))
 
             current_user.set_password(form.new_password.data)
             flash("Votre mot de passe a été mis à jour !", "success")
@@ -1879,7 +1936,7 @@ def profile():
         try:
             db.session.commit()
             flash("Votre profil a été mis à jour !", "success")
-            return redirect(url_for("main_bp.index.profile"))
+            return redirect(url_for("auth_bpe.profile"))
         except Exception as e:
             db.session.rollback()
             flash(f"Une erreur est survenue : {e}", "danger")

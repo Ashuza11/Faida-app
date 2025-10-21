@@ -161,7 +161,7 @@ class Stock(db.Model):
     network: so.Mapped[NetworkType] = so.mapped_column(
         sa.Enum(NetworkType), unique=True, nullable=False
     )
-    balance: so.Mapped[int] = so.mapped_column(sa.Integer, default=0, nullable=False)
+    balance = db.Column(db.Numeric(precision=10, scale=2), default=0.00, nullable=False)
 
     buying_price_per_unit: so.Mapped[sa.Numeric] = so.mapped_column(
         sa.Numeric(10, 2), nullable=False, default=Decimal("0.00")

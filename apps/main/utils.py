@@ -1,4 +1,9 @@
+import json
+import os
+from pathlib import Path
+from decimal import Decimal
 from apps import db
+import apps
 from flask import current_app
 from apps.models import (
     DailyStockReport,
@@ -10,9 +15,12 @@ from apps.models import (
     DailyOverallReport,
 )
 from decimal import Decimal, ROUND_UP, getcontext
-from datetime import date, datetime, timedelta, time, timezone
+from datetime import date, datetime, timedelta
 import pytz
 from sqlalchemy import func
+
+# Define the path to your seed data file
+SEED_DATA_PATH = Path(os.getcwd()) / "data" / "seed_data.json"
 
 # Set precision for Decimal operations
 getcontext().prec = 10
@@ -511,60 +519,98 @@ def update_daily_reports(app, report_date_to_update=None):
             raise
 
 
+def load_seed_data():
+    """Loads all seed data from the external JSON file."""
+    try:
+        # We need to access the app logger, so we check for current_app
+        logger = current_app.logger if current_app else print
+
+        with open(SEED_DATA_PATH, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        logger.error(f"Seed data file not found at {SEED_DATA_PATH}")
+        return None
+    except json.JSONDecodeError as e:
+        logger.error(f"Error decoding JSON from {SEED_DATA_PATH}: {e}")
+        return None
+
+
 def seed_initial_stock_balances(app, seed_report_date: date):
     """
-    Seeds initial DailyStockReport entries for a specific historical date (e.g., Day 0)
-    to provide a starting point for 'initial_stock_balance' for subsequent reports.
-    Also ensures the live Stock table has corresponding initial balances.
+    Seeds initial DailyStockReport entries and updates the live Stock table
+    using data loaded from the external JSON configuration file.
     """
-    initial_balances_for_seed = {
-        NetworkType.AIRTEL: Decimal("4924.00"),
-        NetworkType.ORANGE: Decimal("4880.00"),
-        NetworkType.VODACOM: Decimal("2390.00"),
-        NetworkType.AFRICEL: Decimal("6598.00"),
+
+    # 1. Load Data
+    full_seed_data = load_seed_data()
+    if not full_seed_data:
+        return
+
+    # Extract the required sections from the JSON
+    json_balances = full_seed_data.get("stock_balances", {})
+    json_prices = full_seed_data.get("stock_prices", {})
+
+    # Map JSON string keys to Python Enum keys for use in SQLAlchemy
+    mapped_initial_balances = {
+        NetworkType[network_name.upper()]: Decimal(str(balance))
+        for network_name, balance in json_balances.items()
     }
+
+    buying_price_str = str(
+        Decimal(str(json_prices.get("buying_price_per_unit", "0.95")))
+    )
+    selling_price_str = str(
+        Decimal(str(json_prices.get("selling_price_per_unit", "1.00")))
+    )
 
     with app.app_context():
         app.logger.info(
-            f"Seeding initial DailyStockReport for {seed_report_date} and Stock table."
+            f"Seeding initial DailyStockReport for {seed_report_date} and Stock table using JSON data."
         )
 
         try:
             with db.session.no_autoflush:
                 # --- Phase 1: Ensure the live Stock table has corresponding initial balances ---
-                for network, balance_decimal in initial_balances_for_seed.items():
+                for network, balance_decimal in mapped_initial_balances.items():
                     stock_item = Stock.query.filter_by(network=network).first()
 
-                    # Convert Decimal to string ONLY IF you have db.Numeric and not DecimalToString
-                    # If you have DecimalToString, this conversion is done automatically.
-                    # This is the "fix without changing model" part you asked for,
-                    # but it's very manual and error-prone.
+                    # Values are already Decimal in Python, convert to string ONLY for DB assignment
                     balance_str = str(balance_decimal)
-                    buying_price_str = str(Decimal("0.95"))
-                    selling_price_str = str(Decimal("1.00"))
 
                     if stock_item:
-                        stock_item.balance = balance_str  # Assign the string here
+                        stock_item.balance = balance_str
                         app.logger.debug(
-                            f"Updated live Stock balance for {network.name} to {balance_str} (as string)."
+                            f"Updated live Stock balance for {network.name} to {balance_str} (from JSON)."
                         )
                     else:
                         new_stock_item = Stock(
                             network=network,
-                            balance=balance_str,  # Assign the string here
-                            buying_price_per_unit=buying_price_str,  # Assign the string here
-                            selling_price_per_unit=selling_price_str,  # Assign the string here
+                            balance=balance_str,
+                            buying_price_per_unit=buying_price_str,
+                            selling_price_per_unit=selling_price_str,
                         )
                         db.session.add(new_stock_item)
                         app.logger.debug(
-                            f"Created live Stock item for {network.name} with balance {balance_str} (as string)."
+                            f"Created live Stock item for {network.name} with balance {balance_str} (from JSON)."
                         )
+
+                # --- Phase 2 & 3 (DailyStockReport and DailyOverallReport creation) ---
+                # NOTE: The rest of the logic remains unchanged, as it now correctly loops
+                # through the properly mapped `mapped_initial_balances` dictionary (which is aliased here).
+
+                # Use mapped_initial_balances for the rest of the seeding logic
+                initial_balances_for_seed = mapped_initial_balances
+
+                # ... (Rest of the original Phase 2 & 3 logic is correct and omitted here for brevity) ...
 
                 # --- Phase 2: Create/Update the DailyStockReport for the seed_report_date ---
                 for (
                     network,
                     initial_balance_decimal,
-                ) in initial_balances_for_seed.items():
+                ) in mapped_initial_balances.items():  # Use the mapped dictionary
+                    # ... (Existing Report Logic)
+                    # NOTE: Ensure you complete the rest of the original function logic here.
+
                     report = DailyStockReport.query.filter_by(
                         report_date=seed_report_date, network=network
                     ).first()
@@ -572,22 +618,20 @@ def seed_initial_stock_balances(app, seed_report_date: date):
                     current_stock_item_for_price = Stock.query.filter_by(
                         network=network
                     ).first()
+
+                    # Ensure price conversion is safe (from string in DB back to Decimal)
                     buying_price_for_virtual_decimal = Decimal("0.00")
                     if (
                         current_stock_item_for_price
                         and current_stock_item_for_price.buying_price_per_unit
                         is not None
                     ):
-                        # Important: If current_stock_item_for_price.buying_price_per_unit
-                        # is stored as string in DB, you need to convert it back to Decimal here
                         try:
                             buying_price_for_virtual_decimal = Decimal(
                                 str(current_stock_item_for_price.buying_price_per_unit)
                             )
                         except Exception:
-                            buying_price_for_virtual_decimal = Decimal(
-                                "0.00"
-                            )  # Handle conversion error
+                            buying_price_for_virtual_decimal = Decimal("0.00")
 
                     virtual_value_calculated_decimal = (
                         initial_balance_decimal * buying_price_for_virtual_decimal
@@ -632,12 +676,7 @@ def seed_initial_stock_balances(app, seed_report_date: date):
                     report_date=seed_report_date
                 ).all()
 
-                # These sums will now work correctly assuming all_seeded_daily_reports
-                # have their values as Decimal (because they were converted by DecimalToString
-                # on retrieval if the model IS using it, or if you manually convert here).
-                # If you are NOT using DecimalToString, and the DB stores strings,
-                # you'd need to convert these to Decimal first for the sum.
-                # Assuming they are Decimal now (either by DecimalToString or by explicit conversion above):
+                # Recalculate sums using Decimal conversion from DB value
                 total_initial = sum(
                     Decimal(str(r.initial_stock_balance))
                     for r in all_seeded_daily_reports
@@ -649,7 +688,9 @@ def seed_initial_stock_balances(app, seed_report_date: date):
                 total_virtual = sum(
                     Decimal(str(r.virtual_value)) for r in all_seeded_daily_reports
                 )
-                total_debts_overall = Decimal("0.00")
+                total_debts_overall = Decimal(
+                    "0.00"
+                )  # Hardcoded to 0.00 for initial seed
 
                 overall_seed_report = DailyOverallReport.query.filter_by(
                     report_date=seed_report_date
@@ -698,4 +739,4 @@ def seed_initial_stock_balances(app, seed_report_date: date):
         except Exception as e:
             app.logger.error(f"Error seeding initial report data: {e}", exc_info=True)
             db.session.rollback()
-            raise
+            raise  # Re-raise the exception to fail the setup command

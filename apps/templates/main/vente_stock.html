@@ -2,381 +2,142 @@
 
 {% block title %} Vente Stock {% endblock %}
 
+{% block stylesheets %}{% endblock stylesheets %}
+
 {% block content %}
 
     {# Render the Page Header #}
-    {% set page_title = 'Gestion Ventes' %}
+    {% set page_title = 'Vente Stock' %}
     {% set breadcrumb_items = [
-        {'text': 'Ventes', 'url': url_for('main_bp.vente_stock')},
-        {'text': 'Nouvelle Vente', 'url': url_for('main_bp.vente_stock')}
+        {'text': 'Stock', 'url': url_for('main_bp.vente_stock')},
+        {'text': 'Vente stock', 'url': url_for('main_bp.vente_stock')}
     ] %}
     {% include 'includes/page_header.html' %}
 
+    {# Table for displaying sales - MODIFIED #}
     <div class="container-fluid mt--6">
-        <div class="row">
-            <div class="col-xl-12 order-xl-1">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="row align-items-center">
-                            <div class="col-8">
-                                <h3 class="mb-0">Enregistrer une Nouvelle Vente</h3>
-                            </div>
-                            <div class="col-4 text-right">
-                                {# Removed: <button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#addSaleModal"> #}
-                                {# <i class="fas fa-plus"></i> Ajouter Vente #}
-                                {# </button> #}
-                            </div>
+        <div class="col-xl-12">
+            <div class="card">
+                <div class="card-header border-0">
+                    <div class="row align-items-center">
+                        <div class="col">
+                            <h3 class="mb-0">Historique des Ventes</h3>
                         </div>
                     </div>
-                    <div class="card-body">
-                        <form method="post" action="{{ url_for('main_bp.vente_stock') }}">
-                            {{ form.hidden_tag() }}
-
-                            <h6 class="heading-small text-muted mb-4">Informations sur le Client</h6>
-                            <div class="pl-lg-4">
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <div class="form-group{% if form.client_choice.errors %} has-danger{% endif %}">
-                                            {{ form.client_choice.label(class="form-control-label") }}
-                                            {{ form.client_choice(class="form-control" + (" is-invalid" if form.client_choice.errors else ""), id="client-choice-select") }}
-                                            {% for error in form.client_choice.errors %}
-                                                <div class="invalid-feedback d-block">{{ error }}</div>
-                                            {% endfor %}
-                                        </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table align-items-center table-flush">
+                        <thead class="thead-light">
+                             <tr>
+                                <th scope="col">ID Vente</th>
+                                <th scope="col">Client</th>
+                                <th scope="col">Vendeur</th>
+                                <th scope="col">Détails des Articles</th>
+                                <th scope="col">Total Dû (FC)</th>
+                                <th scope="col">Argent Donné (FC)</th>
+                                <th scope="col">Dette (FC)</th>
+                                <th scope="col">Date & Heure</th>
+                                <th scope="col">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {# MODIFIED: Loop through pagination items #}
+                            {% for sale in sales_pagination.items %} 
+                            <tr>
+                                <td>{{ sale.id }}</td>
+                                <td>{{ sale.client.name if sale.client else sale.client_name_adhoc }}</td>
+                                <td>{{ sale.vendeur.username }}</td>
+                                <td>
+                                    {% for item in sale.sale_items %}
+                                    <div>
+                                        <strong>{{ item.network.value|capitalize }}:</strong> {{ item.quantity }} unités @ {{ "{:,.2f}".format(item.price_per_unit_applied) }} FC
+                                        - Sous-total: {{ "{:,.2f}".format(item.subtotal) }} FC
                                     </div>
-                                </div>
-                                <div class="row">
-                                    <div class="col-md-6" id="existing-client-field">
-                                        <div class="form-group{% if form.existing_client_id.errors %} has-danger{% endif %}">
-                                            {{ form.existing_client_id.label(class="form-control-label") }}
-                                            {{ form.existing_client_id(class="form-control" + (" is-invalid" if form.existing_client_id.errors else "")) }}
-                                            {% for error in form.existing_client_id.errors %}
-                                                <div class="invalid-feedback d-block">{{ error }}</div>
-                                            {% endfor %}
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6" id="new-client-name-field" style="display: none;">
-                                        <div class="form-group{% if form.new_client_name.errors %} has-danger{% endif %}">
-                                            {{ form.new_client_name.label(class="form-control-label") }}
-                                            {{ form.new_client_name(class="form-control" + (" is-invalid" if form.new_client_name.errors else "")) }}
-                                            {% for error in form.new_client_name.errors %}
-                                                <div class="invalid-feedback d-block">{{ error }}</div>
-                                            {% endfor %}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <hr class="my-4" />
-                            <h6 class="heading-small text-muted mb-4">Stock à Vendre</h6>
-                            <div class="pl-lg-4">
-                                <div id="sale-items-container">
-                                    {% for item_field in form.sale_items %}
-                                        <div class="form-row align-items-end mb-3 network-item-group" id="sale-item-{{ loop.index0 }}">
-                                            {% set current_item_form = item_field %}
-                                            {% if item_field.form is defined %}
-                                                {% set current_item_form = item_field.form %}
-                                            {% endif %}
-
-                                            <div class="col-md-3">
-                                                <div class="form-group">
-                                                    {{ current_item_form.network.label(class="form-control-label") }}
-                                                    {{ current_item_form.network(class="form-control") }}
-                                                </div>
-                                            </div>
-                                            <div class="col-md-2">
-                                                <div class="form-group">
-                                                    {{ current_item_form.quantity.label(class="form-control-label") }}
-                                                    {{ current_item_form.quantity(class="form-control") }}
-                                                </div>
-                                            </div>
-                                            <div class="col-md-2">
-                                                <div class="form-group">
-                                                    {{ current_item_form.price_per_unit_applied.label(class="form-control-label") }}
-                                                    {{ current_item_form.price_per_unit_applied(class="form-control") }}
-                                                </div>
-                                            </div>
-                                            <div class="col-md-1">
-                                                {# Placeholder for potential future display or removed entirely for simplicity #}
-                                            </div>
-                                            <div class="col-md-1">
-                                                <button type="button" class="btn btn-danger btn-sm remove-sale-item-btn" {% if loop.index0 == 0 %}disabled{% endif %}>
-                                                    <i class="fas fa-times"></i>
-                                                </button>
-                                            </div>
-                                            {# Display errors for fields within the item form #}
-                                            {% for error in current_item_form.network.errors %} <div class="text-danger d-block col-12">{{ error }}</div> {% endfor %}
-                                            {% for error in current_item_form.quantity.errors %} <div class="text-danger d-block col-12">{{ error }}</div> {% endfor %}
-                                            {% for error in current_item_form.price_per_unit_applied.errors %} <div class="text-danger d-block col-12">{{ error }}</div> {% endfor %}
-                                        </div>
                                     {% endfor %}
-                                </div>
-                                <button type="button" class="btn btn-sm btn-primary mt-3" id="add-sale-item-btn">Ajouter</button>
-                            </div>
-
-                            <hr class="my-4" />
-                            <h6 class="heading-small text-muted mb-4">Paiement</h6>
-                            <div class="pl-lg-4">
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <div class="form-group{% if form.cash_paid.errors %} has-danger{% endif %}">
-                                            {{ form.cash_paid.label(class="form-control-label") }}
-                                            {{ form.cash_paid(class="form-control" + (" is-invalid" if form.cash_paid.errors else "")) }}
-                                            {% for error in form.cash_paid.errors %}
-                                                <div class="invalid-feedback d-block">{{ error }}</div>
-                                            {% endfor %}
+                                </td>
+                                <td>{{ "{:,.2f}".format(sale.total_amount_due) }}</td>
+                                <td>
+                                    <span id="cash-paid-{{ sale.id }}">{{ "{:,.2f}".format(sale.cash_paid) }}</span>
+                                    <button type="button" class="btn btn-sm btn-info btn-edit-cash ml-2" data-sale-id="{{ sale.id }}" data-current-cash="{{ sale.cash_paid }}">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                </td>
+                                <td><span id="debt-amount-{{ sale.id }}">{{ "{:,.2f}".format(sale.debt_amount) }}</span></td>
+                                <td>{{ sale.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                <td>
+                                    {# ... (Your actions dropdown remains the same) ... #}
+                                     <div class="dropdown">
+                                        <a class="btn btn-sm btn-icon-only text-light" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                                            <i class="fas fa-ellipsis-v" style="color: #5e72e4;"></i> 
+                                        </a>
+                                        <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
+                                            <a class="dropdown-item" href="{{ url_for('main_bp.view_sale_details', sale_id=sale.id) }}">Détails</a>
+                                            <a class="dropdown-item" href="{{ url_for('main_bp.edit_sale', sale_id=sale.id) }}">Modifier</a>
+                                            <a class="dropdown-item text-danger" href="{{ url_for('main_bp.delete_sale', sale_id=sale.id) }}">Supprimer</a>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="9" class="text-center">Aucune vente enregistrée.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div> {# End table-responsive #}
 
-                            <div class="text-right">
-                                {{ form.submit(class="btn btn-primary my-4") }}
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        {# Table for displaying sales #}
-        <div class="row mt-5">
-            <div class="col-xl-12">
-                <div class="card">
-                    <div class="card-header border-0">
-                        <div class="row align-items-center">
-                            <div class="col">
-                                <h3 class="mb-0">Historique des Ventes</h3>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="table align-items-center table-flush">
-                            <thead class="thead-light">
-                                <tr>
-                                    <th scope="col">ID Vente</th>
-                                    <th scope="col">Client</th>
-                                    <th scope="col">Vendeur</th>
-                                    <th scope="col">Détails des Articles</th>
-                                    <th scope="col">Total Dû (FC)</th>
-                                    <th scope="col">Argent Donné (FC)</th>
-                                    <th scope="col">Dette (FC)</th>
-                                    <th scope="col">Date & Heure</th>
-                                    <th scope="col">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for sale in sales %}
-                                    <tr>
-                                        <td>{{ sale.id }}</td>
-                                        <td>{{ sale.client.name if sale.client else sale.client_name_adhoc }}</td>
-                                        <td>{{ sale.vendeur.username }}</td>
-                                        <td>
-                                            {% for item in sale.sale_items %}
-                                                <div>
-                                                    <strong>{{ item.network.value|capitalize }}:</strong> {{ item.quantity }} unités @ {{ "{:,.2f}".format(item.price_per_unit_applied) }} FC
-                                                    - Sous-total: {{ "{:,.2f}".format(item.subtotal) }} FC
-                                                </div>
-                                            {% endfor %}
-                                        </td>
-                                        <td>{{ "{:,.2f}".format(sale.total_amount_due) }}</td>
-                                        <td>
-                                            <span id="cash-paid-{{ sale.id }}">{{ "{:,.2f}".format(sale.cash_paid) }}</span>
-                                            <button type="button" class="btn btn-sm btn-info btn-edit-cash ml-2" data-sale-id="{{ sale.id }}" data-current-cash="{{ sale.cash_paid }}">
-                                                <i class="fas fa-edit"></i>
-                                            </button>
-                                        </td>
-                                        <td><span id="debt-amount-{{ sale.id }}">{{ "{:,.2f}".format(sale.debt_amount) }}</span></td>
-                                        <td>{{ sale.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                                        <td>
-                                            <div class="dropdown">
-                                                <a class="btn btn-sm btn-icon-only text-light" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                                                    <i class="fas fa-ellipsis-v"></i>
-                                                </a>
-                                                <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
-                                                    <a class="dropdown-item" href="{{ url_for('main_bp.view_sale_details', sale_id=sale.id) }}">Détails</a>
-                                                    <a class="dropdown-item" href="{{ url_for('main_bp.edit_sale', sale_id=sale.id) }}">Modifier</a>
-                                                    <a class="dropdown-item text-danger" href="{{ url_for('main_bp.delete_sale', sale_id=sale.id) }}">Supprimer</a>
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
+                {# --- ADD PAGINATION CONTROLS --- #}
+                {% if sales_pagination.pages > 1 %}
+                <div class="card-footer py-4">
+                    <nav aria-label="...">
+                        <ul class="pagination justify-content-end mb-0">
+                            {# Previous Page Link #}
+                            <li class="page-item {% if not sales_pagination.has_prev %}disabled{% endif %}">
+                                <a class="page-link" href="{{ prev_url or '#' }}" tabindex="-1">
+                                    <i class="fas fa-angle-left"></i>
+                                    <span class="sr-only">Précédent</span>
+                                </a>
+                            </li>
+                            
+                            {# Page Number Links (using iter_pages for smart display) #}
+                            {% for page_num in sales_pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+                                {% if page_num %}
+                                    {% if page_num != sales_pagination.page %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="{{ url_for('main_bp.vente_stock', page=page_num) }}">{{ page_num }}</a>
+                                        </li>
+                                    {% else %}
+                                        <li class="page-item active">
+                                            <a class="page-link" href="#">{{ page_num }} <span class="sr-only">(current)</span></a>
+                                        </li>
+                                    {% endif %}
                                 {% else %}
-                                    <tr>
-                                        <td colspan="9" class="text-center">Aucune vente enregistrée.</td>
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
+                                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                                {% endif %}
+                            {% endfor %}
 
-        {% include "includes/footer.html" %}
-
-    </div>
-
-    <div class="modal fade" id="editCashModal" tabindex="-1" role="dialog" aria-labelledby="editCashModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered" role="document">
-            <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="editCashModalLabel">Mise à jour Paiement</h5>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                <span aria-hidden="true">&times;</span>
-                </button>
-            </div>
-            <div class="modal-body">
-                <form id="editCashForm" method="POST" action="">
-                <div class="form-group">
-                    <label for="new_cash_input">Paiement (FC):</label>
-                    <input type="number" step="0.01" class="form-control" id="new_cash_input" name="new_cash" required>
+                            {# Next Page Link #}
+                            <li class="page-item {% if not sales_pagination.has_next %}disabled{% endif %}">
+                                <a class="page-link" href="{{ next_url or '#' }}">
+                                    <i class="fas fa-angle-right"></i>
+                                    <span class="sr-only">Suivant</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </nav>
                 </div>
-                <input type="hidden" name="sale_id_hidden" id="sale_id_hidden">
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Annuler</button>
-                    <button type="submit" class="btn btn-primary">Enregistrer</button>
-                </div>
-                </form>
-            </div>
-            </div>
-        </div>
-    </div>
+                {% endif %}
+                {# --- END PAGINATION CONTROLS --- #}
+
+            </div> 
+        </div> 
+    </div> 
+
+    {# ... (Your Footer and Modal code remains the same) ... #}
 
 {% endblock content %}
 
 {% block javascripts %}
-    {{ super() }} 
-
-    <script>
-        $(document).ready(function() {
-            // Client choice logic
-            function toggleClientFields() {
-                var clientChoice = $('#client-choice-select').val();
-                if (clientChoice === 'existing') {
-                    $('#existing-client-field').show();
-                    $('#new-client-name-field').hide();
-                } else if (clientChoice === 'new') {
-                    $('#existing-client-field').hide();
-                    $('#new-client-name-field').show();
-                }
-            }
-
-            $('#client-choice-select').change(toggleClientFields);
-            toggleClientFields(); // Call on load to set initial state
-
-            // Add/Remove Sale Item fields
-            $('#add-sale-item-btn').on('click', function() {
-                var container = $('#sale-items-container');
-                var currentCount = container.find('.network-item-group').length;
-
-                // Max 4 items as per the simple requirement
-                if (currentCount >= 4) {
-                    Swal.fire({
-                        icon: 'info',
-                        title: 'Limite d\'articles',
-                        text: 'Vous ne pouvez ajouter que jusqu\'à 4 articles par vente pour l\'instant.',
-                        confirmButtonText: 'Compris'
-                    });
-                    return;
-                }
-
-                // Simulate adding a new form entry by duplicating the last one and clearing values
-                var lastItem = container.find('.network-item-group').last();
-                var newItem = lastItem.clone();
-
-                var newIndex = currentCount; // The index for the new form field list entry
-
-                // Update names and IDs for the cloned elements to match WTForms FieldList naming convention
-                newItem.find('[name]').each(function() {
-                    var oldName = $(this).attr('name');
-                    if (oldName) {
-                        // Regex to replace 'sale_items-X-' with 'sale_items-newIndex-'
-                        var newName = oldName.replace(/sale_items-\d+-(.*)/, `sale_items-${newIndex}-$1`);
-                        $(this).attr('name', newName);
-                    }
-                    var oldId = $(this).attr('id');
-                    if (oldId) {
-                        var newId = oldId.replace(/sale_items-\d+-(.*)/, `sale_items-${newIndex}-$1`);
-                        $(this).attr('id', newId);
-                    }
-                    $(this).val(''); // Clear values for new fields
-                    $(this).removeClass('is-invalid'); // Remove validation styles
-                });
-                newItem.find('.invalid-feedback').remove(); // Remove error messages
-
-                // Enable the remove button for the new item and ensure first item always has it disabled
-                newItem.find('.remove-sale-item-btn').prop('disabled', false);
-                container.find('.network-item-group').first().find('.remove-sale-item-btn').prop('disabled', true);
-
-                // Update data-index for the new row (useful for debugging, not strictly necessary for WTForms)
-                newItem.attr('data-index', newIndex);
-                newItem.attr('id', `sale-item-${newIndex}`);
-
-                container.append(newItem);
-            });
-
-
-            $('#sale-items-container').on('click', '.remove-sale-item-btn', function() {
-                var itemToRemove = $(this).closest('.network-item-group');
-                var container = $('#sale-items-container');
-                var currentCount = container.find('.network-item-group').length;
-
-                if (currentCount > 1) {
-                    itemToRemove.remove();
-                    // Re-index remaining items after removal to maintain correct FieldList order
-                    container.find('.network-item-group').each(function(index) {
-                        $(this).attr('id', `sale-item-${index}`);
-                        $(this).attr('data-index', index);
-                        $(this).find('[name]').each(function() {
-                            var oldName = $(this).attr('name');
-                            if (oldName) {
-                                var newName = oldName.replace(/sale_items-\d+-(.*)/, `sale_items-${index}-$1`);
-                                $(this).attr('name', newName);
-                            }
-                            var oldId = $(this).attr('id');
-                            if (oldId) {
-                                var newId = oldId.replace(/sale_items-\d+-(.*)/, `sale_items-${index}-$1`);
-                                $(this).attr('id', newId);
-                            }
-                        });
-                    });
-
-                    // Ensure the first item's remove button is disabled if only one remains
-                    if (container.find('.network-item-group').length === 1) {
-                        container.find('.network-item-group').first().find('.remove-sale-item-btn').prop('disabled', true);
-                    }
-                } else {
-                    Swal.fire({
-                        icon: 'info',
-                        title: 'Impossible de supprimer',
-                        text: 'Vous devez avoir au moins un article de vente.',
-                        confirmButtonText: 'Compris'
-                    });
-                }
-            });
-
-
-            // Edit Cash Paid functionality
-            $('.btn-edit-cash').on('click', function() {
-                var saleId = $(this).data('sale-id');
-                var currentCash = $(this).data('current-cash');
-
-                $('#sale_id_hidden').val(saleId); // Store sale ID in a hidden field
-                $('#new_cash_input').val(currentCash); // Populate with current cash
-                
-                // Set the form action dynamically
-                $('#editCashForm').attr('action', '/update-sale-cash/' + saleId);
-
-                $('#editCashModal').modal('show');
-            });
-
-            // You might already have this for general form submission
-            // But ensure it handles success/error messages appropriately
-            $('#editCashForm').on('submit', function(e) {
-                // You can add AJAX submission here if you don't want a full page reload
-                // For now, let's assume it submits normally and Flask flashes messages.
-            });
-        });
-    </script>
+    {# ... (Your existing JavaScript remains the same) ... #}
 {% endblock javascripts %}

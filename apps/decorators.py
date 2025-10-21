@@ -9,7 +9,7 @@ def roles_required(*roles):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             if not current_user.is_authenticated:
-                return redirect(url_for("authentication_blueprint.login"))
+                return redirect(url_for("auth_bp.login"))
             if current_user.role not in roles:
                 abort(403)
             return f(*args, **kwargs)

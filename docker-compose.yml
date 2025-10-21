@@ -1,21 +1,23 @@
+version: '3.8'
 services:
   airtfast_app:
     build: .
     container_name: airtfast_app_container
     restart: unless-stopped
     ports:
-      - "5000:5005" 
+      - "5000:5005"
     environment:
       - FLASK_APP=run.py
       - FLASK_ENV=development
-      - DATABASE_URL=postgresql://user:password@db_service:5432/airtfastdb
+      # Important: Use the service name, not 'db_service'
+      - DATABASE_URL=postgresql://user:password@airtfast_db:5432/airtfastdb 
     depends_on:
-      db_service: # Changed from - db_service to db_service:
-        condition: service_healthy # <--- ADD THIS LINE
+      airtfast_db:
+        condition: service_healthy
     volumes:
       - .:/app
 
-  db_service:
+  airtfast_db:
     image: postgres:13-alpine
     container_name: airtfast_db_container
     restart: unless-stopped
@@ -27,12 +29,36 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
-    healthcheck: # <--- ADD THIS WHOLE BLOCK
+    healthcheck:
       test: ["CMD-SHELL", "pg_isready -U user -d airtfastdb"]
       interval: 5s
       timeout: 5s
       retries: 5
-      start_period: 10s # Gives the DB a grace period to start its internal initialization
+      start_period: 10s
+
+  # --- NEW: ONE-OFF SETUP SERVICE ---
+  airtfast_setup:
+    # Use the same image as your app
+    build: . 
+    # Use the same environment variables
+    environment:
+      - FLASK_APP=run.py
+      - FLASK_ENV=development
+      - DATABASE_URL=postgresql://user:password@airtfast_db:5432/airtfastdb
+    # Must wait for the DB to be fully ready
+    depends_on:
+      airtfast_db:
+        condition: service_healthy
+    # We use sh -c to execute a sequence of commands, including calculating yesterday's date
+    command: >
+      sh -c "YESTERDAY=$$(date -I -d 'yesterday') && 
+             flask db upgrade && 
+             flask setup create-superadmin && 
+             flask setup init-stock && 
+             flask setup seed-reports --date $${YESTERDAY}"
+    # Use temporary volumes, we don't need persistent files for this setup container
+    volumes:
+      - .:/app
 
 volumes:
   db_data:

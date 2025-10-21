@@ -1,12 +1,9 @@
-# File: apps/__init__.py (Corrected Version)
-
 import logging
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_login import LoginManager
 
-# REMOVE THIS LINE: from apps.cli import register_cli_commands
 
 from .config import DebugConfig
 
