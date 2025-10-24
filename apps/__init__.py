@@ -11,6 +11,9 @@ from .config import DebugConfig
 db = SQLAlchemy()
 migrate = Migrate()
 login_manager = LoginManager()
+login_manager.login_view = "auth_bp.login"
+# Optional: Set the message category for flashes
+login_manager.login_message_category = "warning"
 
 # ... (rest of your global variables) ...
 app_logger = logging.getLogger(__name__)

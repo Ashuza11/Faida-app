@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: airt-fast
+metadata:
+    template: azd-init@1.20.1
+services:
+    airt-fast:
+        project: .
+        host: containerapp
+        language: python
+        docker:
+            path: Dockerfile
+resources:
+    airt-fast:
+        type: host.containerapp
+        uses:
+            - airtfastdb
+        port: 5000
+    airtfastdb:
+        type: db.postgres

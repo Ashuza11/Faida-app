@@ -20,7 +20,7 @@ import pytz
 from sqlalchemy import func
 
 # Define the path to your seed data file
-SEED_DATA_PATH = Path(os.getcwd()) / "data" / "seed_data.json"
+SEED_DATA_PATH = Path(os.getcwd()) / "apps" / "data" / "seed_data.json"
 
 # Set precision for Decimal operations
 getcontext().prec = 10
