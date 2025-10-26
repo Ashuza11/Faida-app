@@ -341,7 +341,7 @@ class SaleForm(FlaskForm):
         ],
         render_kw={"step": "0.01"},
     )
-    submit = SubmitField("Enregistrer la Vente")
+    submit = SubmitField("Enregistre Vente")
 
     def validate(self, extra_validators=None):
         # Custom validation for client fields

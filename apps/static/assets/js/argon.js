@@ -1,27 +1,27 @@
 
-// /*!
+/*!
 
-// =========================================================
-// * Argon Dashboard - v1.2.0
-// =========================================================
+=========================================================
+* Argon Dashboard - v1.2.0
+=========================================================
 
-// * Product Page: https://www.creative-tim.com/product/argon-dashboard
-// * Copyright 2020 Creative Tim (https://www.creative-tim.com)
-// * Licensed under MIT (https://github.com/creativetimofficial/argon-dashboard/blob/master/LICENSE.md)
+* Product Page: https://www.creative-tim.com/product/argon-dashboard
+* Copyright 2020 Creative Tim (https://www.creative-tim.com)
+* Licensed under MIT (https://github.com/creativetimofficial/argon-dashboard/blob/master/LICENSE.md)
 
-// * Coded by www.creative-tim.com
+* Coded by www.creative-tim.com
 
-// =========================================================
+=========================================================
 
-// * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+* The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
-// */
+*/
 
 
 
-// //
-// // Layout
-// //
+//
+// Layout
+//
 
 // 'use strict';
 
@@ -130,36 +130,36 @@
 //             break;
 //         }
 //     })
-
-
-//     // Add sidenav modifier classes on mouse events
-
-//     $('.sidenav').on('mouseenter', function() {
-//         if(! $('body').hasClass('g-sidenav-pinned')) {
-//             $('body').removeClass('g-sidenav-hide').removeClass('g-sidenav-hidden').addClass('g-sidenav-show');
-//         }
-//     })
-
-//     $('.sidenav').on('mouseleave', function() {
-//         if(! $('body').hasClass('g-sidenav-pinned')) {
-//             $('body').removeClass('g-sidenav-show').addClass('g-sidenav-hide');
-
-//             setTimeout(function() {
-//                 $('body').removeClass('g-sidenav-hide').addClass('g-sidenav-hidden');
-//             }, 300);
-//         }
-//     })
-
-
-//     // Make the body full screen size if it has not enough content inside
-//     $(window).on('load resize', function() {
-//         if($('body').height() < 800) {
-//             $('body').css('min-height', '100vh');
-//             $('#footer-main').addClass('footer-auto-bottom')
-//         }
-//     })
-
 // })();
+
+    // // Add sidenav modifier classes on mouse events
+
+    // $('.sidenav').on('mouseenter', function() {
+    //     if(! $('body').hasClass('g-sidenav-pinned')) {
+    //         $('body').removeClass('g-sidenav-hide').removeClass('g-sidenav-hidden').addClass('g-sidenav-show');
+    //     }
+    // })
+
+    // $('.sidenav').on('mouseleave', function() {
+    //     if(! $('body').hasClass('g-sidenav-pinned')) {
+    //         $('body').removeClass('g-sidenav-show').addClass('g-sidenav-hide');
+
+    //         setTimeout(function() {
+    //             $('body').removeClass('g-sidenav-hide').addClass('g-sidenav-hidden');
+    //         }, 300);
+    //     }
+    // })
+
+
+    // // Make the body full screen size if it has not enough content inside
+    // $(window).on('load resize', function() {
+    //     if($('body').height() < 800) {
+    //         $('body').css('min-height', '100vh');
+    //         $('#footer-main').addClass('footer-auto-bottom')
+    //     }
+    // })
+
+
 
 // //
 // // Charts
@@ -511,9 +511,9 @@
 
 // })();
 
-// //
-// // Navbar
-// //
+//
+// Navbar
+//
 
 // 'use strict';
 
@@ -559,72 +559,72 @@
 // })();
 
 
-// //
-// // Navbar collapse
-// //
+//
+// Navbar collapse
+//
 
 
-// var NavbarCollapse = (function() {
+var NavbarCollapse = (function() {
 
-// 	// Variables
+	// Variables
 
-// 	var $nav = $('.navbar-nav'),
-// 		$collapse = $('.navbar .navbar-custom-collapse');
-
-
-// 	// Methods
-
-// 	function hideNavbarCollapse($this) {
-// 		$this.addClass('collapsing-out');
-// 	}
-
-// 	function hiddenNavbarCollapse($this) {
-// 		$this.removeClass('collapsing-out');
-// 	}
+	var $nav = $('.navbar-nav'),
+		$collapse = $('.navbar .navbar-custom-collapse');
 
 
-// 	// Events
+	// Methods
 
-// 	if ($collapse.length) {
-// 		$collapse.on({
-// 			'hide.bs.collapse': function() {
-// 				hideNavbarCollapse($collapse);
-// 			}
-// 		})
+	function hideNavbarCollapse($this) {
+		$this.addClass('collapsing-out');
+	}
 
-// 		$collapse.on({
-// 			'hidden.bs.collapse': function() {
-// 				hiddenNavbarCollapse($collapse);
-// 			}
-// 		})
-// 	}
+	function hiddenNavbarCollapse($this) {
+		$this.removeClass('collapsing-out');
+	}
 
-// 	var navbar_menu_visible = 0;
 
-// 	$( ".sidenav-toggler" ).click(function() {
-// 		if(navbar_menu_visible == 1){
-// 		  $('body').removeClass('nav-open');
-// 			navbar_menu_visible = 0;
-// 			$('.bodyClick').remove();
+	// Events
 
-// 		} else {
+	if ($collapse.length) {
+		$collapse.on({
+			'hide.bs.collapse': function() {
+				hideNavbarCollapse($collapse);
+			}
+		})
 
-// 		var div = '<div class="bodyClick"></div>';
-// 		$(div).appendTo('body').click(function() {
-// 				 $('body').removeClass('nav-open');
-// 					navbar_menu_visible = 0;
-// 					$('.bodyClick').remove();
+		$collapse.on({
+			'hidden.bs.collapse': function() {
+				hiddenNavbarCollapse($collapse);
+			}
+		})
+	}
+
+	var navbar_menu_visible = 0;
+
+	$( ".sidenav-toggler" ).click(function() {
+		if(navbar_menu_visible == 1){
+		  $('body').removeClass('nav-open');
+			navbar_menu_visible = 0;
+			$('.bodyClick').remove();
+
+		} else {
+
+		var div = '<div class="bodyClick"></div>';
+		$(div).appendTo('body').click(function() {
+				 $('body').removeClass('nav-open');
+					navbar_menu_visible = 0;
+					$('.bodyClick').remove();
 					
-// 			 });
+			 });
 
-// 		 $('body').addClass('nav-open');
-// 			navbar_menu_visible = 1;
+		 $('body').addClass('nav-open');
+			navbar_menu_visible = 1;
 
-// 		}
+		}
 
-// 	});
+	});
 
-// })();
+})();
 
 // //
 // // Popover
