@@ -1,22 +1,18 @@
-# Use a Python base image
 FROM python:3.11-slim
 
-# Set the working directory in the container
 WORKDIR /app
 
-# Copy the requirements file and install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code
 COPY . .
 
-# NO LONGER SET FLASK_ENV HERE. Let docker-compose handle it.
-# ENV FLASK_APP=run.py # You can keep this or set it in docker-compose as well
+# Use PORT env from Azure or default 5000
+ENV PORT=5000
 
-# Expose the port your Flask app runs on
-EXPOSE 5000 
+EXPOSE 5000
+
+# Run with Gunicorn (read port from env)
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT --workers 2 run:app"]
 
 
-# Command to run the application using Gunicorn
-CMD ["gunicorn", "--config", "gunicorn-cfg.py", "run:app"]

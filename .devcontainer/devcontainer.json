@@ -1,0 +1,71 @@
+// For format details, see https://aka.ms/devcontainer.json.
+{
+	"name": "flask-surveys-container-app",
+	"image": "mcr.microsoft.com/devcontainers/python:3.11-bullseye",
+    // https://github.com/devcontainers/features
+	"features": {
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {},
+		"ghcr.io/azure/azure-dev/azd:latest": {}
+    },
+
+	"forwardPorts": [50505, 5432],
+	"portsAttributes": {
+		"50505": {"label": "Flask port", "onAutoForward": "notify"},
+		"5432": {"label": "PostgreSQL port", "onAutoForward": "silent"}
+	},
+
+	// Configure tool-specific properties.
+	"customizations": {
+
+		// Configure properties specific to VS Code.
+		"vscode": {
+			// Add the IDs of extensions you want installed when the container is created.
+			"extensions": [
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"ms-python.black-formatter",
+				"ms-azuretools.vscode-docker",
+				"ms-azuretools.vscode-bicep",
+				"mtxr.sqltools",
+				"mtxr.sqltools-driver-pg",
+				"charliermarsh.ruff"
+			],
+			// Set *default* container specific settings.json values on container create.
+			"settings": {
+				"python.testing.unittestEnabled": false,
+				"python.testing.pytestEnabled": true,
+				"[python]": {
+					"editor.formatOnSave": true,
+					"editor.codeActionsOnSave": {
+						"source.fixAll": true
+					},
+					"editor.defaultFormatter": "ms-python.black-formatter"
+				},
+				"files.exclude": {
+					"__pycache__": true,
+					".ruff_cache": true,
+					".pytest_cache": true
+				},
+				"sqltools.connections": [
+					{
+						"previewLimit": 50,
+						"server": "localhost",
+						"port": 5432,
+						"name": "Container database",
+						"driver": "PostgreSQL",
+						"database": "postgres",
+						"username": "app_user",
+						"password": "app_password"
+					}
+				],
+				"workbench.startupEditor": "readme"
+			}
+		}
+	},
+
+	// Use 'postCreateCommand' to run commands after the container is created.
+	"postCreateCommand": "pip install -r requirements-dev.txt && pre-commit install",
+
+	// Comment out to connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
+	"remoteUser": "vscode"
+}

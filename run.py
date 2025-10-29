@@ -1,27 +1,29 @@
 from flask_migrate import Migrate
 from sys import exit
 from decouple import config
-from apps.config import config_dict
 from apps import create_app, db
+from apps.config import config_dict
+from apps.settings.production import Config as ProdConfig
 
-# WARNING: Don't run with debug turned on in production!
-DEBUG = config("DEBUG", default=True, cast=bool)
+# Detect if running in Azure or locally
+ENVIRONMENT = config("ENVIRONMENT", default="development").lower()
+DEBUG = ENVIRONMENT != "production"
 
-# The configuration
-get_config_mode = "Debug" if DEBUG else "Production"
+if DEBUG:
+    get_config_mode = "Debug"
+    app_config = config_dict[get_config_mode]
+else:
+    app_config = ProdConfig  # Directly use your production settings
 
-try:
-    # Load the configuration using the default values
-    app_config = config_dict[get_config_mode.capitalize()]
-except KeyError:
-    exit("Error: Invalid <config_mode>. Expected values [Debug, Production] ")
-
-# Expose the app instance for Gunicorn to find
+# Create Flask app
 app = create_app(app_config)
 app.app_context().push()
 Migrate(app, db)
 
-if DEBUG:
-    app.logger.info("DEBUG       = " + str(DEBUG))
-    app.logger.info("Environment = " + get_config_mode)
-    app.logger.info("DBMS        = " + app_config.SQLALCHEMY_DATABASE_URI)
+# Log environment info
+app.logger.info(f"Environment: {ENVIRONMENT}")
+app.logger.info(f"DEBUG: {DEBUG}")
+app.logger.info(f"DB URI: {app_config.SQLALCHEMY_DATABASE_URI}")
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=config("PORT", default=5000, cast=int), debug=DEBUG)

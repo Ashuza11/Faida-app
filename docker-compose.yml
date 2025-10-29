@@ -5,7 +5,7 @@ services:
     container_name: airtfast_app_container
     restart: unless-stopped
     ports:
-      - "5000:5005"
+      - "5000:5000"
     environment:
       - FLASK_APP=run.py
       - FLASK_ENV=development

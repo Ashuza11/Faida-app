@@ -54,6 +54,11 @@ from apps.main.forms import (
 APP_TIMEZONE = pytz.timezone("Africa/Lubumbashi")
 
 
+@bp.route("/health")
+def health():
+    return {"status": "ok"}, 200
+
+
 @bp.route("/")
 @bp.route("/index")
 @login_required
@@ -1047,34 +1052,7 @@ def vente_stock():
         sales_query,
         page=page,
         # Get SALES_PER_PAGE from config, default to 10 if not set
-        per_page=current_app.config.get("SALES_PER_PAGE", 10),
-        error_out=False,  # Show empty page instead of 404 if page number is invalid
-    )
-
-    # Generate URLs for the 'Next' and 'Previous' pagination links
-    next_url = (
-        url_for("main_bp.vente_stock", page=sales_pagination.next_num)
-        if sales_pagination.has_next
-        else None
-    )
-    prev_url = (
-        url_for("main_bp.vente_stock", page=sales_pagination.prev_num)
-        if sales_pagination.has_prev
-        else None
-    )  # --- Fetch Paginated Sales (GET request) ---
-    page = request.args.get(
-        "page", 1, type=int
-    )  # Get page number from URL query ?page=...
-
-    # Define the query to fetch sales, ordered by most recent first
-    sales_query = db.session.query(Sale).order_by(Sale.created_at.desc())
-
-    # Use db.paginate to get the sales for the current page
-    sales_pagination = db.paginate(
-        sales_query,
-        page=page,
-        # Get SALES_PER_PAGE from config, default to 10 if not set
-        per_page=current_app.config.get("SALES_PER_PAGE", 3),
+        per_page=current_app.config.get("SALES_PER_PAGE", 5),
         error_out=False,  # Show empty page instead of 404 if page number is invalid
     )
 
@@ -1092,10 +1070,10 @@ def vente_stock():
 
     # --- Render the Template ---
     return render_template(
-        "main/vente_stock.html",  # Make sure this path is correct
+        "main/vente_stock.html",
         title="Gestion Ventes",
         form=form,
-        sales_pagination=sales_pagination,  # Pass the whole pagination object
+        sales_pagination=sales_pagination,
         next_url=next_url,
         prev_url=prev_url,
     )
@@ -1123,7 +1101,7 @@ def update_sale_cash(sale_id):
 
     if new_debt < 0:
         flash("Le paiement ne peut pas dépasser le montant total dû.", "danger")
-        return redirect(url_for("auth_bpe.vente_stock"))
+        return redirect(url_for(""))
 
     sale.cash_paid = new_cash
     sale.debt_amount = new_debt
@@ -1137,7 +1115,7 @@ def update_sale_cash(sale_id):
         flash(f"Erreur lors de la mise à jour: {e}", "danger")
         print(f"Error updating cash: {e}")
 
-    return redirect(url_for("auth_bpe.vente_stock"))
+    return redirect(url_for("main_bp.vente_stock"))
 
 
 @bp.route("/edit_sale/<int:sale_id>", methods=["GET", "POST"])
@@ -1354,7 +1332,7 @@ def edit_sale(sale_id):
 
             db.session.commit()
             flash("Vente modifiée avec succès!", "success")
-            return redirect(url_for("auth_bpe.vente_stock"))
+            return redirect(url_for("main_bp.vente_stock"))
 
         except ValueError as e:
             db.session.rollback()
@@ -1422,7 +1400,7 @@ def delete_sale(sale_id):
             db.session.commit()
             print("Sale deleted successfully!")
             flash(f"Vente #{sale_id} supprimée avec succès!", "success")
-            return redirect(url_for("auth_bpe.vente_stock"))
+            return redirect(url_for("main_bp.vente_stock"))
 
         except Exception as e:
             db.session.rollback()
@@ -1433,7 +1411,7 @@ def delete_sale(sale_id):
                 f"Une erreur est survenue lors de la suppression de la vente: {e}",
                 "danger",
             )
-            return redirect(url_for("auth_bpe.vente_stock"))
+            return redirect(url_for("main_bp.vente_stock"))
 
     flash("Confirmez la suppression de la vente.", "warning")
     return render_template(
