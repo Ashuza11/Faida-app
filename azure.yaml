@@ -2,7 +2,7 @@
 
 name: airt-fast
 metadata:
-  template: azd-init@1.20.1
+  template: flask-surveys-container-app@0.0.2-beta
 
 services:
   airt-fast:
@@ -12,7 +12,7 @@ services:
     docker:
       path: Dockerfile
     azure:
-      containerAppName: airt-fast-web # ✅ must be indented exactly like this
+      containerAppName: airt-fast-web
 
 resources:
   airt-fast:

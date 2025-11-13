@@ -34,6 +34,4 @@ class ProductionConfig(Config):
 class DebugConfig(Config):
     DEBUG = True
 
-
-# The rest of your config remains the same.
 config_dict = {"Production": ProductionConfig, "Debug": DebugConfig}

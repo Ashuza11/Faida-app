@@ -864,6 +864,35 @@ def vente_stock():
         for _ in range(3):
             form.sale_items.append_entry()
 
+    # --- Fetch Paginated Sales (GET request) ---
+    page = request.args.get(
+        "page", 1, type=int
+    )  # Get page number from URL query ?page=...
+
+    # Define the query to fetch sales, ordered by most recent first
+    sales_query = Sale.query.order_by(Sale.created_at.desc())
+
+    # Use db.paginate to get the sales for the current page
+    sales_pagination = db.paginate(
+        sales_query,
+        page=page,
+        # Get SALES_PER_PAGE from config, default to 10 if not set
+        per_page=current_app.config.get("SALES_PER_PAGE", 5),
+        error_out=False,  # Show empty page instead of 404 if page number is invalid
+    )
+
+    # Generate URLs for the 'Next' and 'Previous' pagination links
+    next_url = (
+        url_for("main_bp.vente_stock", page=sales_pagination.next_num)
+        if sales_pagination.has_next
+        else None
+    )
+    prev_url = (
+        url_for("main_bp.vente_stock", page=sales_pagination.prev_num)
+        if sales_pagination.has_prev
+        else None
+    )
+
     if form.validate_on_submit():
         client = None
         client_name_adhoc = None
@@ -1038,35 +1067,6 @@ def vente_stock():
                             f"Erreur article {i+1} - {entry.form[field_name].label.text}: {error}",
                             "danger",
                         )
-
-    # --- Fetch Paginated Sales (GET request) ---
-    page = request.args.get(
-        "page", 1, type=int
-    )  # Get page number from URL query ?page=...
-
-    # Define the query to fetch sales, ordered by most recent first
-    sales_query = Sale.query.order_by(Sale.created_at.desc())
-
-    # Use db.paginate to get the sales for the current page
-    sales_pagination = db.paginate(
-        sales_query,
-        page=page,
-        # Get SALES_PER_PAGE from config, default to 10 if not set
-        per_page=current_app.config.get("SALES_PER_PAGE", 5),
-        error_out=False,  # Show empty page instead of 404 if page number is invalid
-    )
-
-    # Generate URLs for the 'Next' and 'Previous' pagination links
-    next_url = (
-        url_for("main_bp.vente_stock", page=sales_pagination.next_num)
-        if sales_pagination.has_next
-        else None
-    )
-    prev_url = (
-        url_for("main_bp.vente_stock", page=sales_pagination.prev_num)
-        if sales_pagination.has_prev
-        else None
-    )
 
     # --- Render the Template ---
     return render_template(
