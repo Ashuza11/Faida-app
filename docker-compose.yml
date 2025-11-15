@@ -1,67 +1,40 @@
-version: '3.8'
-
 services:
-  airtfast_app:
-    build: .
-    container_name: airtfast_app_container
-    restart: unless-stopped
-    ports:
-      # Expose the app's port 5000 to the host's port 5000
-      - "5000:5000"
-    
-    # Use the entrypoint script to run setup and start the app
-    entrypoint: ./entrypoint.sh
-
-    # Load environment variables from the .env file
-    env_file:
-      - .env
-    
-    # Set the DATABASE_URL using variables from the .env file
-    environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@airtfast_db:5432/${POSTGRES_DB}
-      
-    depends_on:
-      airtfast_db:
-        # Wait for the database to be healthy before starting
-        condition: service_healthy
-        
-    volumes:
-      # Mount your code for local development (live-reloading)
-      - .:/app
-      
-    networks:
-      - airtfast_net
-
-  airtfast_db:
+  db:
     image: postgres:13-alpine
-    container_name: airtfast_db_container
-    restart: unless-stopped
-    
-    # Load credentials directly from the .env file
-    env_file:
-      - .env
-      
-    # We DO NOT expose ports for the database.
-    # The 'airtfast_app' service can reach it over the 'airtfast_net' network.
-    
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: ${DBPASS:?postgres password not set}
+      POSTGRES_USER: ${DBUSER:?postgres user not set}
+      POSTGRES_DB: ${DBNAME:?postgres db name not set}
     volumes:
-      - db_data:/var/lib/postgresql/data
-      
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      # Use variables in the healthcheck
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DBUSER} -d ${DBNAME}"]
       interval: 5s
       timeout: 5s
       retries: 5
-      start_period: 10s
-      
     networks:
       - airtfast_net
 
-# Define the persistent volume for database data
-volumes:
-  db_data:
+  app:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    entrypoint: /code/entrypoint-dev.sh
+    env_file:
+      - .env
+    ports:
+      - "50505:50505"
+    volumes:
+      - ./src:/code
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - airtfast_net
 
-# Define the custom network for services to communicate
+volumes:
+  postgres-data:
+
 networks:
   airtfast_net:

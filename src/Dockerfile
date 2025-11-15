@@ -1,18 +1,32 @@
+# src/Dockerfile
 FROM python:3.11-slim
 
-WORKDIR /app
+# Keep Python from generating .pyc files in the container
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
+# Set directory for the app (match the reference repo)
+WORKDIR /code
+
+# System deps for psycopg2 (Postgres driver)
+RUN apt-get update \
+    && apt-get -y install --no-install-recommends libpq-dev gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install to make use of Docker cache
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --upgrade pip && python -m pip install -r requirements.txt
 
+# Copy application code
 COPY . .
 
-# Use PORT env from Azure or default 5000
-ENV PORT=5000
+# Create a non-root user (same pattern as reference)
+RUN adduser -u 5678 --disabled-password --gecos "" appuser \
+    && chown -R appuser /code
+USER appuser
 
-EXPOSE 5000
+# Expose the app port (matches gunicorn.conf.py below)
+EXPOSE 50505
 
-# Run with Gunicorn (read port from env)
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT --workers 2 run:app"]
-
-
+# Use the production entrypoint by default
+ENTRYPOINT ["/code/entrypoint.sh"]

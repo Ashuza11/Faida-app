@@ -33,8 +33,8 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 
 var prefix = '${name}-${resourceToken}'
 
-var postgresUser = 'flaskadmin'
-var postgresDatabaseName = 'flask'
+var postgresUser = 'airtfastadmin'
+var postgresDatabaseName = 'airtfastdb'
 
 // Store secrets in a keyvault
 module keyVault './core/security/keyvault.bicep' = {

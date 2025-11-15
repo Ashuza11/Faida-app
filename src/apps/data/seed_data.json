@@ -1,9 +1,9 @@
 {
   "stock_balances": {
-    "AIRTEL": 1781.00,
-    "ORANGE": 5017.00,
-    "VODACOM": 1205.00,
-    "AFRICEL": 6098.00
+    "AIRTEL": 5457.00,
+    "ORANGE": 1678.00,
+    "VODACOM": 2713.00,
+    "AFRICEL": 17471.00
   },
   "stock_prices": {
     "buying_price_per_unit": 0.94,

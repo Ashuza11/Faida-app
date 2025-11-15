@@ -1,24 +1,41 @@
 from flask_migrate import Migrate
 from sys import exit
-from decouple import config
+from decouple import config 
 from apps import create_app, db
 from apps.config import config_dict
-from apps.settings.production import Config as ProdConfig
+import os
 
-# Detect if running in Azure or locally
-ENVIRONMENT = config("ENVIRONMENT", default="development").lower()
-DEBUG = ENVIRONMENT != "production"
+# --- ENVIRONMENT DETECTION LOGIC ---
 
-if DEBUG:
-    get_config_mode = "Debug"
-    app_config = config_dict[get_config_mode]
+# 1. Production Mode Check (Highest Priority)
+IS_PRODUCTION = "RUNNING_IN_PRODUCTION" in os.environ
+
+if IS_PRODUCTION:
+    get_config_mode = "Production"
+    DEBUG = False
+    
+# 2. Development Mode Check (Docker Compose)
+elif "DBHOST" in os.environ: 
+    get_config_mode = "Development"
+    DEBUG = True
+    
+# 3. Debug Mode Check (Fallback)
 else:
-    app_config = ProdConfig  # Directly use your production settings
+    get_config_mode = "Debug"
+    DEBUG = True
 
-# Create Flask app
+# Set the environment string used for logging
+ENVIRONMENT = get_config_mode.lower()
+
+
+# --- APP INITIALIZATION ---
+
+app_config = config_dict[get_config_mode]
+
+# Create Flask app using the determined configuration
 app = create_app(app_config)
 app.app_context().push()
-Migrate(app, db)
+Migrate(app, db) # Initialize Flask-Migrate
 
 # Log environment info
 app.logger.info(f"Environment: {ENVIRONMENT}")
@@ -26,4 +43,5 @@ app.logger.info(f"DEBUG: {DEBUG}")
 app.logger.info(f"DB URI: {app_config.SQLALCHEMY_DATABASE_URI}")
 
 if __name__ == "__main__":
+    # Use the determined DEBUG flag
     app.run(host="0.0.0.0", port=config("PORT", default=5000, cast=int), debug=DEBUG)
