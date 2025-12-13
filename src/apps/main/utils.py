@@ -153,8 +153,8 @@ def parse_date_param(date_str, default_date):
 def get_daily_report_data(
     app,
     target_date: date,
-    start_of_utc_range: datetime = None,  # Keep these for explicit overrides if needed, but the primary use for 'today' will be the new utility
-    end_of_utc_range: datetime = None,
+    start_of_utc_range,
+    end_of_utc_range,
 ):
     """
     Calculates comprehensive report data for a *single specific date* (target_date).
