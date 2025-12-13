@@ -14,12 +14,12 @@ if IS_PRODUCTION:
     get_config_mode = "Production"
     DEBUG = False
     
-# 2. Development Mode Check (Docker Compose)
-elif "DBHOST" in os.environ: 
+# 2. Local Docker Compose Check
+elif os.environ.get("FLASK_ENV") == "development" and "DBHOST" in os.environ: 
     get_config_mode = "Development"
     DEBUG = True
     
-# 3. Debug Mode Check (Fallback)
+# 3. Default Local Debug (Fallback to SQLite)
 else:
     get_config_mode = "Debug"
     DEBUG = True
