@@ -1,8 +1,14 @@
 #!/bin/sh
+
 set -e
+
+echo "Running migations..."
+flask db migrate
 
 echo "Running database migrations..."
 flask db upgrade
+
+echo "Setting up initial data..."
 
 echo "Creating super admin..."
 flask setup create-superadmin

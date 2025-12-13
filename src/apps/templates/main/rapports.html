@@ -1,4 +1,6 @@
 {% extends "layouts/base.html" %}
+{% import "includes/_filters.html" as filters %}
+
 
 {% block title %} {{ page_title }} {% endblock %}
 
@@ -31,33 +33,8 @@
               <h3 class="mb-0">Balance Compte Stock (Rapport Quotidien)</h3>
             </div>
             <div class="card-body">
-                <form method="GET" action="{{ url_for('main_bp.rapports') }}" class="mb-4">
-                    <div class="form-row align-items-end"> 
-                        
-                        {# "Du" Date Input #}
-                        <div class="col-12 col-md-auto mb-3 mb-md-0"> 
-                            <label for="start_date" class="mr-md-2 d-block d-md-inline-block">Du:</label> 
-                            <input type="date" id="start_date" name="start_date" class="form-control w-100 w-md-auto" value="{{ selected_start_date }}">
-                        </div>
-
-                        {# "Au" Date Input #}
-                        <div class="col-12 col-md-auto mb-3 mb-md-0"> 
-                            <label for="end_date" class="mr-md-2 d-block d-md-inline-block">Au:</label> 
-                            <input type="date" id="end_date" name="end_date" class="form-control w-100 w-md-auto" value="{{ selected_end_date }}">
-                        </div>
-
-                        {# Filter Button - no extra mb-X, relying on align-items-end #}
-                        <div class="col-12 col-md-auto mb-2 mb-md-0"> 
-                            <button type="submit" class="btn btn-primary btn-block btn-md-inline-block"><i class="fas fa-filter mr-2"></i>Filtrer</button> 
-                        </div>
-
-                        {# Reset Button - no extra mb-X, relying on align-items-end #}
-                        <div class="col-12 col-md-auto mb-0"> 
-                            <a href="{{ url_for('main_bp.rapports') }}" class="btn btn-outline-secondary btn-block btn-md-inline-block"><i class="fas fa-redo mr-2"></i>Réinitialiser</a> 
-                        </div>
-
-                    </div>
-                </form>
+              {# Render the filter component #}
+              {{ filters.render_date_filter(url_for('main_bp.rapports'), selected_date) }}
             </div>
             <div class="table-responsive">
               <table class="table align-items-center table-flush">

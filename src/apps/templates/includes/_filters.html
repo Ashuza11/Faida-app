@@ -1,0 +1,33 @@
+{% macro render_date_filter(target_url, selected_date, label="Selectionner une date") %}
+<div class="date-filter-component mb-4">
+    <form method="GET" action="{{ target_url }}"> 
+        <div class="form-row align-items-end"> 
+            <div class="col-auto mb-3"> 
+                <label for="date_filter" class="form-control-label font-weight-bold">
+                    <i class="far fa-calendar-alt mr-1"></i> {{ label }}
+                </label>
+                
+                <input type="date" 
+                       id="date_filter" 
+                       name="date" 
+                       class="form-control form-control-alternative" 
+                       value="{{ selected_date }}" 
+                       required>
+            </div>
+            <div class="col-auto mb-3"> 
+                <div class="btn-group">
+                    <button type="submit" class="btn btn-primary shadow-sm">
+                        <i class="fas fa-filter mr-1"></i> Filtrer
+                    </button>
+                    <div>
+                        <a href="{{ target_url }}" class="btn btn-outline-secondary shadow-none" title="Réinitialiser le filtre">
+                            <i class="fas fa-redo"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </form>
+</div>
+{% endmacro %}
