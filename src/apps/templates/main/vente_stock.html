@@ -1,4 +1,5 @@
 {% extends "layouts/base.html" %}
+{% import "includes/_filters.html" as filters %}
 
 {% block title %} Vente Stock {% endblock %}
 
@@ -139,11 +140,11 @@
             <div class="col-xl-12">
                 <div class="card">
                     <div class="card-header border-0">
-                        <div class="row align-items-center">
-                            <div class="col">
-                                <h3 class="mb-0">Historique des Ventes</h3>
-                            </div>
-                        </div>
+                        <h3 class="mb-0">Historique des Ventes</h3>
+                    </div>
+                    <div class="card-body">
+                        {# Render the filter component #}
+                        {{ filters.render_date_filter(url_for('main_bp.vente_stock'), selected_date) }}
                     </div>
                     <div class="table-responsive">
                         <table class="table align-items-center table-flush">
@@ -204,48 +205,8 @@
                             </tbody>
                         </table>
                     </div>
-                    {# --- ADD PAGINATION CONTROLS --- #}
-                    {% if sales_pagination.pages > 1 %}
-                    <div class="card-footer py-4">
-                        <nav aria-label="...">
-                            <ul class="pagination justify-content-end mb-0">
-                                {# Previous Page Link #}
-                                <li class="page-item {% if not sales_pagination.has_prev %}disabled{% endif %}">
-                                    <a class="page-link" href="{{ prev_url or '#' }}" tabindex="-1">
-                                        <i class="fas fa-angle-left"></i>
-                                        <span class="sr-only">Précédent</span>
-                                    </a>
-                                </li>
-                                
-                                {# Page Number Links (using iter_pages for smart display) #}
-                                {% for page_num in sales_pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
-                                    {% if page_num %}
-                                        {% if page_num != sales_pagination.page %}
-                                            <li class="page-item">
-                                                <a class="page-link" href="{{ url_for('main_bp.vente_stock', page=page_num) }}">{{ page_num }}</a>
-                                            </li>
-                                        {% else %}
-                                            <li class="page-item active">
-                                                <a class="page-link" href="#">{{ page_num }} <span class="sr-only">(current)</span></a>
-                                            </li>
-                                        {% endif %}
-                                    {% else %}
-                                        <li class="page-item disabled"><span class="page-link">...</span></li>
-                                    {% endif %}
-                                {% endfor %}
-
-                                {# Next Page Link #}
-                                <li class="page-item {% if not sales_pagination.has_next %}disabled{% endif %}">
-                                    <a class="page-link" href="{{ next_url or '#' }}">
-                                        <i class="fas fa-angle-right"></i>
-                                        <span class="sr-only">Suivant</span>
-                                    </a>
-                                </li>
-                            </ul>
-                        </nav>
-                    </div>
-                    {% endif %}
-                    {# --- END PAGINATION CONTROLS --- #}
+                    {# Pass the pagination object (e.g. sales_pagination) and the endpoint name #}
+                    {{ filters.render_pagination(sales_pagination, 'main_bp.vente_stock') }}
                 </div>
             </div>
         </div>

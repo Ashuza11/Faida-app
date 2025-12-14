@@ -1,4 +1,3 @@
-from select import select
 from apps.main import bp
 from flask import render_template, request, flash, redirect, url_for, abort, current_app
 from flask_login import login_required, current_user
@@ -8,10 +7,11 @@ from jinja2 import TemplateNotFound
 from apps.decorators import superadmin_required, vendeur_required
 from apps.main.utils import (
     custom_round_up,
-    parse_date_param,
+    get_paginated_results,
     get_daily_report_data,
     get_local_timezone_datetime_info,
     APP_TIMEZONE,
+    get_date_context,
 )
 
 from apps import db
@@ -525,37 +525,28 @@ def client_toggle_active(client_id):
     flash(f"Client {client.name} {status_message} avec succès!", "success")
     return redirect(url_for("main_bp.client_management"))
 
-
 @bp.route("/achat_stock", methods=["GET", "POST"])
 @login_required
 @superadmin_required
-def Achat_stock():
+def achat_stock():
     form = StockPurchaseForm()
 
+    # --- 1. HANDLE POST (Processing the Purchase) ---
     if form.validate_on_submit():
         try:
             network_type_string_from_form = form.network.data
+            
+            # 1. Validate and Resolve Network Type
             try:
                 network_enum = NetworkType(network_type_string_from_form.lower())
             except ValueError:
-                flash(
-                    f"Le type de réseau '{network_type_string_from_form}' n'est pas valide.",
-                    "danger",
-                )
-                # Reload data for the template if validation fails
-                stock_purchases = StockPurchase.query.order_by(
-                    StockPurchase.created_at.desc()
-                ).all()
-                return render_template(
-                    "main/achat_stock.html",
-                    stock_purchases=stock_purchases,
-                    form=form,
-                    segment="stock",
-                    sub_segment="Achat_stock",
+                raise ValueError(
+                    f"Le type de réseau '{network_type_string_from_form}' n'est pas valide."
                 )
 
             amount_purchased = form.amount_purchased.data
 
+            # 2. Resolve Prices (Buying and Selling)
             buying_price_to_record = None
             if form.buying_price_choice.data == "custom":
                 buying_price_to_record = form.custom_buying_price.data
@@ -570,32 +561,23 @@ def Achat_stock():
                     form.intended_selling_price_choice.data
                 )
 
-            # Validate that both prices are determined
             if buying_price_to_record is None or selling_price_to_record is None:
-                flash(
-                    "Veuillez sélectionner ou entrer un prix d'achat et un prix de vente.",
-                    "danger",
+                raise ValueError(
+                    "Veuillez sélectionner ou entrer un prix d'achat et un prix de vente."
                 )
-                # Reload data for the template and render
-                stock_purchases = StockPurchase.query.order_by(
-                    StockPurchase.created_at.desc()
-                ).all()
-                return render_template(
-                    "main/achat_stock.html",
-                    stock_purchases=stock_purchases,
-                    form=form,
-                    segment="stock",
-                    sub_segment="Achat_stock",
-                )
-
-            # --- Database Operations ---
+            
+            # --- 3. Database Operations ---
+            
+            # A. Update/Create Stock Item
             stock_item = Stock.query.filter_by(network=network_enum).first()
 
             if stock_item:
+                # Update existing stock
                 stock_item.balance += amount_purchased
                 stock_item.buying_price_per_unit = buying_price_to_record
                 stock_item.selling_price_per_unit = selling_price_to_record
             else:
+                # Create new stock item
                 stock_item = Stock(
                     network=network_enum,
                     balance=amount_purchased,
@@ -605,8 +587,9 @@ def Achat_stock():
                 )
                 db.session.add(stock_item)
 
-            db.session.flush()
+            db.session.flush() # Ensure stock_item.id is available
 
+            # B. Record Purchase History
             new_purchase = StockPurchase(
                 stock_item_id=stock_item.id,
                 network=network_enum,
@@ -619,37 +602,57 @@ def Achat_stock():
             db.session.commit()
 
             flash("Achat de stock enregistré avec succès!", "success")
-            return redirect(url_for("main_bp.Achat_stock"))
+            return redirect(url_for("main_bp.achat_stock"))
 
+        except ValueError as e:
+            db.session.rollback()
+            flash(str(e), "danger")
         except Exception as e:
-            # --- General Error Handling (Database or unexpected server errors) ---
             db.session.rollback()
             current_app.logger.error(f"Error recording stock purchase: {e}")
             flash(
-                f"Une erreur est survenue lors de l'enregistrement de l'achat: {e}",
+                f"Une erreur système est survenue lors de l'enregistrement de l'achat.",
                 "danger",
             )
-            # Re-render the form with the error message and current data
-            stock_purchases = StockPurchase.query.order_by(
-                StockPurchase.created_at.desc()
-            ).all()
-            return render_template(
-                "main/achat_stock.html",
-                stock_purchases=stock_purchases,
-                form=form,
-                segment="stock",
-                sub_segment="Achat_stock",
-            )
+    
+    # Handle Form Validation Errors (if submit failed but no exception raised)
+    elif form.errors:
+        flash("Veuillez corriger les erreurs dans le formulaire d'achat.", "danger")
+    
 
-    stock_purchases = StockPurchase.query.order_by(
-        StockPurchase.created_at.desc()
-    ).all()
+    # --- 2. HANDLE GET (Data Fetching & Pagination) ---
+    
+    # A. Get Date Context using your Utility
+    ctx = get_date_context() 
+    selected_date_str = ctx['date_str']
+
+    # B. Build Query (Filtered by Date)
+    base_purchases_query = StockPurchase.query.filter(
+        StockPurchase.created_at >= ctx['start_utc'],
+        StockPurchase.created_at <= ctx['end_utc']
+    ).order_by(StockPurchase.created_at.desc())
+
+    # C. Paginate using your Utility
+    # *** CHANGE HERE: Using SALES_PER_PAGE instead of PURCHASES_PER_PAGE ***
+    stock_purchases_pagination, _, _ = get_paginated_results(
+        base_purchases_query,
+        endpoint_name='main_bp.achat_stock',
+        per_page_config_key='SALES_PER_PAGE',
+        date=selected_date_str 
+    )
+
+    # D. Prepare Data for Template
     return render_template(
         "main/achat_stock.html",
-        stock_purchases=stock_purchases,
         form=form,
         segment="stock",
-        sub_segment="Achat_stock",
+        sub_segment="achat_stock",
+        # Data needed for the list display:
+        stock_purchases=stock_purchases_pagination.items, 
+        # Data needed for the pagination macro:
+        stock_purchases_pagination=stock_purchases_pagination, 
+        # Data needed for the date filter macro:
+        selected_date=selected_date_str
     )
 
 
@@ -707,7 +710,7 @@ def edit_stock_purchase(purchase_id):
                     purchase=purchase,
                     page_title="Editer Achat de Stock",
                     segment="stock",
-                    sub_segment="Achat_stock",
+                    sub_segment="achat_stock",
                 )
             amount_purchased = form.amount_purchased.data
 
@@ -739,7 +742,7 @@ def edit_stock_purchase(purchase_id):
                     purchase=purchase,
                     page_title="Editer Achat de Stock",
                     segment="stock",
-                    sub_segment="Achat_stock",
+                    sub_segment="achat_stock",
                 )
 
             # Update the StockPurchase record itself
@@ -779,7 +782,7 @@ def edit_stock_purchase(purchase_id):
 
             db.session.commit()
             flash("Achat de stock mis à jour avec succès!", "success")
-            return redirect(url_for("main_bp.Achat_stock"))
+            return redirect(url_for("main_bp.achat_stock"))
 
         except Exception as e:
             db.session.rollback()
@@ -794,7 +797,7 @@ def edit_stock_purchase(purchase_id):
         purchase=purchase,
         page_title="Editer Achat de Stock",
         segment="stock",
-        sub_segment="Achat_stock",
+        sub_segment="achat_stock",
     )
 
 
@@ -822,12 +825,12 @@ def delete_stock_purchase(purchase_id):
                     "Erreur: L'article de stock correspondant est introuvable.",
                     "danger",
                 )
-                return redirect(url_for("main_bp.Achat_stock"))
+                return redirect(url_for("main_bp.achat_stock"))
 
             db.session.delete(purchase)
             db.session.commit()
             flash(f"Achat de stock #{purchase_id} supprimé avec succès!", "success")
-            return redirect(url_for("main_bp.Achat_stock"))
+            return redirect(url_for("main_bp.achat_stock"))
 
         except Exception as e:
             db.session.rollback()
@@ -835,7 +838,7 @@ def delete_stock_purchase(purchase_id):
                 f"Error deleting stock purchase {purchase_id}: {e}"
             )
             flash(f"Une erreur est survenue lors de la suppression: {e}", "danger")
-            return redirect(url_for("main_bp.Achat_stock"))
+            return redirect(url_for("main_bp.achat_stock"))
 
     flash("Confirmez la suppression de l'achat de stock.", "warning")
     return render_template(
@@ -843,8 +846,9 @@ def delete_stock_purchase(purchase_id):
         purchase=purchase,
         page_title="Confirmer Suppression",
         segment="stock",
-        sub_segment="Achat_stock",
+        sub_segment="achat_stock",
     )
+
 
 
 @bp.route("/vente_stock", methods=["GET", "POST"])
@@ -853,229 +857,174 @@ def delete_stock_purchase(purchase_id):
 def vente_stock():
     form = SaleForm()
 
-    # IMPORTANT FIX: Set choices for existing_client_id field HERE
+    # --- 1. SETUP FORM DATA ---
+    # Populate client choices dynamically
     clients = Client.query.filter_by(is_active=True).order_by(Client.name).all()
     client_choices = [("", "Sélectionnez un client existant")]
-    client_choices.extend([(str(client.id), client.name) for client in clients])
+    client_choices.extend([(str(c.id), c.name) for c in clients])
     form.existing_client_id.choices = client_choices
 
-    # Populate sale_items FieldList with initial empty forms for GET requests
+    # Pre-fill empty rows for the FieldList on GET
     if request.method == "GET" and not form.sale_items:
         for _ in range(3):
             form.sale_items.append_entry()
 
-    # --- Fetch Paginated Sales (GET request) ---
-    page = request.args.get(
-        "page", 1, type=int
-    )  # Get page number from URL query ?page=...
-
-    # Define the query to fetch sales, ordered by most recent first
-    sales_query = Sale.query.order_by(Sale.created_at.desc())
-
-    # Use db.paginate to get the sales for the current page
-    sales_pagination = db.paginate(
-        sales_query,
-        page=page,
-        # Get SALES_PER_PAGE from config, default to 10 if not set
-        per_page=current_app.config.get("SALES_PER_PAGE", 5),
-        error_out=False,  # Show empty page instead of 404 if page number is invalid
-    )
-
-    # Generate URLs for the 'Next' and 'Previous' pagination links
-    next_url = (
-        url_for("main_bp.vente_stock", page=sales_pagination.next_num)
-        if sales_pagination.has_next
-        else None
-    )
-    prev_url = (
-        url_for("main_bp.vente_stock", page=sales_pagination.prev_num)
-        if sales_pagination.has_prev
-        else None
-    )
-
+    # --- 2. HANDLE POST (Processing the Sale) ---
     if form.validate_on_submit():
-        client = None
-        client_name_adhoc = None
+        try:
+            # A. Resolve Client
+            client = None
+            client_name_adhoc = None
 
-        # Determine client based on choice
-        if form.client_choice.data == "existing":
-            client_id = form.existing_client_id.data
-            if client_id:
+            if form.client_choice.data == "existing":
+                client_id = form.existing_client_id.data
+                if not client_id:
+                    raise ValueError("Veuillez sélectionner un client existant.")
                 client = Client.query.get(int(client_id))
                 if not client:
-                    flash("Client existant sélectionné invalide.", "danger")
-                    return render_template(
-                        "main/vente_stock.html",
-                        form=form,
-                        segment="stock",
-                        sub_segment="vente_stock",
+                    raise ValueError("Client sélectionné invalide.")
+            
+            elif form.client_choice.data == "new":
+                client_name_adhoc = form.new_client_name.data
+                if not client_name_adhoc:
+                    raise ValueError("Veuillez entrer le nom du nouveau client.")
+
+            # B. Process Sale Items
+            total_amount_due = Decimal("0.00")
+            sale_items_to_add = []
+            
+            # Check if list is empty
+            # (Note: Logic depends on how your form handles empty removals, 
+            # usually we filter out empty entries here)
+            
+            for index, item_data in enumerate(form.sale_items.entries):
+                # Skip empty entries if your logic allows it, otherwise validate
+                network_enum = item_data.form.network.data
+                quantity = item_data.form.quantity.data
+                
+                # Basic validation skipping empty rows if needed
+                if not network_enum or not quantity:
+                    continue
+
+                network_type = NetworkType[network_enum]
+                price_override = item_data.form.price_per_unit_applied.data
+
+                # Check Stock Availability
+                stock_item = Stock.query.filter_by(network=network_type).first()
+                
+                if not stock_item:
+                    raise ValueError(f"Réseau '{network_type.value}' introuvable en stock.")
+                
+                if quantity > stock_item.balance:
+                    raise ValueError(
+                        f"Stock insuffisant pour {network_type.value}. "
+                        f"Dispo: {stock_item.balance}, Demandé: {quantity}."
                     )
-            else:
-                flash("Veuillez sélectionner un client existant.", "danger")
-                return render_template(
-                    "main/vente_stock.html",
-                    form=form,
-                    segment="stock",
-                    sub_segment="vente_stock",
+
+                # Determine Price
+                final_unit_price = None
+                if price_override is not None:
+                    final_unit_price = price_override
+                elif stock_item.selling_price_per_unit and stock_item.selling_price_per_unit > 0:
+                    final_unit_price = stock_item.selling_price_per_unit
+                else:
+                    raise ValueError(
+                        f"Prix introuvable pour '{network_type.value}'. "
+                        "Définissez un prix dans le stock ou manuellement."
+                    )
+
+                # Calculate Line Totals
+                subtotal_raw = quantity * final_unit_price
+                subtotal = custom_round_up(subtotal_raw)
+
+                # Prepare Object
+                new_item = SaleItem(
+                    network=network_type,
+                    quantity=quantity,
+                    price_per_unit_applied=final_unit_price,
+                    subtotal=subtotal
                 )
-        elif form.client_choice.data == "new":
-            client_name_adhoc = form.new_client_name.data
-            if not client_name_adhoc:
-                flash("Veuillez entrer le nom du nouveau client.", "danger")
-                return render_template(
-                    "main/vente_stock.html",
-                    form=form,
-                    segment="stock",
-                    sub_segment="vente_stock",
-                )
+                
+                # Deduct Stock Immediately (Optimistic Locking assumed or non-issue for scale)
+                stock_item.balance -= quantity
+                db.session.add(stock_item)
+                
+                sale_items_to_add.append(new_item)
+                total_amount_due += subtotal
 
-        total_amount_due = Decimal("0.00")
-        sale_items_to_add = []
-        errors_during_sale = []
+            if not sale_items_to_add:
+                raise ValueError("Veuillez ajouter au moins un article valide.")
 
-        # Process each sale item
-        for item_data in form.sale_items.entries:
-            # Ensure each individual SaleItemForm also validates its data
-            if not item_data.form.validate():
-                for field_name, field_errors in item_data.form.errors.items():
-                    for error in field_errors:
-                        errors_during_sale.append(
-                            f"Erreur dans l'article {item_data.id}: {item_data.form[field_name].label.text}: {error}"
-                        )
-                continue
+            # C. Finalize Financials
+            cash_paid = form.cash_paid.data if form.cash_paid.data is not None else Decimal("0.00")
+            debt_amount = total_amount_due - cash_paid
 
-            network_type = NetworkType[item_data.form.network.data]
-            quantity = item_data.form.quantity.data
-            price_per_unit_applied_from_form = (
-                item_data.form.price_per_unit_applied.data
-            )  # Get from form
+            if debt_amount < 0:
+                raise ValueError("Le montant payé ne peut pas dépasser le total dû.")
 
-            # Fetch stock to ensure it exists and to calculate subtotal
-            stock_item = Stock.query.filter_by(network=network_type).first()
-
-            if not stock_item:
-                flash(f"Réseau '{network_type.value}' non trouvé en stock.", "danger")
-                continue
-
-            if quantity > stock_item.balance:
-                errors_during_sale.append(
-                    f"Quantité insuffisante pour {network_type.value}. Disponible: {stock_item.balance}, Demandé: {quantity}."
-                )
-                continue
-
-            # Determine the selling price to use for this sale item
-            final_price_per_unit_for_sale_item = None
-            if price_per_unit_applied_from_form is not None:
-                final_price_per_unit_for_sale_item = price_per_unit_applied_from_form
-            elif (
-                stock_item.selling_price_per_unit is not None
-                and stock_item.selling_price_per_unit > 0
-            ):
-                final_price_per_unit_for_sale_item = stock_item.selling_price_per_unit
-            else:
-                errors_during_sale.append(
-                    f"Impossible de déterminer le prix unitaire pour '{network_type.value}'. Veuillez entrer un prix manuellement ou vérifier le stock."
-                )
-                continue
-
-            # Calculate subtotal using the determined price
-            subtotal_unrounded = quantity * final_price_per_unit_for_sale_item
-            subtotal = custom_round_up(
-                subtotal_unrounded
-            )  # Assuming custom_round_up function exists
-
-            # Create SaleItem object
-            new_sale_item = SaleItem(
-                network=network_type,
-                quantity=quantity,
-                price_per_unit_applied=final_price_per_unit_for_sale_item,
-                subtotal=subtotal,
+            # D. Save Sale
+            new_sale = Sale(
+                vendeur=current_user,
+                client=client,
+                client_name_adhoc=client_name_adhoc,
+                total_amount_due=total_amount_due,
+                cash_paid=cash_paid,
+                debt_amount=debt_amount
             )
-            sale_items_to_add.append(new_sale_item)
-            total_amount_due += subtotal
+            new_sale.sale_items.extend(sale_items_to_add)
 
-            # Update stock balance immediately
-            stock_item.balance -= quantity
-            db.session.add(stock_item)
-
-        if errors_during_sale:
-            db.session.rollback()
-            for error in errors_during_sale:
-                flash(error, "error")
-            return render_template(
-                "main/vente_stock.html",
-                form=form,
-                segment="stock",
-                sub_segment="vente_stock",
-            )
-
-        if not sale_items_to_add:
-            flash("Veuillez ajouter au moins un article à la vente.", "danger")
-            return render_template(
-                "main/vente_stock.html",
-                form=form,
-                segment="stock",
-                sub_segment="vente_stock",
-            )
-
-        cash_paid = (
-            form.cash_paid.data if form.cash_paid.data is not None else Decimal("0.00")
-        )
-        debt_amount = total_amount_due - cash_paid
-        if debt_amount < 0:
-            flash("L'argent donné ne peut pas dépasser le montant total dû.", "danger")
-            return render_template(
-                "main/vente_stock.html",
-                form=form,
-                segment="stock",
-                sub_segment="vente_stock",
-            )
-
-        new_sale = Sale(
-            vendeur=current_user,
-            client=client,
-            client_name_adhoc=client_name_adhoc if not client else None,
-            total_amount_due=total_amount_due,
-            cash_paid=cash_paid,
-            debt_amount=debt_amount,
-        )
-
-        new_sale.sale_items.extend(sale_items_to_add)
-        try:
             db.session.add(new_sale)
             db.session.commit()
+
             flash("Vente enregistrée avec succès!", "success")
             return redirect(url_for("main_bp.vente_stock"))
+
+        except ValueError as e:
+            db.session.rollback()
+            flash(str(e), "danger")
         except Exception as e:
             db.session.rollback()
-            flash(f"Erreur lors de l'enregistrement de la vente: {e}", "danger")
-            print(f"Error saving sale: {e}")
-    else:
-        # This block executes if form.validate_on_submit() is False
-        for field, errors in form.errors.items():
-            for error in errors:
-                # Flash errors from main form
-                flash(f"Error in {form[field].label.text}: {error}", "danger")
+            current_app.logger.error(f"Sale Error: {e}")
+            flash("Une erreur système est survenue.", "danger")
 
-        # Check errors on nested FieldList forms
-        for i, entry in enumerate(form.sale_items.entries):
-            if entry.form.errors:
-                for field_name, field_errors in entry.form.errors.items():
-                    for error in field_errors:
-                        # Flash errors from subforms
-                        flash(
-                            f"Erreur article {i+1} - {entry.form[field_name].label.text}: {error}",
-                            "danger",
-                        )
+    # Handle Form Validation Errors (if submit failed but no exception raised)
+    elif form.errors:
+        flash("Veuillez corriger les erreurs dans le formulaire.", "danger")
+        # Optional: Detailed error logging to flash can be done here if desired
 
-    # --- Render the Template ---
+
+    # --- 3. HANDLE GET (Data Fetching & Pagination) ---
+    
+    # A. Get Date Context using your Utility
+    # This automatically checks request.args for 'date' and defaults to Today
+    ctx = get_date_context() 
+    selected_date_str = ctx['date_str']
+
+    # B. Build Query
+    base_sales_query = Sale.query.filter(
+        Sale.created_at >= ctx['start_utc'],
+        Sale.created_at <= ctx['end_utc']
+    ).order_by(Sale.created_at.desc())
+
+    # C. Paginate using your Utility
+    # Note: We unpack the tuple. 'sales_pagination' is the object passed to the macro.
+    # We ignore prev_url/next_url variables because your new macro generates them dynamically.
+    sales_pagination, _, _ = get_paginated_results(
+        base_sales_query,
+        endpoint_name='main_bp.vente_stock',
+        per_page_config_key='SALES_PER_PAGE',
+        date=selected_date_str
+    )
+
     return render_template(
         "main/vente_stock.html",
-        title="Gestion Ventes",
         form=form,
-        sales_pagination=sales_pagination,
-        next_url=next_url,
-        prev_url=prev_url,
+        segment="stock",
+        sub_segment="vente_stock",
+        # Pass the pagination object for the macro
+        sales_pagination=sales_pagination, 
+        # Pass the date string for the Date Filter macro
+        selected_date=selected_date_str
     )
 
 
@@ -1597,31 +1546,22 @@ def encaisser_dette():
     )
 
 
-# Rapports Endpoint
 @bp.route("/rapports", methods=["GET"])
 @login_required
 @superadmin_required
 def rapports():
     page_title = "Rapport Journalier"
 
-    # 1. Get Environment Date Info
-    _, today_local_date, start_of_local_day_utc, end_of_local_day_utc = (
-        get_local_timezone_datetime_info()
-    )
+    # --- REFACTORED: Step 1 & 2 replaced with single Utility Call ---
+    # This retrieves selected_date, is_today flag, and correct UTC ranges
+    ctx = get_date_context()
 
-    # 2. Determine the Single Report Date
-    # Default is TODAY if no date is provided in the URL
-    date_str = request.args.get("date")
-    
-    # Use your utility to parse, defaulting to today if None/Empty
-    selected_date = parse_date_param(date_str, default_date=today_local_date)
-
-    current_app.logger.debug(f"Single Report requested for: {selected_date}")
+    current_app.logger.debug(f"Single Report requested for: {ctx['selected_date']}")
 
     # 3. Initialize Data Structures (Empty State)
+    # (This section remains exactly the same)
     networks = list(NetworkType.__members__.values())
     
-    # Helper to create a zeroed-out structure
     def zero_money(): return Decimal("0.00")
     
     report_data = {
@@ -1650,14 +1590,16 @@ def rapports():
     # 4. Fetch Data Logic
     
     # SCENARIO A: LIVE REPORT (Today)
-    if selected_date == today_local_date:
+    # We use the boolean flag from our utility
+    if ctx['is_today']:
         current_app.logger.info("Fetching LIVE report data for today.")
         
+        # We use the pre-calculated UTC ranges from the utility context
         calculated_data, total_sales_val, total_live_debts = get_daily_report_data(
             current_app,
-            today_local_date, 
-            start_of_utc_range=start_of_local_day_utc,
-            end_of_utc_range=end_of_local_day_utc,
+            ctx['selected_date'], 
+            start_of_utc_range=ctx['start_utc'],
+            end_of_utc_range=ctx['end_utc'],
         )
 
         # Map live calculations to view structure
@@ -1682,10 +1624,10 @@ def rapports():
 
     # SCENARIO B: HISTORICAL REPORT (Past Date)
     else:
-        current_app.logger.info(f"Fetching HISTORICAL report for {selected_date}.")
+        current_app.logger.info(f"Fetching HISTORICAL report for {ctx['selected_date']}.")
 
         # Fetch the single overall summary for that day
-        overall_report = DailyOverallReport.query.filter_by(report_date=selected_date).first()
+        overall_report = DailyOverallReport.query.filter_by(report_date=ctx['selected_date']).first()
 
         if overall_report:
             # Populate Grand Totals directly from the saved report
@@ -1697,7 +1639,7 @@ def rapports():
             grand_totals["total_debts"] = overall_report.total_debts
 
             # Fetch detailed breakdown per network
-            daily_network_reports = DailyStockReport.query.filter_by(report_date=selected_date).all()
+            daily_network_reports = DailyStockReport.query.filter_by(report_date=ctx['selected_date']).all()
             
             for r in daily_network_reports:
                 if r.network.name in report_data:
@@ -1709,7 +1651,7 @@ def rapports():
                         "virtual_value": r.virtual_value,
                     })
         else:
-            flash(f"Aucun rapport archivé trouvé pour le {selected_date.strftime('%d/%m/%Y')}.", "warning")
+            flash(f"Aucun rapport archivé trouvé pour le {ctx['date_str']}.", "warning")
 
     # 5. Final Calculation (Applied to both scenarios)
     grand_totals["total_calculated_sold_stock"] = (
@@ -1724,8 +1666,8 @@ def rapports():
         networks=networks,
         report_data=report_data,
         grand_totals=grand_totals,
-        # We only pass ONE date string back to the template
-        selected_date=selected_date.strftime("%Y-%m-%d"), 
+        # We pass the formatted string directly from the context
+        selected_date=ctx['date_str'], 
     )
 
 @bp.route("/profile", methods=["GET", "POST"])

@@ -1,6 +1,5 @@
-{# apps/templates/home/achat_stock.html #}
-
 {% extends "layouts/base.html" %}
+{% import "includes/_filters.html" as filters %}
 
 {% block title %} Achat Stock {% endblock %}
 
@@ -11,8 +10,8 @@
     {# Render the Page Header #}
     {% set page_title = 'Gestion Stock' %}
     {% set breadcrumb_items = [
-        {'text': 'Stock', 'url': url_for('main_bp.Achat_stock')},
-        {'text': 'Achat stock', 'url': url_for('main_bp.Achat_stock')}
+        {'text': 'Stock', 'url': url_for('main_bp.achat_stock')},
+        {'text': 'Achat stock', 'url': url_for('main_bp.achat_stock')}
     ] %}
     {% include 'includes/page_header.html' %}
 
@@ -33,6 +32,10 @@
                                     </button>
                                 {% endif %}
                             </div>
+                        </div>
+                        <div class="mt-4">
+                            {# Render the filter component #}
+                            {{ filters.render_date_filter(url_for('main_bp.achat_stock'), selected_date) }}
                         </div>
                     </div>
 
@@ -78,6 +81,8 @@
                             </tbody>
                         </table>
                     </div>
+                    {# Render pagination controls #}
+                    {{ filters.render_pagination(stock_purchases_pagination, 'main_bp.achat_stock') }}
                 </div>
             </div>
         </div>
@@ -96,7 +101,7 @@
                     </button>
                 </div>
                 {# The form itself for Stock Purchase #}
-                <form method="post" action="{{ url_for('main_bp.Achat_stock') }}">
+                <form method="post" action="{{ url_for('main_bp.achat_stock') }}">
                     <div class="modal-body"> {# Or just remove this div if it's no longer in a modal #}
                         {{ form.hidden_tag() }} {# CSRF token #}
 
