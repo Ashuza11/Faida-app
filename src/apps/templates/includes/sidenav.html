@@ -25,7 +25,7 @@
                   <ul class="nav nav-sm flex-column">
                     {% if current_user.is_authenticated and current_user.role.value == 'superadmin' %}
                       <li class="nav-item">
-                          <a class="nav-link {% if sub_segment == 'Achat_stock' %}active{% endif %}" href="{{ url_for('main_bp.Achat_stock') }}">
+                          <a class="nav-link {% if sub_segment == 'achat_stock' %}active{% endif %}" href="{{ url_for('main_bp.achat_stock') }}">
                               <i class="fas fa-cart-plus"></i> {# <i class="fas fa-hand-holding-usd"></i> #} {# <i class="fas fa-truck-loading"></i> #} <span class="nav-link-text">Achat stock</span>
                           </a>
                       </li>

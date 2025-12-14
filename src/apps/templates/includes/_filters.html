@@ -1,5 +1,5 @@
 {% macro render_date_filter(target_url, selected_date, label="Selectionner une date") %}
-<div class="date-filter-component mb-4">
+<div class="date-filter-component mb-0">
     <form method="GET" action="{{ target_url }}"> 
         <div class="form-row align-items-end"> 
             <div class="col-auto mb-3"> 
@@ -30,4 +30,63 @@
         </div>
     </form>
 </div>
+{% endmacro %}
+
+
+{% macro render_pagination(pagination, endpoint) %}
+    {% if pagination.pages > 1 %}
+    <div class="card-footer py-4">
+        <nav aria-label="Page navigation">
+            <ul class="pagination justify-content-end mb-0">
+                
+                {# --- Previous Page Link --- #}
+                <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                    {# FIX: Use dict(request.args, page=...) to overwrite the page key safely #}
+                    <a class="page-link" 
+                       href="{{ url_for(endpoint, **dict(request.args, page=pagination.prev_num)) if pagination.has_prev else '#' }}" 
+                       tabindex="-1">
+                        <i class="fas fa-angle-left"></i>
+                        <span class="sr-only">Précédent</span>
+                    </a>
+                </li>
+                
+                {# --- Page Numbers --- #}
+                {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+                    {% if page_num %}
+                        {% if page_num != pagination.page %}
+                            <li class="page-item">
+                                {# FIX: Overwrite 'page' in the args dictionary #}
+                                <a class="page-link" href="{{ url_for(endpoint, **dict(request.args, page=page_num)) }}">
+                                    {{ page_num }}
+                                </a>
+                            </li>
+                        {% else %}
+                            <li class="page-item active">
+                                <a class="page-link" href="#">
+                                    {{ page_num }} 
+                                    <span class="sr-only">(current)</span>
+                                </a>
+                            </li>
+                        {% endif %}
+                    {% else %}
+                        <li class="page-item disabled">
+                            <span class="page-link">...</span>
+                        </li>
+                    {% endif %}
+                {% endfor %}
+
+                {# --- Next Page Link --- #}
+                <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                    {# FIX: Use dict(request.args, page=...) #}
+                    <a class="page-link" 
+                       href="{{ url_for(endpoint, **dict(request.args, page=pagination.next_num)) if pagination.has_next else '#' }}">
+                        <i class="fas fa-angle-right"></i>
+                        <span class="sr-only">Suivant</span>
+                    </a>
+                </li>
+
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
 {% endmacro %}

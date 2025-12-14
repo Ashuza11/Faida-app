@@ -3,8 +3,7 @@ import os
 from pathlib import Path
 from decimal import Decimal
 from apps import db
-import apps
-from flask import current_app
+from flask import current_app, request, url_for
 from apps.models import (
     DailyStockReport,
     NetworkType,
@@ -15,7 +14,7 @@ from apps.models import (
     DailyOverallReport,
 )
 from decimal import Decimal, ROUND_UP, getcontext
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, time
 import pytz
 from sqlalchemy import func
 
@@ -139,263 +138,265 @@ def get_local_timezone_datetime_info():
 
 # Helper function for parsing date parameters (from your blueprint.route)
 def parse_date_param(date_str, default_date):
-    if date_str:
-        try:
-            return datetime.strptime(date_str, "%Y-%m-%d").date()
-        except ValueError:
-            current_app.logger.warning(
+    """
+    Safely parses a date string (YYYY-MM-DD) from the URL.
+    Returns default_date if string is None or invalid.
+    """
+    if not date_str:
+        return default_date
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        current_app.logger.warning(
                 f"Invalid date format received: {date_str}. Using default."
-            )
-            return default_date
-    return default_date
+        )
+        return default_date
+
+
+def get_utc_range_for_date(target_date):
+    """
+    Takes a date object (e.g., 2023-10-25) and returns the 
+    UTC start and end datetimes for that full day in the APP_TIMEZONE.
+    """
+    # 1. Create midnight (00:00:00) and end-of-day (23:59:59) in LOCAL time
+    start_local = datetime.combine(target_date, time.min) # 00:00:00
+    end_local = datetime.combine(target_date, time.max)   # 23:59:59.999999
+
+    # 2. Attach the App's Timezone (Lubumbashi)
+    # is_dst=None lets pytz handle daylight savings usage automatically if applicable
+    start_aware = APP_TIMEZONE.localize(start_local, is_dst=None)
+    end_aware = APP_TIMEZONE.localize(end_local, is_dst=None)
+
+    # 3. Convert to UTC
+    start_utc = start_aware.astimezone(pytz.utc)
+    end_utc = end_aware.astimezone(pytz.utc)
+
+    return start_utc, end_utc
+
+
+
+def get_date_context(arg_key='date'):
+    """
+    Standardizes date handling across all endpoints.
+    
+    Usage:
+        ctx = get_date_context()
+        print(ctx['selected_date']) # Date object
+        print(ctx['start_utc'])     # Datetime object (UTC)
+    """
+    # 1. Get "Now" Context (Environment Info) using your existing function
+    _, today_local, today_start_utc, today_end_utc = get_local_timezone_datetime_info()
+
+    # 2. Parse the requested date from URL
+    date_str = request.args.get(arg_key)
+    selected_date = parse_date_param(date_str, default_date=today_local)
+
+    # 3. Determine if it is "Today"
+    is_today = (selected_date == today_local)
+
+    # 4. Calculate UTC Ranges
+    if is_today:
+        # Optimization: We already calculated today's range in step 1
+        start_utc = today_start_utc
+        end_utc = today_end_utc
+    else:
+        # Use our new helper for past/future dates
+        start_utc, end_utc = get_utc_range_for_date(selected_date)
+
+    return {
+        "selected_date": selected_date,
+        "date_str": selected_date.strftime("%Y-%m-%d"),
+        "is_today": is_today,
+        "start_utc": start_utc,
+        "end_utc": end_utc
+    }
+
+
+
+def get_paginated_results(base_query, endpoint_name, per_page_config_key, **extra_args):
+    """
+    Handles standard pagination logic for any SQLAlchemy query.
+
+    Args:
+        base_query (Query): The SQLAlchemy query object (e.g., Sale.query.filter(...)).
+        endpoint_name (str): The blueprint/view function name (e.g., 'main_bp.vente_stock').
+        per_page_config_key (str): The configuration key for items per page (e.g., 'SALES_PER_PAGE').
+        **extra_args: Any additional URL query parameters to pass through (e.g., date='2025-12-14').
+
+    Returns:
+        tuple: (pagination_object, next_url, prev_url)
+    """
+    # 1. Get current page number from request args, default to 1
+    page = request.args.get("page", 1, type=int)
+
+    # 2. Determine items per page from application config
+    per_page = current_app.config.get(per_page_config_key, 5) # Default to 5 if config not set
+
+    # 3. Perform pagination
+    pagination = db.paginate(
+        base_query,
+        page=page,
+        per_page=per_page,
+        error_out=False,
+    )
+
+    # Helper function to generate URLs, ensuring extra args (like 'date') are included
+    def generate_url(page_num):
+        if page_num:
+            # Combine 'page' arg with any extra args (**extra_args)
+            return url_for(endpoint_name, page=page_num, **extra_args)
+        return None
+
+    # 4. Generate URLs
+    next_url = generate_url(pagination.next_num)
+    prev_url = generate_url(pagination.prev_num)
+
+    return pagination, next_url, prev_url
 
 
 def get_daily_report_data(
     app,
     target_date: date,
-    start_of_utc_range,
-    end_of_utc_range,
+    start_of_utc_range: datetime,
+    end_of_utc_range: datetime,
 ):
     """
-    Calculates comprehensive report data for a *single specific date* (target_date).
-    This function gathers data from live transactions and previous day's reports
-    to present the 'initial', 'purchased', 'sold', 'final', 'virtual', and 'debt'
-    figures for each network for the target_date.
-
-    This data can be used for both real-time display (if target_date is today)
-    and for generating/updating historical daily reports.
-
-    Args:
-        app: Flask app instance.
-        target_date (date): The calendar date (local) for which the report is being generated.
-        start_of_utc_range (datetime, optional): Explicit UTC datetime for the start of the filter period.
-                                                Used for live reports to align with local day.
-        end_of_utc_range (datetime, optional): Explicit UTC datetime for the end of the filter period.
-                                              Used for live reports to align with local day.
+    Calculates comprehensive report data for a single target date based on live transactions.
+    It includes the critical fix for the 'Initial Stock' calculation when no prior report exists.
     """
-    with app.app_context():
-        app.logger.info(f"Calculating report data for target date: {target_date}")
+    
+    # Use the passed UTC ranges directly as they are correctly calculated by the caller (rapports)
+    filter_start_dt = start_of_utc_range
+    filter_end_dt = end_of_utc_range
+    
+    # 1. Setup Environment (Needed for determining is_live_report later in the loop)
+    # The caller (rapports) already handles timezone conversion for TODAY.
+    # We re-fetch TODAY's date to verify if target_date is TODAY for the 'Initial Stock' fix.
+    (_, today_local_date_util, _, _) = get_local_timezone_datetime_info()
 
-        (
-            _,
-            today_local_date_util,
-            start_of_local_day_utc_util,
-            end_of_local_day_utc_util,
-        ) = get_local_timezone_datetime_info()
+    is_live_report = (target_date == today_local_date_util)
+    networks = list(NetworkType.__members__.values())
+    report_results = {}
+    total_sales_value_all = Decimal("0.00")
 
-        # Determine the datetime range for filtering.
-        if target_date == today_local_date_util:
-            # If target_date is today, use the live local-day-aligned UTC range from the utility
-            filter_start_dt = start_of_local_day_utc_util
-            filter_end_dt = end_of_local_day_utc_util
-            app.logger.info(
-                f"For target_date (today), using live UTC filter range: {filter_start_dt} to {filter_end_dt}"
-            )
-        elif start_of_utc_range and end_of_utc_range:
-            # Fallback for explicit overrides, although the above 'today' check is usually sufficient
-            filter_start_dt = start_of_utc_range
-            filter_end_dt = end_of_utc_range
-            app.logger.info(
-                f"Using explicit UTC filter range: {filter_start_dt} to {filter_end_dt}"
-            )
-        else:
-            # For historical reports (target_date is not today), filter based on the target_date's UTC day
-            # This logic assumes historical data timestamps are stored in UTC and correspond directly to a UTC day.
-            # If your historical `report_date` in DailyOverallReport/DailyStockReport refers to a LOCAL date,
-            # but transactions (`created_at`) are UTC, then this needs to properly convert `target_date` (local)
-            # into its corresponding UTC range.
-            # The current way (`datetime.combine(target_date, time.min, tzinfo=timezone.utc)`) assumes target_date
-            # *is* the UTC date, which might not be what you want for historical data that was *generated* for a local day.
-            # Let's adjust this to be robust:
-            filter_start_dt = APP_TIMEZONE.localize(
-                datetime(target_date.year, target_date.month, target_date.day, 0, 0, 0)
-            ).astimezone(pytz.utc)
-            filter_end_dt = APP_TIMEZONE.localize(
-                datetime(
-                    target_date.year,
-                    target_date.month,
-                    target_date.day,
-                    23,
-                    59,
-                    59,
-                    999999,
-                )
-            ).astimezone(pytz.utc)
-            app.logger.info(
-                f"Calculating UTC filter range for historical target_date {target_date}: {filter_start_dt} to {filter_end_dt}"
-            )
+    # 2. Pre-fetch Live Data (Current State and Pricing)
+    live_stock_items = Stock.query.all()
+    live_stock_map = {s.network: s for s in live_stock_items}
 
-        networks = list(NetworkType.__members__.values())
-        report_results = {}
-        total_sales_from_transactions_all_networks = Decimal("0.00")
-        total_debts_overall = Decimal("0.00")  # Initialize here
+    # 3. Calculate Today's Movements (Purchases and Sales)
+    
+    # A. Purchases
+    daily_purchases = (
+        db.session.query(
+            StockPurchase.network,
+            func.sum(StockPurchase.amount_purchased).label("total")
+        )
+        .filter(StockPurchase.created_at >= filter_start_dt, StockPurchase.created_at < filter_end_dt)
+        .group_by(StockPurchase.network)
+        .all()
+    )
+    purchases_map = {p.network: Decimal(str(p.total or 0)) for p in daily_purchases}
 
-        # Get previous day's final stock balances to use as current day's initial stock
-        previous_day = target_date - timedelta(days=1)
-        previous_day_reports = DailyStockReport.query.filter_by(
-            report_date=previous_day
-        ).all()
-        previous_final_stocks_map = {
-            r.network: r.final_stock_balance for r in previous_day_reports
-        }
+    # B. Sales (Quantity & Value)
+    daily_sales = (
+        db.session.query(
+            SaleItem.network,
+            func.sum(SaleItem.quantity).label("qty"),
+            func.sum(SaleItem.subtotal).label("val")
+        )
+        .join(Sale)
+        .filter(Sale.created_at >= filter_start_dt, Sale.created_at < filter_end_dt)
+        .group_by(SaleItem.network)
+        .all()
+    )
+    sales_qty_map = {s.network: Decimal(str(s.qty or 0)) for s in daily_sales}
+    sales_val_map = {s.network: Decimal(str(s.val or 0)) for s in daily_sales}
 
-        # Fetch live stock items to get current buying/selling prices
-        live_stock_items = Stock.query.all()
-        live_stock_map = {s.network: s for s in live_stock_items}
+    # 4. Determine Previous Final Stock (Initial Stock Basis)
+    previous_day = target_date - timedelta(days=1)
+    previous_day_reports = DailyStockReport.query.filter_by(report_date=previous_day).all()
+    previous_stock_map = {r.network: r.final_stock_balance for r in previous_day_reports}
 
-        # Calculate daily purchases for the target_date
-        daily_purchases_query = (
-            db.session.query(
-                StockPurchase.network,
-                func.sum(StockPurchase.amount_purchased).label(
-                    "total_purchased_amount"
-                ),
-            )
+    # 5. Calculate Debts (Cumulative up to end of period)
+    network_debts_map = {}
+    for network in networks:
+        debt_query = (
+            db.session.query(func.sum(Sale.debt_amount))
+            .join(SaleItem)
             .filter(
-                StockPurchase.created_at >= filter_start_dt,
-                StockPurchase.created_at < filter_end_dt,
+                SaleItem.network == network,
+                Sale.debt_amount > 0,
+                Sale.created_at <= filter_end_dt,
             )
-            .group_by(StockPurchase.network)
         )
-        # Add a logger for the SQL query generated
-        app.logger.debug(
-            f"Daily purchases SQL: {daily_purchases_query.statement.compile(dialect=db.engine.dialect)}"
+        network_debts_map[network] = debt_query.scalar() or Decimal("0.00")
+
+    total_debts_overall = sum(network_debts_map.values(), Decimal("0.00"))
+
+    # 6. Build Final Report Data
+    for network in networks:
+        qty_purchased = purchases_map.get(network, Decimal("0.00"))
+        qty_sold = sales_qty_map.get(network, Decimal("0.00"))
+        val_sold = sales_val_map.get(network, Decimal("0.00"))
+        
+        live_item = live_stock_map.get(network)
+        current_balance = live_item.balance if live_item else Decimal("0.00")
+        selling_price = (
+            live_item.selling_price_per_unit if live_item and live_item.selling_price_per_unit is not None 
+            else Decimal("1.00")
         )
-        daily_purchases = daily_purchases_query.all()
 
-        purchases_by_network = {
-            p.network: Decimal(str(p.total_purchased_amount or 0))
-            for p in daily_purchases
-        }
+        # --- STEP 6a: DETERMINE INITIAL STOCK (CRITICAL FIX) ---
+        initial_stock = previous_stock_map.get(network)
 
-        # Calculate daily sales (quantity sold) for the target_date
-        daily_sales_quantity_query = (
-            db.session.query(
-                SaleItem.network,
-                func.sum(SaleItem.quantity).label("total_sold_quantity"),
-            )
-            .join(Sale)
-            .filter(
-                Sale.created_at >= filter_start_dt,
-                Sale.created_at < filter_end_dt,
-            )
-            .group_by(SaleItem.network)
-        )
-        # Add a logger for the SQL query generated
-        app.logger.debug(
-            f"Daily sales quantity SQL: {daily_sales_quantity_query.statement.compile(dialect=db.engine.dialect)}"
-        )
-        daily_sales_quantity = daily_sales_quantity_query.all()
-
-        sold_quantities_by_network = {
-            s.network: Decimal(str(s.total_sold_quantity or 0))
-            for s in daily_sales_quantity
-        }
-
-        # Calculate daily sales (total monetary value) for the target_date
-        daily_sales_value_query = (
-            db.session.query(
-                SaleItem.network,
-                func.sum(SaleItem.subtotal).label("total_sold_value"),
-            )
-            .join(Sale)
-            .filter(
-                Sale.created_at >= filter_start_dt,
-                Sale.created_at < filter_end_dt,
-            )
-            .group_by(SaleItem.network)
-        )
-        # Add a logger for the SQL query generated
-        app.logger.debug(
-            f"Daily sales value SQL: {daily_sales_value_query.statement.compile(dialect=db.engine.dialect)}"
-        )
-        daily_sales_value = daily_sales_value_query.all()
-
-        sold_values_by_network = {
-            s.network: Decimal(str(s.total_sold_value or 0)) for s in daily_sales_value
-        }
-
-        # Calculate network-specific debts as of target_date
-        # For debts, you want all *outstanding* debts created up to the end of the filter period.
-        # This is cumulative.
-        network_debts = {}
-        for network in networks:
-            current_network_debts_query = (
-                db.session.query(func.sum(Sale.debt_amount))
-                .join(SaleItem)
-                .filter(
-                    SaleItem.network == network,
-                    Sale.debt_amount > 0,
-                    Sale.created_at
-                    <= filter_end_dt,  # All outstanding debts up to end of period
-                )
-            )
-            # Debug SQL for debts as well
-            app.logger.debug(
-                f"Debt query SQL for {network.name}: {current_network_debts_query.statement.compile(dialect=db.engine.dialect)}"
-            )
-            debt_sum = current_network_debts_query.scalar() or Decimal("0.00")
-            network_debts[network] = debt_sum
-
-        # Aggregate total debts across all networks for the grand total
-        total_debts_overall = sum(network_debts.values(), Decimal("0.00"))
-
-        for network in networks:
-            initial_stock = previous_final_stocks_map.get(
-                network, Decimal("0.00")
-            )  # Default to 0
-
-            # If no previous day's report, or if target_date is today,
-            # fall back to the live stock balance for initial stock.
-            # This ensures live data for today's report starts from current stock.
-            # For historical reports, we should rely on the previous_final_stocks_map.
-            if (
-                target_date == today_local_date_util and not initial_stock
-            ):  # Check if initial_stock is 0 or not found
-                live_stock = live_stock_map.get(network)
-                initial_stock = live_stock.balance if live_stock else Decimal("0.00")
+        if initial_stock is None:
+            # If no historical record exists for the day before...
+            if is_live_report:
+                # REVERSE CALCULATION for TODAY's report: Initial = Current + Sold - Purchased
+                initial_stock = current_balance + qty_sold - qty_purchased
+                
                 app.logger.debug(
-                    f"For live report ({target_date}), no previous day report for {network.name}. "
-                    f"Using live stock as initial: {initial_stock}"
+                    f"[{network.name}] LIVE FIX: Initial Stock reverse calculated to {initial_stock} "
+                    f"from Current: {current_balance}, Sold: {qty_sold}, Purchased: {qty_purchased}."
                 )
-
-            purchased_stock = purchases_by_network.get(network, Decimal("0.00"))
-            sold_stock_quantity = sold_quantities_by_network.get(
-                network, Decimal("0.00")
-            )
-            sold_stock_value = sold_values_by_network.get(network, Decimal("0.00"))
-
-            final_stock = initial_stock + purchased_stock - sold_stock_quantity
-
-            selling_price_per_unit = Decimal("0.00")
-            if live_stock_map.get(network):
-                selling_price_per_unit = live_stock_map[
-                    network
-                ].selling_price_per_unit or Decimal("1.00")
-
-            virtual_value = final_stock * selling_price_per_unit
-
-            debt_amount = network_debts.get(network, Decimal("0.00"))
-
-            report_results[network.name] = {
-                "network": network,
-                "initial_stock": initial_stock,
-                "purchased_stock": purchased_stock,
-                "sold_stock_quantity": sold_stock_quantity,
-                "sold_stock_value": sold_stock_value,
-                "final_stock": final_stock,
-                "virtual_value": virtual_value,
-                "debt_amount": debt_amount,
-            }
-            total_sales_from_transactions_all_networks += sold_stock_value
-
-        return (
-            report_results,
-            total_sales_from_transactions_all_networks,
-            total_debts_overall,
-        )
+            else:
+                # If it's a historical date AND no record exists, assume the start was 0.
+                initial_stock = Decimal("0.00")
+        
+        # If initial_stock was found in history, ensure it's Decimal
+        elif not isinstance(initial_stock, Decimal):
+             initial_stock = Decimal(str(initial_stock))
 
 
+        # --- STEP 6b: CALCULATE FINAL STOCK ---
+        final_stock = initial_stock + qty_purchased - qty_sold
+
+        # --- STEP 6c: OTHER METRICS ---
+        virtual_value = final_stock * selling_price
+        debt_amount = network_debts_map.get(network, Decimal("0.00"))
+
+        # Store results
+        report_results[network.name] = {
+            "network": network,
+            "initial_stock": initial_stock,
+            "purchased_stock": qty_purchased,
+            "sold_stock_quantity": qty_sold,
+            "sold_stock_value": val_sold,
+            "final_stock": final_stock,
+            "virtual_value": virtual_value,
+            "debt_amount": debt_amount,
+        }
+        
+        total_sales_value_all += val_sold
+
+    return (
+        report_results,
+        total_sales_value_all,
+        total_debts_overall,
+    )
+
+
+# Change this and user a button to register daily reports
 def update_daily_reports(app, report_date_to_update=None):
     """
     Calculates and updates DailyStockReport and DailyOverallReport for a given date.
@@ -740,3 +741,5 @@ def seed_initial_stock_balances(app, seed_report_date: date):
             app.logger.error(f"Error seeding initial report data: {e}", exc_info=True)
             db.session.rollback()
             raise  # Re-raise the exception to fail the setup command
+
+
