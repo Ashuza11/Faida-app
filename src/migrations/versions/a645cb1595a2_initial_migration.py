@@ -1,8 +1,8 @@
 """Initial migration.
 
-Revision ID: d644bbdb8b05
+Revision ID: a645cb1595a2
 Revises: 
-Create Date: 2025-11-12 17:12:20.321359
+Create Date: 2025-12-23 05:32:00.184560
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'd644bbdb8b05'
+revision = 'a645cb1595a2'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -108,12 +108,12 @@ def upgrade():
     )
     op.create_table('stock_purchases',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+    sa.Column('purchased_by_id', sa.Integer(), nullable=False),
     sa.Column('stock_item_id', sa.Integer(), nullable=False),
     sa.Column('network', sa.Enum('AIRTEL', 'AFRICEL', 'ORANGE', 'VODACOM', name='networktype'), nullable=False),
     sa.Column('buying_price_at_purchase', sa.Numeric(precision=10, scale=2), nullable=False),
     sa.Column('selling_price_at_purchase', sa.Numeric(precision=10, scale=2), nullable=False),
     sa.Column('amount_purchased', sa.Integer(), nullable=False),
-    sa.Column('purchased_by_id', sa.Integer(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['purchased_by_id'], ['users.id'], ),
     sa.ForeignKeyConstraint(['stock_item_id'], ['stock.id'], ),

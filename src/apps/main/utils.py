@@ -254,6 +254,71 @@ def get_paginated_results(base_query, endpoint_name, per_page_config_key, **extr
     return pagination, next_url, prev_url
 
 
+
+def get_stock_purchase_history_query(date_filter=True, date_arg_key='date'):
+    """
+    Builds the base SQLAlchemy query for 'Historique des Achats Stock',
+    optionally filtering by date from the request arguments.
+
+    Args:
+        date_filter (bool): If True, applies the date filter based on request.args.
+        date_arg_key (str): The key used in request.args for the date parameter.
+
+    Returns:
+        SQLAlchemy Query object: The base query, ordered by creation date (desc).
+    """
+    
+    # Start with the base query for the StockPurchase model
+    query = StockPurchase.query.order_by(StockPurchase.created_at.desc())
+    
+    # Apply date filter if requested
+    if date_filter:
+        ctx = get_date_context(arg_key=date_arg_key)
+        
+        # Apply the date range filtering using UTC timestamps
+        query = query.filter(
+            StockPurchase.created_at >= ctx['start_utc'],
+            StockPurchase.created_at <= ctx['end_utc']
+        )
+        # Return the context needed by the endpoint for the frontend filter
+        return query, ctx
+    
+    # If no date filter, just return the base query and an empty context
+    return query, {}
+
+
+def get_sales_history_query(date_filter=True, date_arg_key='date'):
+    """
+    Builds the base SQLAlchemy query for 'Historique des Ventes',
+    optionally filtering by date from the request arguments.
+
+    Args:
+        date_filter (bool): If True, applies the date filter based on request.args.
+        date_arg_key (str): The key used in request.args for the date parameter.
+
+    Returns:
+        tuple: (SQLAlchemy Query object, dict of date context)
+    """
+    
+    # Start with the base query for the Sale model, ordered by creation date (desc)
+    query = Sale.query.order_by(Sale.created_at.desc())
+    
+    # Apply date filter if requested
+    if date_filter:
+        ctx = get_date_context(arg_key=date_arg_key)
+        
+        # Apply the date range filtering using UTC timestamps
+        query = query.filter(
+            Sale.created_at >= ctx['start_utc'],
+            Sale.created_at <= ctx['end_utc']
+        )
+        # Return the context needed by the endpoint for the frontend filter
+        return query, ctx
+    
+    # If no date filter, just return the base query and an empty context
+    return query, {}
+
+
 def get_daily_report_data(
     app,
     target_date: date,
@@ -416,10 +481,20 @@ def update_daily_reports(app, report_date_to_update=None):
         )
 
         try:
-            # Use the new generalized function to get all calculated data
+            # 1. Calculate the necessary UTC date range for the target report date
+            start_utc, end_utc = get_utc_range_for_date(report_date_to_update)
+            
+            # 2. Pass the full set of required arguments to the calculator function
             report_data, total_sales_from_transactions, total_debts_overall = (
-                get_daily_report_data(app, report_date_to_update)
+                get_daily_report_data(
+                    app, 
+                    report_date_to_update,
+                    start_utc,          
+                    end_utc             
+                )
             )
+
+            total_initial_stock_day_overall = Decimal("0.00")
 
             total_initial_stock_day_overall = Decimal("0.00")
             total_purchased_stock_day_overall = Decimal("0.00")

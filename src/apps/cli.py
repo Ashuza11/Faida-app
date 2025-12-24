@@ -102,11 +102,11 @@ def register_cli_commands(app):
         default=None,
         help="Date for report (YYYY-MM-DD). Defaults to yesterday.",
     )
-    def generate_reports_command(date_str):
+    def generate_reports_command(date):
         """Generates/updates daily reports for a given date."""
-        if date_str:
+        if date:
             try:
-                report_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                report_date = datetime.strptime(date, "%Y-%m-%d").date()
             except ValueError:
                 click.echo("Invalid date format. Please use YYYY-MM-DD.")
                 return

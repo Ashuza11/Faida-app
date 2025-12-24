@@ -1,12 +1,13 @@
-{% macro render_date_filter(target_url, selected_date, label="Selectionner une date") %}
-<div class="date-filter-component mb-0">
-    <form method="GET" action="{{ target_url }}"> 
-        <div class="form-row align-items-end"> 
-            <div class="col-auto mb-3"> 
-                <label for="date_filter" class="form-control-label font-weight-bold">
+{% macro render_date_filter(target_url, selected_date, label="Selectionner une date", show_label=True) %}
+<div class="date-filter-component">
+    <form method="GET" action="{{ target_url }}">
+        <div class="form-row align-items-end justify-content-start">
+            <div class="col-sm-auto col-12 mb-2">
+                {% if show_label %}
+                <label for="date_filter" class="form-control-label font-weight-bold text-white">
                     <i class="far fa-calendar-alt mr-1"></i> {{ label }}
                 </label>
-                
+                {% endif %}
                 <input type="date" 
                        id="date_filter" 
                        name="date" 
@@ -14,19 +15,16 @@
                        value="{{ selected_date }}" 
                        required>
             </div>
-            <div class="col-auto mb-3"> 
-                <div class="btn-group">
-                    <button type="submit" class="btn btn-primary shadow-sm">
+            <div class="col-sm-auto col-12 mb-2">
+                <div class="btn-group w-100">
+                    <button type="submit" class="btn btn-secondary shadow-sm">
                         <i class="fas fa-filter mr-1"></i> Filtrer
                     </button>
-                    <div>
-                        <a href="{{ target_url }}" class="btn btn-outline-secondary shadow-none" title="Réinitialiser le filtre">
-                            <i class="fas fa-redo"></i>
-                        </a>
-                    </div>
+                    <a href="{{ target_url }}" class="btn btn-neutral shadow-none" title="Réinitialiser">
+                        <i class="fas fa-redo"></i>
+                    </a>
                 </div>
             </div>
-
         </div>
     </form>
 </div>
