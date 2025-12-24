@@ -10,6 +10,7 @@ class Config(object):
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SALES_PER_PAGE = 5
+    PURCHASES_PER_PAGE = 5
     
     # Base configuration for database connection parameters, retrieved from OS environment
     DBUSER = os.environ.get("DBUSER")

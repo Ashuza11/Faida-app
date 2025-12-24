@@ -12,6 +12,10 @@ from apps.main.utils import (
     get_local_timezone_datetime_info,
     APP_TIMEZONE,
     get_date_context,
+    get_stock_purchase_history_query,
+    get_sales_history_query,
+    update_daily_reports,
+    
 )
 
 from apps import db
@@ -525,6 +529,8 @@ def client_toggle_active(client_id):
     flash(f"Client {client.name} {status_message} avec succès!", "success")
     return redirect(url_for("main_bp.client_management"))
 
+
+
 @bp.route("/achat_stock", methods=["GET", "POST"])
 @login_required
 @superadmin_required
@@ -534,50 +540,43 @@ def achat_stock():
     # --- 1. HANDLE POST (Processing the Purchase) ---
     if form.validate_on_submit():
         try:
+            # A. Extract Network
             network_type_string_from_form = form.network.data
-            
-            # 1. Validate and Resolve Network Type
             try:
+                # Assuming NetworkType is your Enum
                 network_enum = NetworkType(network_type_string_from_form.lower())
             except ValueError:
-                raise ValueError(
-                    f"Le type de réseau '{network_type_string_from_form}' n'est pas valide."
-                )
+                raise ValueError(f"Le type de réseau '{network_type_string_from_form}' n'est pas valide.")
 
+            # B. Extract Amounts
             amount_purchased = form.amount_purchased.data
 
-            # 2. Resolve Prices (Buying and Selling)
+            # C. Determine Buying Price
             buying_price_to_record = None
             if form.buying_price_choice.data == "custom":
                 buying_price_to_record = form.custom_buying_price.data
             elif form.buying_price_choice.data:
                 buying_price_to_record = Decimal(form.buying_price_choice.data)
 
+            # D. Determine Selling Price
             selling_price_to_record = None
             if form.intended_selling_price_choice.data == "custom":
                 selling_price_to_record = form.custom_intended_selling_price.data
             elif form.intended_selling_price_choice.data:
-                selling_price_to_record = Decimal(
-                    form.intended_selling_price_choice.data
-                )
+                selling_price_to_record = Decimal(form.intended_selling_price_choice.data)
 
+            # E. Validate Prices
             if buying_price_to_record is None or selling_price_to_record is None:
-                raise ValueError(
-                    "Veuillez sélectionner ou entrer un prix d'achat et un prix de vente."
-                )
-            
-            # --- 3. Database Operations ---
-            
-            # A. Update/Create Stock Item
+                raise ValueError("Veuillez sélectionner ou entrer un prix d'achat et un prix de vente.")
+
+            # F. Database Operations
             stock_item = Stock.query.filter_by(network=network_enum).first()
 
             if stock_item:
-                # Update existing stock
                 stock_item.balance += amount_purchased
                 stock_item.buying_price_per_unit = buying_price_to_record
                 stock_item.selling_price_per_unit = selling_price_to_record
             else:
-                # Create new stock item
                 stock_item = Stock(
                     network=network_enum,
                     balance=amount_purchased,
@@ -587,9 +586,9 @@ def achat_stock():
                 )
                 db.session.add(stock_item)
 
-            db.session.flush() # Ensure stock_item.id is available
+            # Flush to get IDs if needed, though commit handles it
+            db.session.flush()
 
-            # B. Record Purchase History
             new_purchase = StockPurchase(
                 stock_item_id=stock_item.id,
                 network=network_enum,
@@ -602,6 +601,7 @@ def achat_stock():
             db.session.commit()
 
             flash("Achat de stock enregistré avec succès!", "success")
+            # Redirect to Clear the POST request
             return redirect(url_for("main_bp.achat_stock"))
 
         except ValueError as e:
@@ -610,48 +610,34 @@ def achat_stock():
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Error recording stock purchase: {e}")
-            flash(
-                f"Une erreur système est survenue lors de l'enregistrement de l'achat.",
-                "danger",
-            )
+            flash("Une erreur système est survenue lors de l'enregistrement.", "danger")
     
-    # Handle Form Validation Errors (if submit failed but no exception raised)
     elif form.errors:
-        flash("Veuillez corriger les erreurs dans le formulaire d'achat.", "danger")
-    
+        # This helps debug if Validation is failing silently
+        print("Form Errors:", form.errors) 
+        flash("Veuillez corriger les erreurs dans le formulaire.", "danger")
 
     # --- 2. HANDLE GET (Data Fetching & Pagination) ---
     
-    # A. Get Date Context using your Utility
-    ctx = get_date_context() 
-    selected_date_str = ctx['date_str']
+    # Use helper to get query and context
+    base_purchases_query, ctx = get_stock_purchase_history_query(date_filter=True)
+    selected_date_str = ctx.get('date_str') 
 
-    # B. Build Query (Filtered by Date)
-    base_purchases_query = StockPurchase.query.filter(
-        StockPurchase.created_at >= ctx['start_utc'],
-        StockPurchase.created_at <= ctx['end_utc']
-    ).order_by(StockPurchase.created_at.desc())
-
-    # C. Paginate using your Utility
-    # *** CHANGE HERE: Using SALES_PER_PAGE instead of PURCHASES_PER_PAGE ***
+    # Paginate results
     stock_purchases_pagination, _, _ = get_paginated_results(
         base_purchases_query,
         endpoint_name='main_bp.achat_stock',
-        per_page_config_key='SALES_PER_PAGE',
-        date=selected_date_str 
+        per_page_config_key='SALES_PER_PAGE', 
+        date=selected_date_str
     )
 
-    # D. Prepare Data for Template
     return render_template(
         "main/achat_stock.html",
         form=form,
         segment="stock",
         sub_segment="achat_stock",
-        # Data needed for the list display:
         stock_purchases=stock_purchases_pagination.items, 
-        # Data needed for the pagination macro:
         stock_purchases_pagination=stock_purchases_pagination, 
-        # Data needed for the date filter macro:
         selected_date=selected_date_str
     )
 
@@ -997,18 +983,10 @@ def vente_stock():
     
     # A. Get Date Context using your Utility
     # This automatically checks request.args for 'date' and defaults to Today
-    ctx = get_date_context() 
-    selected_date_str = ctx['date_str']
+    base_sales_query, ctx = get_sales_history_query(date_filter=True)
+    selected_date_str = ctx.get('date_str')
 
-    # B. Build Query
-    base_sales_query = Sale.query.filter(
-        Sale.created_at >= ctx['start_utc'],
-        Sale.created_at <= ctx['end_utc']
-    ).order_by(Sale.created_at.desc())
-
-    # C. Paginate using your Utility
-    # Note: We unpack the tuple. 'sales_pagination' is the object passed to the macro.
-    # We ignore prev_url/next_url variables because your new macro generates them dynamically.
+    # B. Paginate using your Utility
     sales_pagination, _, _ = get_paginated_results(
         base_sales_query,
         endpoint_name='main_bp.vente_stock',
@@ -1558,8 +1536,15 @@ def rapports():
 
     current_app.logger.debug(f"Single Report requested for: {ctx['selected_date']}")
 
+    # Get recent purchases (filtered by date, desc order)
+    purchase_query, _ = get_stock_purchase_history_query(date_filter=True)
+    recent_purchases = purchase_query.limit(5).all()
+
+    # Get recent sales (filtered by date, desc order)
+    sales_query, _ = get_sales_history_query(date_filter=True)
+    recent_sales = sales_query.limit(5).all()
+
     # 3. Initialize Data Structures (Empty State)
-    # (This section remains exactly the same)
     networks = list(NetworkType.__members__.values())
     
     def zero_money(): return Decimal("0.00")
@@ -1666,9 +1651,41 @@ def rapports():
         networks=networks,
         report_data=report_data,
         grand_totals=grand_totals,
-        # We pass the formatted string directly from the context
         selected_date=ctx['date_str'], 
+        # Pass the lists to the template
+        recent_purchases=recent_purchases, 
+        recent_sales=recent_sales
     )
+
+
+@bp.route("/rapports/archive", methods=["POST"])
+@login_required
+@superadmin_required
+def archive_daily_report():
+    # 1. Get the date from the hidden input in your HTML form
+    date_str = request.form.get('date_to_archive')
+    
+    if not date_str:
+        flash("Aucune date spécifiée pour l'archivage.", "danger")
+        return redirect(url_for('main_bp.rapports'))
+
+    try:
+        # Convert string 'YYYY-MM-DD' to a date object
+        report_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        
+        # 2. Call your existing helper function!
+        # This will create or update the DailyStockReport and DailyOverallReport
+        update_daily_reports(current_app._get_current_object(), report_date_to_update=report_date)
+        
+        flash(f"Le rapport du {date_str} a été validé et archivé avec succès.", "success")
+        
+    except Exception as e:
+        current_app.logger.error(f"Erreur d'archivage manuelle: {str(e)}")
+        flash(f"Une erreur est survenue lors de l'archivage : {str(e)}", "danger")
+
+    # Redirect back to the reports page for that specific date
+    return redirect(url_for('main_bp.rapports', date=date_str))
+
 
 @bp.route("/profile", methods=["GET", "POST"])
 @login_required

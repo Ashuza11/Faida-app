@@ -5,36 +5,150 @@
 {% block title %} {{ page_title }} {% endblock %}
 
 {% block content %}
-
     <div class="header bg-primary pb-6">
       <div class="container-fluid">
         <div class="header-body">
-          <div class="row align-items-center py-4">
-            <div class="col-lg-6 col-7">
+          <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center py-4">
+            
+            {# LEFT SIDE: Title and Breadcrumbs #}
+            <div class="d-flex align-items-center mb-3 mb-md-0 w-100 w-md-auto">
               <h6 class="h2 text-white d-inline-block mb-0">Rapports</h6>
               <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
-                <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
+                <ol class="breadcrumb breadcrumb-links breadcrumb-dark mb-0">
                   <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}"><i class="fas fa-home"></i></a></li>
-                  <li class="breadcrumb-item"><a href="{{ url_for('main_bp.rapports') }}">Rapports</a></li>
-                  <li class="breadcrumb-item active" aria-current="page">{{ page_title }}</li>
+                  <li class="breadcrumb-item active">{{ page_title }}</li>
                 </ol>
               </nav>
             </div>
+
+            {# RIGHT SIDE: Buttons Bloc #}
+            <div class="d-flex align-items-center flex-wrap w-100 w-md-auto justify-content-start justify-content-md-end">
+                {# 1. Date Filter #}
+                <div class="mr-2">
+                    {{ filters.render_date_filter(url_for('main_bp.rapports'), selected_date, show_label=False) }}
+                </div>
+
+                {# 2. The Archive Form #}
+                <form action="{{ url_for('main_bp.archive_daily_report') }}" method="POST" 
+                      class="m-0 p-0"
+                      onsubmit="return confirm('Voulez-vous vraiment enregistrer/mettre à jour les rapports pour le {{ selected_date }} ?');">
+                    
+                    <input type="hidden" name="date_to_archive" value="{{ selected_date }}">
+                    
+                    <button type="submit" class="btn btn-neutral text-primary shadow-sm" style="min-height: 40px; white-space: nowrap;">
+                        <i class="fas fa-cloud-upload-alt"></i> <span class="d-none d-sm-inline">Archiver le Journal</span>
+                    </button>
+                </form>
+            </div>
+
           </div>
         </div>
       </div>
     </div>
 
     <div class="container-fluid mt--6">
+
+          <div class="row mt-5">
+        <div class="col-xl-12">
+          <div class="card shadow">
+            <div class="card-header border-0">
+              <h3 class="mb-0">Historique des Achats Stock</h3>
+            </div>
+            <div class="table-responsive">
+              <table class="table align-items-center table-flush">
+                <thead class="thead-light">
+                  <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">Réseau</th>
+                    <th scope="col">Quantité Achetée</th>
+                    <th scope="col">Prix d'Achat (FC)</th>
+                    <th scope="col">Acheteur</th>
+                    <th scope="col">Date & Heure</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for purchase in recent_purchases %}
+                  <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ purchase.network.value | upper }}</td>
+                    <td>{{ "{:,.2f}".format(purchase.amount_purchased | default(0)) }}</td>
+                    <td>{{ "{:,.2f}".format(purchase.buying_price_at_purchase | default(0)) }}</td>
+                    <td>{{ purchase.purchased_by.username }}</td>
+                    <td>{{ purchase.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
+                  </tr>
+                  {% else %}
+                  <tr>
+                    <td colspan="7" class="text-center">Aucun achat de stock enregistré pour cette date.</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+      <div class="row mt-5">
+        <div class="col-xl-12">
+          <div class="card shadow">
+            <div class="card-header border-0">
+              <h3 class="mb-0">Historique des Ventes</h3>
+            </div>
+            <div class="table-responsive">
+              <table class="table align-items-center table-flush">
+                <thead class="thead-light">
+                  <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">Client</th>
+                    <th scope="col">Vendeur</th>
+                    <th scope="col">Total Dû (FC)</th>
+                    <th scope="col">Argent Donné (FC)</th>
+                    <th scope="col">Dette (FC)</th>
+                    <th scope="col">Date & Heure</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for sale in recent_sales %}
+                  <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>
+                      {% if sale.client %}
+                        {{ sale.client.name }}
+                      {% else %}
+                        {{ sale.client_name_adhoc or 'Client Anonyme' }}
+                      {% endif %}
+                    </td>
+                    <td>{{ sale.vendeur.username }}</td>
+                    <td>{{ "{:,.2f}".format(sale.total_amount_due | default(0)) }}</td>
+                    <td>{{ "{:,.2f}".format(sale.cash_paid | default(0)) }}</td>
+                    <td>
+                      {% if sale.debt_amount > 0 %}
+                        <span class="badge badge-danger h-6 p-2">{{ "{:,.2f}".format(sale.debt_amount) }}</span>
+                      {% else %}
+                        {{ "{:,.2f}".format(sale.debt_amount | default(0)) }}
+                      {% endif %}
+                    </td>
+                    <td>{{ sale.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
+                  </tr>
+                  {% else %}
+                  <tr>
+                    <td colspan="8" class="text-center">Aucune vente enregistrée pour cette date.</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
       <div class="row">
         <div class="col-xl-12">
           <div class="card">
             <div class="card-header border-0">
-              <h3 class="mb-0">Balance Compte Stock (Rapport Quotidien)</h3>
-            </div>
-            <div class="card-body">
-              {# Render the filter component #}
-              {{ filters.render_date_filter(url_for('main_bp.rapports'), selected_date) }}
+              <h3 class="mb-0">Journal des transactions</h3>
             </div>
             <div class="table-responsive">
               <table class="table align-items-center table-flush">

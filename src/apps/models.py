@@ -191,6 +191,13 @@ class StockPurchase(db.Model):
 
     id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
 
+    purchased_by_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=False
+    )
+    purchased_by: so.Mapped["User"] = so.relationship(
+        back_populates="stock_purchases_made"
+    )
+
     stock_item_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("stock.id"), nullable=False
     )
@@ -209,19 +216,12 @@ class StockPurchase(db.Model):
 
     amount_purchased: so.Mapped[int] = so.mapped_column(sa.Integer, nullable=False)
 
-    purchased_by_id: so.Mapped[int] = so.mapped_column(
-        sa.ForeignKey("users.id"), nullable=False
-    )
-    purchased_by: so.Mapped["User"] = so.relationship(
-        back_populates="stock_purchases_made"
-    )
     # This was the first created_at, keep this one and ensure lambda and timezone.utc
     created_at: so.Mapped[datetime] = so.mapped_column(
         sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
-    # FIX: REMOVE THIS DUPLICATE AND INCORRECT created_at
-    # created_at: so.Mapped[datetime] = so.mapped_column(default=datetime.utcnow)
+
 
     def __repr__(self) -> str:
         return f"<StockPurchase {self.network.value} - {self.amount_purchased} units bought at {self.buying_price_at_purchase} FC, intended sell at {self.selling_price_at_purchase} FC>"
