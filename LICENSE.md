@@ -1,7 +1,7 @@
 MIT License
 
 Copyright (c) 2019 - present Creative-Tim / [AppSeed-generator](https://app-generator.dev/)
-Copyright (c) 2025 - present AirtFast
+Copyright (c) 2025 - present Faida App
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

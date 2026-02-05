@@ -2,10 +2,205 @@
 
 {% block title %} Carte des Clients {% endblock title %}
 
-{% block head %}
-    {{ super() }}
+{% block stylesheets %}
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-{% endblock %}
+    <style>
+        /* ========================================
+           LEAFLET FIXES FOR ARGON DASHBOARD
+           ======================================== */
+        
+        #map-canvas {
+            height: 550px !important;
+            width: 100% !important;
+            position: relative !important;
+            z-index: 1;
+            border-radius: 0.375rem;
+        }
+        
+        .leaflet-pane,
+        .leaflet-tile,
+        .leaflet-marker-icon,
+        .leaflet-marker-shadow,
+        .leaflet-tile-container,
+        .leaflet-pane > svg,
+        .leaflet-pane > canvas,
+        .leaflet-zoom-box,
+        .leaflet-image-layer,
+        .leaflet-layer {
+            position: absolute;
+            left: 0;
+            top: 0;
+        }
+        
+        .leaflet-tile {
+            visibility: visible !important;
+            opacity: 1 !important;
+        }
+        
+        .leaflet-container {
+            overflow: hidden;
+            background: #ddd;
+        }
+        
+        .card.border-0 {
+            overflow: visible;
+        }
+        
+        .leaflet-control-container {
+            position: absolute;
+            z-index: 1000;
+        }
+
+        /* ========================================
+           POPUP STYLING
+           ======================================== */
+        
+        .client-popup {
+            min-width: 280px;
+        }
+        
+        .client-popup .popup-header {
+            border-bottom: 2px solid #5e72e4;
+            padding-bottom: 8px;
+            margin-bottom: 10px;
+        }
+        
+        .client-popup .popup-header h5 {
+            margin: 0;
+            color: #333;
+            font-weight: 700;
+            font-size: 16px;
+        }
+        
+        .client-popup .popup-header .value-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        
+        .client-popup .popup-header .value-badge.high {
+            background: #2dce89;
+            color: white;
+        }
+        
+        .client-popup .popup-header .value-badge.medium {
+            background: #fb6340;
+            color: white;
+        }
+        
+        .client-popup .popup-header .value-badge.low {
+            background: #5e72e4;
+            color: white;
+        }
+        
+        .client-popup .contact-info {
+            font-size: 13px;
+            color: #555;
+            margin-bottom: 10px;
+        }
+        
+        .client-popup .contact-info i {
+            width: 18px;
+            color: #5e72e4;
+        }
+        
+        .client-popup .purchases-section h6 {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #8898aa;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        
+        .client-popup .network-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+            border-bottom: 1px solid #eee;
+            font-size: 13px;
+        }
+        
+        .client-popup .network-row:last-child {
+            border-bottom: none;
+        }
+        
+        .client-popup .network-name {
+            font-weight: 500;
+        }
+        
+        .client-popup .network-name.airtel { color: #FC0105; }
+        .client-popup .network-name.orange { color: #FF6600; }
+        .client-popup .network-name.vodacom { color: #E31D1A; }
+        .client-popup .network-name.africel { color: #9A217E; }
+        
+        .client-popup .network-amount {
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .client-popup .total-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0 0 0;
+            margin-top: 8px;
+            border-top: 2px solid #5e72e4;
+            font-weight: 700;
+        }
+        
+        .client-popup .total-row .total-amount {
+            color: #2dce89;
+            font-size: 15px;
+        }
+        
+        /* ========================================
+           MAP LEGEND
+           ======================================== */
+        
+        .map-legend {
+            background: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            font-size: 12px;
+        }
+        
+        .map-legend h6 {
+            margin: 0 0 8px 0;
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #8898aa;
+            font-weight: 600;
+        }
+        
+        .map-legend .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        
+        .map-legend .legend-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .map-legend .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            margin-right: 8px;
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        
+        .map-legend .legend-color.high { background: #2dce89; }
+        .map-legend .legend-color.medium { background: #fb6340; }
+        .map-legend .legend-color.low { background: #5e72e4; }
+    </style>
+{% endblock stylesheets %}
 
 {% block content %}
 
@@ -14,7 +209,7 @@
             <div class="header-body">
                 <div class="row align-items-center py-4">
                     <div class="col-lg-6 col-7">
-                        <h6 class="h2 text-white d-inline-block mb-0">Terrain</h6>
+                        <h6 class="h2 text-white d-inline-block mb-0">Carte des Clients</h6>
                         <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
                             <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
                                 <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}"><i class="fas fa-home"></i></a></li>
@@ -24,17 +219,118 @@
                         </nav>
                     </div>
                 </div>
+                
+                <!-- Summary Stats Cards -->
+                <div class="row">
+                    <div class="col-xl-3 col-md-6">
+                        <div class="card card-stats">
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col">
+                                        <h5 class="card-title text-uppercase text-muted mb-0">Total Clients</h5>
+                                        <span class="h2 font-weight-bold mb-0">{{ total_clients }}</span>
+                                    </div>
+                                    <div class="col-auto">
+                                        <div class="icon icon-shape bg-gradient-primary text-white rounded-circle shadow">
+                                            <i class="fas fa-users"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                                <p class="mt-3 mb-0 text-sm">
+                                    <span class="text-success mr-2"><i class="fa fa-map-marker-alt"></i></span>
+                                    <span class="text-nowrap">Sur la carte</span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-xl-3 col-md-6">
+                        <div class="card card-stats">
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col">
+                                        <h5 class="card-title text-uppercase text-muted mb-0">Ventes Semaine</h5>
+                                        <span class="h2 font-weight-bold mb-0">{{ "{:,.0f}".format(total_weekly_sales) }} FC</span>
+                                    </div>
+                                    <div class="col-auto">
+                                        <div class="icon icon-shape bg-gradient-success text-white rounded-circle shadow">
+                                            <i class="fas fa-chart-line"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                                <p class="mt-3 mb-0 text-sm">
+                                    <span class="text-nowrap">7 derniers jours</span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-xl-3 col-md-6">
+                        <div class="card card-stats">
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col">
+                                        <h5 class="card-title text-uppercase text-muted mb-0">Clients VIP</h5>
+                                        <span class="h2 font-weight-bold mb-0">{{ high_value_count }}</span>
+                                    </div>
+                                    <div class="col-auto">
+                                        <div class="icon icon-shape bg-gradient-warning text-white rounded-circle shadow">
+                                            <i class="fas fa-star"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                                <p class="mt-3 mb-0 text-sm">
+                                    <span class="text-success mr-2"><i class="fa fa-arrow-up"></i> ≥400K FC</span>
+                                    <span class="text-nowrap">par semaine</span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-xl-3 col-md-6">
+                        <div class="card card-stats">
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col">
+                                        <h5 class="card-title text-uppercase text-muted mb-0">Top Réseau</h5>
+                                        <span class="h2 font-weight-bold mb-0">Airtel</span>
+                                    </div>
+                                    <div class="col-auto">
+                                        <div class="icon icon-shape text-white rounded-circle shadow" style="background: #FC0105;">
+                                            <i class="fas fa-signal"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                                <p class="mt-3 mb-0 text-sm">
+                                    <span class="text-nowrap">{{ "{:,.0f}".format(network_totals.airtel) }} FC cette semaine</span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
+    
     <div class="container-fluid mt--6">
         <div class="row">
             <div class="col">
-                <div class="card border-0">
-                    <div id="map-canvas" class="map-canvas"
-                         data-lat="{{ default_center_lat }}"
-                         data-lng="{{ default_center_lng }}"
-                         style="height: 600px;"></div>
+                <div class="card border-0 shadow">
+                    <div class="card-header bg-transparent">
+                        <div class="row align-items-center">
+                            <div class="col">
+                                <h3 class="mb-0"><i class="fas fa-map-marked-alt mr-2"></i>Localisation des Clients - Panzi/Ibanda</h3>
+                            </div>
+                            <div class="col-auto">
+                                <span class="badge badge-success mr-1"><i class="fas fa-circle mr-1" style="font-size: 8px;"></i>VIP ≥400K</span>
+                                <span class="badge badge-warning mr-1"><i class="fas fa-circle mr-1" style="font-size: 8px;"></i>Moyen 100-400K</span>
+                                <span class="badge badge-primary"><i class="fas fa-circle mr-1" style="font-size: 8px;"></i>Standard &lt;100K</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="map-canvas"
+                             data-lat="{{ default_center_lat }}"
+                             data-lng="{{ default_center_lng }}"
+                             style="height: 550px;"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -51,88 +347,236 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        // Define custom default icon paths for Leaflet
-        L.Marker.prototype.options.icon = L.icon({
-            iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-            iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-            shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-            iconSize: [25, 41],
-            iconAnchor: [12, 41],
-            popupAnchor: [1, -34],
-            shadowSize: [41, 41]
+        // Wait for everything to be ready
+        $(document).ready(function() {
+            setTimeout(initLeafletMap, 100);
         });
+
+        // Custom colored marker icons
+        function createColoredIcon(color) {
+            var markerHtmlStyles = `
+                background-color: ${color};
+                width: 2rem;
+                height: 2rem;
+                display: block;
+                left: -1rem;
+                top: -1rem;
+                position: relative;
+                border-radius: 2rem 2rem 0;
+                transform: rotate(45deg);
+                border: 2px solid #FFFFFF;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+            `;
+
+            return L.divIcon({
+                className: "custom-pin",
+                iconAnchor: [0, 24],
+                popupAnchor: [0, -36],
+                html: `<span style="${markerHtmlStyles}"></span>`
+            });
+        }
+
+        // Define icons for each tier
+        var highValueIcon = createColoredIcon('#2dce89');   // Green
+        var mediumValueIcon = createColoredIcon('#fb6340'); // Orange
+        var lowValueIcon = createColoredIcon('#5e72e4');    // Blue
+
+        function getIconForTier(tier) {
+            switch(tier) {
+                case 'high': return highValueIcon;
+                case 'medium': return mediumValueIcon;
+                default: return lowValueIcon;
+            }
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('fr-CD', { 
+                minimumFractionDigits: 0, 
+                maximumFractionDigits: 0 
+            }).format(amount) + ' FC';
+        }
+
+        function getTierLabel(tier) {
+            switch(tier) {
+                case 'high': return '<span class="value-badge high">VIP</span>';
+                case 'medium': return '<span class="value-badge medium">Moyen</span>';
+                default: return '<span class="value-badge low">Standard</span>';
+            }
+        }
+
+        function createPopupContent(client) {
+            var purchases = client.purchases_last_week;
+            
+            return `
+                <div class="client-popup">
+                    <div class="popup-header">
+                        <h5>${escapeHtml(client.name)} ${getTierLabel(client.value_tier)}</h5>
+                    </div>
+                    
+                    <div class="contact-info">
+                        <p><i class="fas fa-map-marker-alt"></i> ${escapeHtml(client.address)}</p>
+                        <p><i class="fas fa-phone"></i> Airtel: ${escapeHtml(client.phone_airtel)}</p>
+                        <p><i class="fas fa-phone"></i> Orange: ${escapeHtml(client.phone_orange || 'N/A')}</p>
+                    </div>
+                    
+                    <div class="purchases-section">
+                        <h6><i class="fas fa-shopping-cart mr-1"></i> Achats (7 derniers jours)</h6>
+                        
+                        <div class="network-row">
+                            <span class="network-name airtel"><i class="fas fa-signal mr-1"></i>Airtel</span>
+                            <span class="network-amount">${formatCurrency(purchases.airtel)}</span>
+                        </div>
+                        
+                        <div class="network-row">
+                            <span class="network-name orange"><i class="fas fa-signal mr-1"></i>Orange</span>
+                            <span class="network-amount">${formatCurrency(purchases.orange)}</span>
+                        </div>
+                        
+                        <div class="network-row">
+                            <span class="network-name vodacom"><i class="fas fa-signal mr-1"></i>Vodacom</span>
+                            <span class="network-amount">${formatCurrency(purchases.vodacom)}</span>
+                        </div>
+                        
+                        <div class="network-row">
+                            <span class="network-name africel"><i class="fas fa-signal mr-1"></i>Africel</span>
+                            <span class="network-amount">${formatCurrency(purchases.africel)}</span>
+                        </div>
+                        
+                        <div class="total-row">
+                            <span>TOTAL:</span>
+                            <span class="total-amount">${formatCurrency(client.total_purchases)}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-2" style="font-size: 11px; color: #8898aa;">
+                        <i class="fas fa-calendar-alt mr-1"></i> Dernier achat: ${client.last_purchase_date}
+                    </div>
+                </div>
+            `;
+        }
 
         function initLeafletMap() {
             console.log("initLeafletMap started.");
 
-            const mapDiv = document.getElementById('map-canvas');
-            console.log("Map div:", mapDiv);
+            var mapDiv = document.getElementById('map-canvas');
 
             if (!mapDiv) {
-                console.error("Map div #map-canvas not found! Cannot initialize map.");
-                return; // Stop execution if map div is not found
-            }
-
-            const defaultLat = parseFloat(mapDiv.dataset.lat);
-            const defaultLng = parseFloat(mapDiv.dataset.lng);
-            console.log("Default center:", defaultLat, defaultLng);
-
-            if (isNaN(defaultLat) || isNaN(defaultLng)) {
-                console.error("Invalid default center coordinates!");
+                console.error("Map div #map-canvas not found!");
                 return;
             }
 
-            const map = L.map('map-canvas').setView([defaultLat, defaultLng], 12);
-            console.log("Leaflet map initialized:", map);
+            var defaultLat = parseFloat(mapDiv.dataset.lat);
+            var defaultLng = parseFloat(mapDiv.dataset.lng);
 
+            if (isNaN(defaultLat) || isNaN(defaultLng)) {
+                // Fallback to Panzi/Ibanda coordinates
+                defaultLat = -2.5395;
+                defaultLng = 28.8575;
+            }
+
+            // Initialize the map
+            var map = L.map('map-canvas', {
+                center: [defaultLat, defaultLng],
+                zoom: 15
+            });
+
+            // Add OpenStreetMap tile layer
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
                 maxZoom: 19
             }).addTo(map);
-            console.log("Tile layer added.");
 
-            // CORRECTED: Removed | escapejs
-            const clientLocations = JSON.parse('{{ client_locations | tojson | safe }}');
+            // Parse client locations
+            var clientLocations = {{ client_locations | tojson | safe }};
             console.log("Client Locations:", clientLocations);
 
-            const markers = [];
+            var markers = [];
 
             if (clientLocations && clientLocations.length > 0) {
                 clientLocations.forEach(function(client) {
-                    const marker = L.marker([client.lat, client.lng]).addTo(map);
+                    // Get appropriate icon based on value tier
+                    var icon = getIconForTier(client.value_tier);
+                    
+                    var marker = L.marker([client.lat, client.lng], {
+                        icon: icon,
+                        title: client.name
+                    }).addTo(map);
 
-                    const contentString = `
-                        <div class="info-window-content">
-                            <h5>${client.name}</h5>
-                            <p><strong>Adresse:</strong> ${client.address}</p>
-                            <p><strong>Téléphone Airtel:</strong> ${client.phone_airtel}</p>
-                            <p><strong>Lat:</strong> ${client.lat.toFixed(6)}<br><strong>Long:</strong> ${client.lng.toFixed(6)}</p>
-                        </div>
-                    `;
-
-                    marker.bindPopup(contentString);
+                    // Bind rich popup
+                    marker.bindPopup(createPopupContent(client), {
+                        maxWidth: 320,
+                        className: 'custom-popup'
+                    });
+                    
+                    // Add tooltip for hover (shows name and total)
+                    var tooltipText = client.name + ' - ' + formatCurrency(client.total_purchases);
+                    marker.bindTooltip(tooltipText, {
+                        permanent: false,
+                        direction: 'top',
+                        offset: [0, -25]
+                    });
+                    
                     markers.push(marker);
                 });
 
+                // Fit bounds to show all markers
                 if (markers.length > 0) {
-                    const group = new L.featureGroup(markers);
-                    map.fitBounds(group.getBounds().pad(0.1));
+                    var group = new L.featureGroup(markers);
+                    map.fitBounds(group.getBounds().pad(0.15));
                 }
 
-                if (clientLocations.length === 1) {
-                    map.setZoom(15);
+                // Ensure minimum zoom level for readability
+                if (map.getZoom() > 16) {
+                    map.setZoom(16);
                 }
-            } else {
-                console.warn("No client locations found or provided. Skipping marker creation.");
             }
 
-            console.log("initLeafletMap completed.");
-            map.invalidateSize();
+            // Add legend control
+            var legend = L.control({position: 'bottomleft'});
+            legend.onAdd = function(map) {
+                var div = L.DomUtil.create('div', 'map-legend');
+                div.innerHTML = `
+                    <h6>Légende</h6>
+                    <div class="legend-item">
+                        <div class="legend-color high"></div>
+                        <span>VIP (≥400K FC/sem)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color medium"></div>
+                        <span>Moyen (100-400K FC)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color low"></div>
+                        <span>Standard (&lt;100K FC)</span>
+                    </div>
+                `;
+                return div;
+            };
+            legend.addTo(map);
+
+            // Fix map size after short delay
+            setTimeout(function() {
+                map.invalidateSize();
+            }, 200);
+            
+            setTimeout(function() {
+                map.invalidateSize();
+            }, 500);
+            
+            // Handle window resize
+            $(window).on('resize', function() {
+                map.invalidateSize();
+            });
+
+            console.log("initLeafletMap completed successfully.");
         }
-
-        // Use a simpler and more robust DOMContentLoaded listener
-        // This ensures the DOM is fully loaded before trying to find 'map-canvas'
-        document.addEventListener('DOMContentLoaded', initLeafletMap);
-
+        
+        // Helper function to escape HTML (prevent XSS)
+        function escapeHtml(text) {
+            if (!text) return '';
+            var div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
     </script>
 {% endblock javascripts %}
