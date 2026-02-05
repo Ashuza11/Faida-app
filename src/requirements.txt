@@ -36,5 +36,5 @@ SQLAlchemy==2.0.30
 tomli==2.2.1
 typing_extensions==4.14.0
 tzlocal==5.3.1
-Werkzeug==2.3.8
+Werkzeug==3.1.5
 WTForms==3.1.2
