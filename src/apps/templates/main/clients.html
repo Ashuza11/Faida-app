@@ -81,7 +81,6 @@
                                 data-address="{{ client.address }}"
                                 data-gps-lat="{{ client.gps_lat }}"
                                 data-gps-long="{{ client.gps_long }}"
-                                data-discount-rate="{{ client.discount_rate }}"
                                 data-is-active="{{ 'true' if client.is_active else 'false' }}">
                                 Editer
                             </a>
@@ -285,7 +284,6 @@
         $modalForm.find('#address').val(address);
         $modalForm.find('#gps_lat').val(gpsLat);
         $modalForm.find('#gps_long').val(gpsLong);
-        $modalForm.find('#discount_rate').val(discountRate);
         $modalForm.find('#is_active').prop('checked', isActive); 
       });
 

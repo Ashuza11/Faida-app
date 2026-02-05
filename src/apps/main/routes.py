@@ -15,7 +15,7 @@ from apps.main.utils import (
     get_stock_purchase_history_query,
     get_sales_history_query,
     update_daily_reports,
-    
+
 )
 
 from apps import db
@@ -74,7 +74,8 @@ def index():
 
     # --- 1. Total Stock for each network (Card stats) ---
     current_stocks = Stock.query.all()
-    total_stocks_data = {stock.network.value: stock.balance for stock in current_stocks}
+    total_stocks_data = {
+        stock.network.value: stock.balance for stock in current_stocks}
 
     # --- 2. Sales Over Time (Chart 1 - Sales Value) ---
     sales_data_week = {}
@@ -382,7 +383,8 @@ def user_toggle_active(user_id):
             user.is_active = not user.is_active  # Toggle the status
             db.session.commit()
             if user.is_active:
-                flash(f"Utilisateur '{user.username}' activé avec succès!", "success")
+                flash(
+                    f"Utilisateur '{user.username}' activé avec succès!", "success")
             else:
                 flash(
                     f"Utilisateur '{user.username}' désactivé avec succès!", "success"
@@ -418,7 +420,8 @@ def client_management():
             gps_lat = None
             gps_long = None
 
-        existing_client = Client.query.filter_by(name=client_form.name.data).first()
+        existing_client = Client.query.filter_by(
+            name=client_form.name.data).first()
 
         if existing_client:
             flash("Un client avec ce nom existe déjà.", "danger")
@@ -433,7 +436,6 @@ def client_management():
                 address=client_form.address.data,
                 gps_lat=gps_lat,  # Use the retrieved GPS data
                 gps_long=gps_long,  # Use the retrieved GPS data
-                # discount_rate=client_form.discount_rate.data,
                 vendeur=current_user,
             )
             db.session.add(new_client)
@@ -488,7 +490,6 @@ def client_edit(client_id):
         client.gps_lat = client_edit_form.gps_lat.data
         client.gps_long = client_edit_form.gps_long.data
         client.is_active = client_edit_form.is_active.data
-        client.discount_rate = client_edit_form.discount_rate.data
 
         db.session.commit()
         flash("Client mis à jour avec succès!", "success")
@@ -530,7 +531,6 @@ def client_toggle_active(client_id):
     return redirect(url_for("main_bp.client_management"))
 
 
-
 @bp.route("/achat_stock", methods=["GET", "POST"])
 @login_required
 @superadmin_required
@@ -544,9 +544,11 @@ def achat_stock():
             network_type_string_from_form = form.network.data
             try:
                 # Assuming NetworkType is your Enum
-                network_enum = NetworkType(network_type_string_from_form.lower())
+                network_enum = NetworkType(
+                    network_type_string_from_form.lower())
             except ValueError:
-                raise ValueError(f"Le type de réseau '{network_type_string_from_form}' n'est pas valide.")
+                raise ValueError(
+                    f"Le type de réseau '{network_type_string_from_form}' n'est pas valide.")
 
             # B. Extract Amounts
             amount_purchased = form.amount_purchased.data
@@ -563,11 +565,13 @@ def achat_stock():
             if form.intended_selling_price_choice.data == "custom":
                 selling_price_to_record = form.custom_intended_selling_price.data
             elif form.intended_selling_price_choice.data:
-                selling_price_to_record = Decimal(form.intended_selling_price_choice.data)
+                selling_price_to_record = Decimal(
+                    form.intended_selling_price_choice.data)
 
             # E. Validate Prices
             if buying_price_to_record is None or selling_price_to_record is None:
-                raise ValueError("Veuillez sélectionner ou entrer un prix d'achat et un prix de vente.")
+                raise ValueError(
+                    "Veuillez sélectionner ou entrer un prix d'achat et un prix de vente.")
 
             # F. Database Operations
             stock_item = Stock.query.filter_by(network=network_enum).first()
@@ -611,23 +615,24 @@ def achat_stock():
             db.session.rollback()
             current_app.logger.error(f"Error recording stock purchase: {e}")
             flash("Une erreur système est survenue lors de l'enregistrement.", "danger")
-    
+
     elif form.errors:
         # This helps debug if Validation is failing silently
-        print("Form Errors:", form.errors) 
+        print("Form Errors:", form.errors)
         flash("Veuillez corriger les erreurs dans le formulaire.", "danger")
 
     # --- 2. HANDLE GET (Data Fetching & Pagination) ---
-    
+
     # Use helper to get query and context
-    base_purchases_query, ctx = get_stock_purchase_history_query(date_filter=True)
-    selected_date_str = ctx.get('date_str') 
+    base_purchases_query, ctx = get_stock_purchase_history_query(
+        date_filter=True)
+    selected_date_str = ctx.get('date_str')
 
     # Paginate results
     stock_purchases_pagination, _, _ = get_paginated_results(
         base_purchases_query,
         endpoint_name='main_bp.achat_stock',
-        per_page_config_key='SALES_PER_PAGE', 
+        per_page_config_key='SALES_PER_PAGE',
         date=selected_date_str
     )
 
@@ -636,8 +641,8 @@ def achat_stock():
         form=form,
         segment="stock",
         sub_segment="achat_stock",
-        stock_purchases=stock_purchases_pagination.items, 
-        stock_purchases_pagination=stock_purchases_pagination, 
+        stock_purchases=stock_purchases_pagination.items,
+        stock_purchases_pagination=stock_purchases_pagination,
         selected_date=selected_date_str
     )
 
@@ -684,7 +689,8 @@ def edit_stock_purchase(purchase_id):
 
             network_type_string_from_form = form.network.data
             try:
-                network_enum = NetworkType(network_type_string_from_form.lower())
+                network_enum = NetworkType(
+                    network_type_string_from_form.lower())
             except ValueError:
                 flash(
                     f"Le type de réseau '{network_type_string_from_form}' n'est pas valide.",
@@ -746,7 +752,8 @@ def edit_stock_purchase(purchase_id):
                 db.session.add(old_stock_item)
 
             # Step 2: Apply new amount to new network's stock, and update its current prices
-            new_stock_item = Stock.query.filter_by(network=network_enum).first()
+            new_stock_item = Stock.query.filter_by(
+                network=network_enum).first()
             if new_stock_item:
                 new_stock_item.balance += amount_purchased
                 # Update the buying_price_per_unit in the Stock table for the new (or same) network
@@ -775,7 +782,8 @@ def edit_stock_purchase(purchase_id):
             current_app.logger.error(
                 f"Error updating stock purchase {purchase_id}: {e}"
             )
-            flash(f"Une erreur est survenue lors de la mise à jour: {e}", "danger")
+            flash(
+                f"Une erreur est survenue lors de la mise à jour: {e}", "danger")
 
     return render_template(
         "main/edit_stock_purchase.html",
@@ -797,7 +805,8 @@ def delete_stock_purchase(purchase_id):
     if request.method == "POST":
         try:
             # Revert the stock balance
-            stock_item = Stock.query.filter_by(network=purchase.network).first()
+            stock_item = Stock.query.filter_by(
+                network=purchase.network).first()
             if stock_item:
                 stock_item.balance -= purchase.amount_purchased
                 # Note: deleting a purchase does not adjust buying_price_per_unit/selling_price_per_unit
@@ -815,7 +824,8 @@ def delete_stock_purchase(purchase_id):
 
             db.session.delete(purchase)
             db.session.commit()
-            flash(f"Achat de stock #{purchase_id} supprimé avec succès!", "success")
+            flash(
+                f"Achat de stock #{purchase_id} supprimé avec succès!", "success")
             return redirect(url_for("main_bp.achat_stock"))
 
         except Exception as e:
@@ -823,7 +833,8 @@ def delete_stock_purchase(purchase_id):
             current_app.logger.error(
                 f"Error deleting stock purchase {purchase_id}: {e}"
             )
-            flash(f"Une erreur est survenue lors de la suppression: {e}", "danger")
+            flash(
+                f"Une erreur est survenue lors de la suppression: {e}", "danger")
             return redirect(url_for("main_bp.achat_stock"))
 
     flash("Confirmez la suppression de l'achat de stock.", "warning")
@@ -836,7 +847,6 @@ def delete_stock_purchase(purchase_id):
     )
 
 
-
 @bp.route("/vente_stock", methods=["GET", "POST"])
 @login_required
 @vendeur_required
@@ -845,7 +855,8 @@ def vente_stock():
 
     # --- 1. SETUP FORM DATA ---
     # Populate client choices dynamically
-    clients = Client.query.filter_by(is_active=True).order_by(Client.name).all()
+    clients = Client.query.filter_by(
+        is_active=True).order_by(Client.name).all()
     client_choices = [("", "Sélectionnez un client existant")]
     client_choices.extend([(str(c.id), c.name) for c in clients])
     form.existing_client_id.choices = client_choices
@@ -865,29 +876,31 @@ def vente_stock():
             if form.client_choice.data == "existing":
                 client_id = form.existing_client_id.data
                 if not client_id:
-                    raise ValueError("Veuillez sélectionner un client existant.")
+                    raise ValueError(
+                        "Veuillez sélectionner un client existant.")
                 client = Client.query.get(int(client_id))
                 if not client:
                     raise ValueError("Client sélectionné invalide.")
-            
+
             elif form.client_choice.data == "new":
                 client_name_adhoc = form.new_client_name.data
                 if not client_name_adhoc:
-                    raise ValueError("Veuillez entrer le nom du nouveau client.")
+                    raise ValueError(
+                        "Veuillez entrer le nom du nouveau client.")
 
             # B. Process Sale Items
             total_amount_due = Decimal("0.00")
             sale_items_to_add = []
-            
+
             # Check if list is empty
-            # (Note: Logic depends on how your form handles empty removals, 
+            # (Note: Logic depends on how your form handles empty removals,
             # usually we filter out empty entries here)
-            
+
             for index, item_data in enumerate(form.sale_items.entries):
                 # Skip empty entries if your logic allows it, otherwise validate
                 network_enum = item_data.form.network.data
                 quantity = item_data.form.quantity.data
-                
+
                 # Basic validation skipping empty rows if needed
                 if not network_enum or not quantity:
                     continue
@@ -896,11 +909,13 @@ def vente_stock():
                 price_override = item_data.form.price_per_unit_applied.data
 
                 # Check Stock Availability
-                stock_item = Stock.query.filter_by(network=network_type).first()
-                
+                stock_item = Stock.query.filter_by(
+                    network=network_type).first()
+
                 if not stock_item:
-                    raise ValueError(f"Réseau '{network_type.value}' introuvable en stock.")
-                
+                    raise ValueError(
+                        f"Réseau '{network_type.value}' introuvable en stock.")
+
                 if quantity > stock_item.balance:
                     raise ValueError(
                         f"Stock insuffisant pour {network_type.value}. "
@@ -930,23 +945,26 @@ def vente_stock():
                     price_per_unit_applied=final_unit_price,
                     subtotal=subtotal
                 )
-                
+
                 # Deduct Stock Immediately (Optimistic Locking assumed or non-issue for scale)
                 stock_item.balance -= quantity
                 db.session.add(stock_item)
-                
+
                 sale_items_to_add.append(new_item)
                 total_amount_due += subtotal
 
             if not sale_items_to_add:
-                raise ValueError("Veuillez ajouter au moins un article valide.")
+                raise ValueError(
+                    "Veuillez ajouter au moins un article valide.")
 
             # C. Finalize Financials
-            cash_paid = form.cash_paid.data if form.cash_paid.data is not None else Decimal("0.00")
+            cash_paid = form.cash_paid.data if form.cash_paid.data is not None else Decimal(
+                "0.00")
             debt_amount = total_amount_due - cash_paid
 
             if debt_amount < 0:
-                raise ValueError("Le montant payé ne peut pas dépasser le total dû.")
+                raise ValueError(
+                    "Le montant payé ne peut pas dépasser le total dû.")
 
             # D. Save Sale
             new_sale = Sale(
@@ -978,9 +996,8 @@ def vente_stock():
         flash("Veuillez corriger les erreurs dans le formulaire.", "danger")
         # Optional: Detailed error logging to flash can be done here if desired
 
-
     # --- 3. HANDLE GET (Data Fetching & Pagination) ---
-    
+
     # A. Get Date Context using your Utility
     # This automatically checks request.args for 'date' and defaults to Today
     base_sales_query, ctx = get_sales_history_query(date_filter=True)
@@ -1000,7 +1017,7 @@ def vente_stock():
         segment="stock",
         sub_segment="vente_stock",
         # Pass the pagination object for the macro
-        sales_pagination=sales_pagination, 
+        sales_pagination=sales_pagination,
         # Pass the date string for the Date Filter macro
         selected_date=selected_date_str
     )
@@ -1053,9 +1070,11 @@ def edit_sale(sale_id):
     form = SaleForm()
 
     # Populate client choices
-    clients = Client.query.filter_by(is_active=True).order_by(Client.name).all()
+    clients = Client.query.filter_by(
+        is_active=True).order_by(Client.name).all()
     client_choices = [("", "Sélectionnez un client existant")]
-    client_choices.extend([(str(client.id), client.name) for client in clients])
+    client_choices.extend([(str(client.id), client.name)
+                          for client in clients])
     form.existing_client_id.choices = client_choices
 
     if request.method == "GET":
@@ -1111,13 +1130,16 @@ def edit_sale(sale_id):
                 if client_id:
                     client = Client.query.get(int(client_id))
                     if not client:
-                        raise ValueError("Client existant sélectionné invalide.")
+                        raise ValueError(
+                            "Client existant sélectionné invalide.")
                 else:
-                    raise ValueError("Veuillez sélectionner un client existant.")
+                    raise ValueError(
+                        "Veuillez sélectionner un client existant.")
             elif form.client_choice.data == "new":
                 client_name_adhoc = form.new_client_name.data
                 if not client_name_adhoc:
-                    raise ValueError("Veuillez entrer le nom du nouveau client.")
+                    raise ValueError(
+                        "Veuillez entrer le nom du nouveau client.")
 
             sale.client = client
             sale.client_name_adhoc = client_name_adhoc if not client else None
@@ -1149,7 +1171,8 @@ def edit_sale(sale_id):
                 quantity = item_data.form.quantity.data
                 price_per_unit_applied = item_data.form.price_per_unit_applied.data
 
-                stock_item = Stock.query.filter_by(network=network_type).first()
+                stock_item = Stock.query.filter_by(
+                    network=network_type).first()
 
                 if not stock_item:
                     errors_during_sale.append(
@@ -1172,7 +1195,8 @@ def edit_sale(sale_id):
                         price_per_unit_applied = stock_item.selling_price_per_unit
                     else:
                         latest_purchase = (
-                            StockPurchase.query.filter_by(stock_item=stock_item)
+                            StockPurchase.query.filter_by(
+                                stock_item=stock_item)
                             .order_by(StockPurchase.created_at.desc())
                             .first()
                         )
@@ -1191,7 +1215,8 @@ def edit_sale(sale_id):
 
                 # Ensure price_per_unit_applied is Decimal
                 if not isinstance(price_per_unit_applied, Decimal):
-                    price_per_unit_applied = Decimal(str(price_per_unit_applied))
+                    price_per_unit_applied = Decimal(
+                        str(price_per_unit_applied))
 
                 # Calculate rounded subtotal using your custom_round_up function
                 if price_per_unit_applied is None:
@@ -1308,7 +1333,8 @@ def delete_sale(sale_id):
             db.session.begin_nested()
 
             for sale_item in sale.sale_items:
-                stock_item = Stock.query.filter_by(network=sale_item.network).first()
+                stock_item = Stock.query.filter_by(
+                    network=sale_item.network).first()
                 if stock_item:
                     stock_item.balance += sale_item.quantity
                     db.session.add(stock_item)
@@ -1368,7 +1394,8 @@ def view_sale_details(sale_id):
 @login_required
 def sorties_cash():
     # Fetch all cash movements for display
-    all_outflows = CashOutflow.query.order_by(CashOutflow.created_at.desc()).all()
+    all_outflows = CashOutflow.query.order_by(
+        CashOutflow.created_at.desc()).all()
     all_inflows = CashInflow.query.order_by(CashInflow.created_at.desc()).all()
 
     # Calculate total cash outflow
@@ -1386,7 +1413,8 @@ def sorties_cash():
 
     # Get total cash paid directly from Sales (initial payment at sale time)
     # Use scalar() to get the sum directly, it will be None if no sales, so handle it.
-    all_sales_cash_paid_sum = db.session.query(db.func.sum(Sale.cash_paid)).scalar()
+    all_sales_cash_paid_sum = db.session.query(
+        db.func.sum(Sale.cash_paid)).scalar()
     total_sales_cash_paid = (
         all_sales_cash_paid_sum if all_sales_cash_paid_sum else Decimal("0.00")
     )
@@ -1421,13 +1449,14 @@ def enregistrer_sortie():
                     category=form.category.data,
                     description=form.description.data,
                     # FIX IS HERE: Assign the User object, not its ID
-                    recorded_by=current_user,  # Assign the current_user object (which is a User model instance)
+                    # Assign the current_user object (which is a User model instance)
+                    recorded_by=current_user,
                 )
                 db.session.add(new_outflow)
                 db.session.commit()
 
                 flash("Sortie de caisse enregistrée avec succès!", "success")
-                return redirect(url_for("auth_bpe.sorties_cash"))
+                return redirect(url_for("main_bp.sorties_cash"))
 
             except Exception as e:
                 db.session.rollback()
@@ -1502,7 +1531,7 @@ def encaisser_dette():
                 "success",
             )
             return redirect(
-                url_for("auth_bpe.sorties_cash")
+                url_for("main_bp.sorties_cash")
             )  # Redirect back to overview
         except InvalidOperation:
             flash("Montant invalide. Veuillez entrer un nombre valide.", "danger")
@@ -1512,7 +1541,8 @@ def encaisser_dette():
             db.session.rollback()
         except Exception as e:
             db.session.rollback()
-            flash(f"Erreur lors de l'enregistrement du paiement: {e}", "danger")
+            flash(
+                f"Erreur lors de l'enregistrement du paiement: {e}", "danger")
             print(f"Error recording debt collection: {e}")
 
     return render_template(
@@ -1534,7 +1564,8 @@ def rapports():
     # This retrieves selected_date, is_today flag, and correct UTC ranges
     ctx = get_date_context()
 
-    current_app.logger.debug(f"Single Report requested for: {ctx['selected_date']}")
+    current_app.logger.debug(
+        f"Single Report requested for: {ctx['selected_date']}")
 
     # Get recent purchases (filtered by date, desc order)
     purchase_query, _ = get_stock_purchase_history_query(date_filter=True)
@@ -1546,9 +1577,9 @@ def rapports():
 
     # 3. Initialize Data Structures (Empty State)
     networks = list(NetworkType.__members__.values())
-    
+
     def zero_money(): return Decimal("0.00")
-    
+
     report_data = {
         network.name: {
             "initial_stock": zero_money(),
@@ -1573,16 +1604,16 @@ def rapports():
     }
 
     # 4. Fetch Data Logic
-    
+
     # SCENARIO A: LIVE REPORT (Today)
     # We use the boolean flag from our utility
     if ctx['is_today']:
         current_app.logger.info("Fetching LIVE report data for today.")
-        
+
         # We use the pre-calculated UTC ranges from the utility context
         calculated_data, total_sales_val, total_live_debts = get_daily_report_data(
             current_app,
-            ctx['selected_date'], 
+            ctx['selected_date'],
             start_of_utc_range=ctx['start_utc'],
             end_of_utc_range=ctx['end_utc'],
         )
@@ -1609,10 +1640,12 @@ def rapports():
 
     # SCENARIO B: HISTORICAL REPORT (Past Date)
     else:
-        current_app.logger.info(f"Fetching HISTORICAL report for {ctx['selected_date']}.")
+        current_app.logger.info(
+            f"Fetching HISTORICAL report for {ctx['selected_date']}.")
 
         # Fetch the single overall summary for that day
-        overall_report = DailyOverallReport.query.filter_by(report_date=ctx['selected_date']).first()
+        overall_report = DailyOverallReport.query.filter_by(
+            report_date=ctx['selected_date']).first()
 
         if overall_report:
             # Populate Grand Totals directly from the saved report
@@ -1624,8 +1657,9 @@ def rapports():
             grand_totals["total_debts"] = overall_report.total_debts
 
             # Fetch detailed breakdown per network
-            daily_network_reports = DailyStockReport.query.filter_by(report_date=ctx['selected_date']).all()
-            
+            daily_network_reports = DailyStockReport.query.filter_by(
+                report_date=ctx['selected_date']).all()
+
             for r in daily_network_reports:
                 if r.network.name in report_data:
                     report_data[r.network.name].update({
@@ -1636,7 +1670,8 @@ def rapports():
                         "virtual_value": r.virtual_value,
                     })
         else:
-            flash(f"Aucun rapport archivé trouvé pour le {ctx['date_str']}.", "warning")
+            flash(
+                f"Aucun rapport archivé trouvé pour le {ctx['date_str']}.", "warning")
 
     # 5. Final Calculation (Applied to both scenarios)
     grand_totals["total_calculated_sold_stock"] = (
@@ -1651,9 +1686,9 @@ def rapports():
         networks=networks,
         report_data=report_data,
         grand_totals=grand_totals,
-        selected_date=ctx['date_str'], 
+        selected_date=ctx['date_str'],
         # Pass the lists to the template
-        recent_purchases=recent_purchases, 
+        recent_purchases=recent_purchases,
         recent_sales=recent_sales
     )
 
@@ -1664,7 +1699,7 @@ def rapports():
 def archive_daily_report():
     # 1. Get the date from the hidden input in your HTML form
     date_str = request.form.get('date_to_archive')
-    
+
     if not date_str:
         flash("Aucune date spécifiée pour l'archivage.", "danger")
         return redirect(url_for('main_bp.rapports'))
@@ -1672,16 +1707,19 @@ def archive_daily_report():
     try:
         # Convert string 'YYYY-MM-DD' to a date object
         report_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-        
+
         # 2. Call your existing helper function!
         # This will create or update the DailyStockReport and DailyOverallReport
-        update_daily_reports(current_app._get_current_object(), report_date_to_update=report_date)
-        
-        flash(f"Le rapport du {date_str} a été validé et archivé avec succès.", "success")
-        
+        update_daily_reports(current_app._get_current_object(),
+                             report_date_to_update=report_date)
+
+        flash(
+            f"Le rapport du {date_str} a été validé et archivé avec succès.", "success")
+
     except Exception as e:
         current_app.logger.error(f"Erreur d'archivage manuelle: {str(e)}")
-        flash(f"Une erreur est survenue lors de l'archivage : {str(e)}", "danger")
+        flash(
+            f"Une erreur est survenue lors de l'archivage : {str(e)}", "danger")
 
     # Redirect back to the reports page for that specific date
     return redirect(url_for('main_bp.rapports', date=date_str))
@@ -1780,65 +1818,201 @@ def profile():
 def client_map():
     """
     Renders a map displaying clients based on their GPS coordinates.
+    Clients are color-coded based on their total purchases (high-value = green, medium = orange, low = blue).
     """
-    # Replace hardcoded_client_locations with actual client data from DB
-    # For now, keeping it for demonstration as you did previously
+
+    # Enhanced client data with purchase history
+    # In production, this would come from your database
     hardcoded_client_locations = [
         {
-            "name": "Client A",
-            "address": "123 Main St, Panzi",
-            "lat": -2.5300,
-            "lng": 28.8550,
+            "id": 1,
+            "name": "Boutique Mama Zawadi",
+            "address": "Avenue Patrice Lumumba 45, Panzi",
+            "lat": -2.5380,
+            "lng": 28.8580,
             "phone_airtel": "0991234567",
+            "phone_orange": "0841234567",
+            "purchases_last_week": {
+                "airtel": 150000,
+                "orange": 120000,
+                "vodacom": 80000,
+                "africel": 50000
+            },
+            "total_purchases": 400000,  # High value client
+            "last_purchase_date": "2024-01-25"
         },
         {
-            "name": "Client B",
-            "address": "456 Oak Ave, Panzi",
-            "lat": -2.5450,
-            "lng": 28.8650,
-            "phone_airtel": "0997654321",
-        },
-        {
-            "name": "Client C",
-            "address": "789 Pine Rd, Panzi",
+            "id": 2,
+            "name": "Kiosk Bénédiction",
+            "address": "Rue de l'Église 12, Panzi",
             "lat": -2.5420,
-            "lng": 28.8600,
-            "phone_airtel": "0991122334",
+            "lng": 28.8620,
+            "phone_airtel": "0997654321",
+            "phone_orange": "0847654321",
+            "purchases_last_week": {
+                "airtel": 200000,
+                "orange": 180000,
+                "vodacom": 150000,
+                "africel": 70000
+            },
+            "total_purchases": 600000,  # High value client
+            "last_purchase_date": "2024-01-26"
         },
-        # Add more clients with coordinates within or around Panzi
+        {
+            "id": 3,
+            "name": "Phone House Ibanda",
+            "address": "Avenue du Commerce 78, Ibanda",
+            "lat": -2.5350,
+            "lng": 28.8550,
+            "phone_airtel": "0991122334",
+            "phone_orange": "0841122334",
+            "purchases_last_week": {
+                "airtel": 50000,
+                "orange": 40000,
+                "vodacom": 30000,
+                "africel": 20000
+            },
+            "total_purchases": 140000,  # Medium value client
+            "last_purchase_date": "2024-01-24"
+        },
+        {
+            "id": 4,
+            "name": "Ets. Mumbere Telecom",
+            "address": "Boulevard du Lac 156, Panzi",
+            "lat": -2.5450,
+            "lng": 28.8600,
+            "phone_airtel": "0994455667",
+            "phone_orange": "0844455667",
+            "purchases_last_week": {
+                "airtel": 300000,
+                "orange": 250000,
+                "vodacom": 200000,
+                "africel": 100000
+            },
+            "total_purchases": 850000,  # Very high value client
+            "last_purchase_date": "2024-01-26"
+        },
+        {
+            "id": 5,
+            "name": "Cyber Café Espoir",
+            "address": "Rue des Écoles 34, Ibanda",
+            "lat": -2.5320,
+            "lng": 28.8530,
+            "phone_airtel": "0998877665",
+            "phone_orange": "0848877665",
+            "purchases_last_week": {
+                "airtel": 25000,
+                "orange": 20000,
+                "vodacom": 15000,
+                "africel": 10000
+            },
+            "total_purchases": 70000,  # Low value client
+            "last_purchase_date": "2024-01-23"
+        },
+        {
+            "id": 6,
+            "name": "Alimentation La Grâce",
+            "address": "Avenue Industrielle 89, Panzi",
+            "lat": -2.5400,
+            "lng": 28.8650,
+            "phone_airtel": "0993344556",
+            "phone_orange": "0843344556",
+            "purchases_last_week": {
+                "airtel": 80000,
+                "orange": 60000,
+                "vodacom": 50000,
+                "africel": 30000
+            },
+            "total_purchases": 220000,  # Medium value client
+            "last_purchase_date": "2024-01-25"
+        },
+        {
+            "id": 7,
+            "name": "Pharmacie du Peuple",
+            "address": "Rue de la Santé 23, Ibanda",
+            "lat": -2.5370,
+            "lng": 28.8510,
+            "phone_airtel": "0996677889",
+            "phone_orange": "0846677889",
+            "purchases_last_week": {
+                "airtel": 15000,
+                "orange": 10000,
+                "vodacom": 8000,
+                "africel": 5000
+            },
+            "total_purchases": 38000,  # Low value client
+            "last_purchase_date": "2024-01-22"
+        },
+        {
+            "id": 8,
+            "name": "Grand Marché Mobile",
+            "address": "Place du Marché Central, Panzi",
+            "lat": -2.5410,
+            "lng": 28.8570,
+            "phone_airtel": "0992233445",
+            "phone_orange": "0842233445",
+            "purchases_last_week": {
+                "airtel": 180000,
+                "orange": 150000,
+                "vodacom": 120000,
+                "africel": 80000
+            },
+            "total_purchases": 530000,  # High value client
+            "last_purchase_date": "2024-01-26"
+        },
     ]
+
+    # Calculate value tier for each client (for marker coloring)
+    # Thresholds: High >= 400,000 FC, Medium >= 100,000 FC, Low < 100,000 FC
+    HIGH_VALUE_THRESHOLD = 400000
+    MEDIUM_VALUE_THRESHOLD = 100000
+
+    for client in hardcoded_client_locations:
+        total = client["total_purchases"]
+        if total >= HIGH_VALUE_THRESHOLD:
+            client["value_tier"] = "high"
+        elif total >= MEDIUM_VALUE_THRESHOLD:
+            client["value_tier"] = "medium"
+        else:
+            client["value_tier"] = "low"
 
     client_locations = hardcoded_client_locations
 
-    # Set default center specifically for Panzi Quarter
-    # These coordinates are derived from the OpenStreetMap image you provided for Panzi.
-    default_center_lat = -2.540219
-    default_center_lng = 28.8594693
+    # Calculate summary statistics for the page
+    total_clients = len(client_locations)
+    total_weekly_sales = sum(c["total_purchases"] for c in client_locations)
+    high_value_count = sum(
+        1 for c in client_locations if c["value_tier"] == "high")
 
-    # Your logic for calculating average coordinates will override these
-    # if client_locations is not empty.
-    # If you want Panzi to ALWAYS be the initial center, remove or modify this block
-    # or set the zoom level to show Panzi even if fitBounds changes it.
+    # Network breakdown
+    network_totals = {
+        "airtel": sum(c["purchases_last_week"]["airtel"] for c in client_locations),
+        "orange": sum(c["purchases_last_week"]["orange"] for c in client_locations),
+        "vodacom": sum(c["purchases_last_week"]["vodacom"] for c in client_locations),
+        "africel": sum(c["purchases_last_week"]["africel"] for c in client_locations),
+    }
+
+    # Set default center for Panzi/Ibanda area
+    default_center_lat = -2.5395
+    default_center_lng = 28.8575
+
+    # If clients exist, center on their average location
     if client_locations:
-        # You might want to remove this calculation if you want a fixed Panzi center
-        # and only use fitBounds to show all markers *within* that context
-        avg_lat = sum(loc["lat"] for loc in client_locations) / len(client_locations)
-        avg_lng = sum(loc["lng"] for loc in client_locations) / len(client_locations)
-        # Consider a scenario where all clients are in one corner,
-        # the average might not be the visual center of Panzi.
-        # So, if clients are sparse, relying on Panzi's center is better for initial load.
-        # If your clients truly define the area of interest, keep this.
-        # For a fixed "Panzi quarter" view, you might want to stick to the hardcoded Panzi center.
-        # For this example, let's prioritize Panzi's fixed center unless there are clients.
-        if True:  # You can add a condition here, e.g., if you only have a few clients
-            default_center_lat = avg_lat
-            default_center_lng = avg_lng
-        # You can add a check if avg_lat/lng are far from Panzi, then maybe reset to Panzi's center
+        avg_lat = sum(loc["lat"]
+                      for loc in client_locations) / len(client_locations)
+        avg_lng = sum(loc["lng"]
+                      for loc in client_locations) / len(client_locations)
+        default_center_lat = avg_lat
+        default_center_lng = avg_lng
 
     return render_template(
         "main/client_map.html",
         client_locations=client_locations,
         default_center_lat=default_center_lat,
         default_center_lng=default_center_lng,
+        total_clients=total_clients,
+        total_weekly_sales=total_weekly_sales,
+        high_value_count=high_value_count,
+        network_totals=network_totals,
         segment="client_map",
     )

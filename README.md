@@ -33,7 +33,7 @@ pip install -r requirements.txt
 ```
 
 ```bash
-FLASK_APP=airtfast.py
+FLASK_APP=faida.py
 FLASK_ENV=development
 ```
 

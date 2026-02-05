@@ -62,9 +62,12 @@ class User(db.Model, UserMixin):
     email: so.Mapped[str] = so.mapped_column(
         sa.String(120), unique=True, nullable=False
     )
-    password_hash: so.Mapped[str] = so.mapped_column(sa.String(128), nullable=False)
-    phone: so.Mapped[Optional[str]] = so.mapped_column(sa.String(20), unique=True)
-    role: so.Mapped[RoleType] = so.mapped_column(sa.Enum(RoleType), nullable=False)
+    password_hash: so.Mapped[str] = so.mapped_column(
+        sa.String(128), nullable=False)
+    phone: so.Mapped[Optional[str]] = so.mapped_column(
+        sa.String(20), unique=True)
+    role: so.Mapped[RoleType] = so.mapped_column(
+        sa.Enum(RoleType), nullable=False)
     created_by: so.Mapped[Optional[int]] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=True
     )
@@ -136,11 +139,6 @@ class Client(db.Model):
     gps_lat: so.Mapped[Optional[float]] = so.mapped_column()
     gps_long: so.Mapped[Optional[float]] = so.mapped_column()
     is_active: so.Mapped[bool] = so.mapped_column(default=True)
-    # Client-specific discount, separate from network's reduction rate
-    discount_rate: so.Mapped[sa.Numeric] = so.mapped_column(
-        sa.Numeric(precision=5, scale=4),
-        default=Decimal("0.00"),  # Changed default to Decimal
-    )
 
     vendeur_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey("users.id"))
     vendeur: so.Mapped[User] = so.relationship(back_populates="clients")
@@ -161,7 +159,8 @@ class Stock(db.Model):
     network: so.Mapped[NetworkType] = so.mapped_column(
         sa.Enum(NetworkType), unique=True, nullable=False
     )
-    balance = db.Column(db.Numeric(precision=10, scale=2), default=0.00, nullable=False)
+    balance = db.Column(db.Numeric(precision=10, scale=2),
+                        default=0.00, nullable=False)
 
     buying_price_per_unit: so.Mapped[sa.Numeric] = so.mapped_column(
         sa.Numeric(10, 2), nullable=False, default=Decimal("0.00")
@@ -201,7 +200,8 @@ class StockPurchase(db.Model):
     stock_item_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("stock.id"), nullable=False
     )
-    stock_item: so.Mapped["Stock"] = so.relationship(back_populates="purchases")
+    stock_item: so.Mapped["Stock"] = so.relationship(
+        back_populates="purchases")
 
     network: so.Mapped[NetworkType] = so.mapped_column(
         sa.Enum(NetworkType), nullable=False
@@ -214,14 +214,13 @@ class StockPurchase(db.Model):
         sa.Numeric(10, 2), nullable=False
     )
 
-    amount_purchased: so.Mapped[int] = so.mapped_column(sa.Integer, nullable=False)
+    amount_purchased: so.Mapped[int] = so.mapped_column(
+        sa.Integer, nullable=False)
 
     # This was the first created_at, keep this one and ensure lambda and timezone.utc
     created_at: so.Mapped[datetime] = so.mapped_column(
         sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
-
-
 
     def __repr__(self) -> str:
         return f"<StockPurchase {self.network.value} - {self.amount_purchased} units bought at {self.buying_price_at_purchase} FC, intended sell at {self.selling_price_at_purchase} FC>"
@@ -251,7 +250,8 @@ class Sale(db.Model):
     client_id: so.Mapped[Optional[int]] = so.mapped_column(
         sa.ForeignKey("clients.id"), nullable=True
     )
-    client: so.Mapped[Optional[Client]] = so.relationship(back_populates="sales")
+    client: so.Mapped[Optional[Client]] = so.relationship(
+        back_populates="sales")
 
     client_name_adhoc: so.Mapped[Optional[str]] = so.mapped_column(
         sa.String(128), nullable=True
@@ -326,11 +326,13 @@ class CashOutflow(db.Model):
         back_populates="cash_outflows_recorded"
     )
 
-    amount: so.Mapped[sa.Numeric] = so.mapped_column(sa.Numeric(12, 2), nullable=False)
+    amount: so.Mapped[sa.Numeric] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False)
     category: so.Mapped[CashOutflowCategory] = so.mapped_column(
         sa.Enum(CashOutflowCategory), nullable=False
     )
-    description: so.Mapped[str] = so.mapped_column(sa.String(255), nullable=True)
+    description: so.Mapped[str] = so.mapped_column(
+        sa.String(255), nullable=True)
 
 
 # Cash Inflows (Entrees - beyond initial sale collection in Sale model)
@@ -349,15 +351,18 @@ class CashInflow(db.Model):
         back_populates="cash_inflows_recorded"
     )
 
-    amount: so.Mapped[sa.Numeric] = so.mapped_column(sa.Numeric(12, 2), nullable=False)
+    amount: so.Mapped[sa.Numeric] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False)
     category: so.Mapped[CashInflowCategory] = so.mapped_column(
         sa.Enum(CashInflowCategory),
         nullable=False,
         default=CashInflowCategory.SALE_COLLECTION,
     )
-    description: so.Mapped[str] = so.mapped_column(sa.String(255), nullable=True)
+    description: so.Mapped[str] = so.mapped_column(
+        sa.String(255), nullable=True)
 
-    sale_id: so.Mapped[int] = so.mapped_column(sa.ForeignKey("sales.id"), nullable=True)
+    sale_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("sales.id"), nullable=True)
     sale: so.Mapped["Sale"] = so.relationship(back_populates="cash_inflows")
 
 
@@ -366,7 +371,8 @@ class DailyStockReport(db.Model):
     __tablename__ = "daily_stock_reports"
 
     id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
-    report_date: so.Mapped[date] = so.mapped_column(sa.Date, nullable=False, index=True)
+    report_date: so.Mapped[date] = so.mapped_column(
+        sa.Date, nullable=False, index=True)
     network: so.Mapped[NetworkType] = so.mapped_column(
         sa.Enum(NetworkType), nullable=False
     )
@@ -390,7 +396,8 @@ class DailyStockReport(db.Model):
     )
 
     __table_args__ = (
-        sa.UniqueConstraint("report_date", "network", name="_report_date_network_uc"),
+        sa.UniqueConstraint("report_date", "network",
+                            name="_report_date_network_uc"),
     )
 
     def __repr__(self) -> str:

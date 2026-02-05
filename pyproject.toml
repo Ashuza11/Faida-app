@@ -1,5 +1,5 @@
 [project]
-name = "airtfast"
+name = "faida"
 version = "1.0.0"
 description = "Real-time financial analytics platform for telecom vendors."
 authors = [
