@@ -32,7 +32,7 @@ pytz==2025.2
 referencing==0.36.2
 rpds-py==0.25.1
 six==1.17.0
-SQLAlchemy==2.0.30
+SQLAlchemy==2.0.46
 tomli==2.2.1
 typing_extensions==4.14.0
 tzlocal==5.3.1
