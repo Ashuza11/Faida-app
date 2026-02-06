@@ -40,8 +40,13 @@
                     <div class="input-group-prepend">
                       <span class="input-group-text"><i class="ni ni-single-02"></i></span>
                     </div>
-                    {{ form.username(placeholder="Nom d'utilisateur",class="form-control") }}
+                    {{ form.login_id(placeholder="Nom d'utilisateur ou Téléphone", class="form-control") }}
                   </div>
+                  {% if form.login_id.errors %}
+                    {% for error in form.login_id.errors %}
+                      <small class="text-danger">{{ error }}</small>
+                    {% endfor %}
+                  {% endif %}
                 </div>
                 <div class="form-group">
                   <div class="input-group input-group-alternative">

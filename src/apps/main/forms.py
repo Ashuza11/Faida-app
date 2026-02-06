@@ -20,6 +20,7 @@ from wtforms.validators import (
     ValidationError,
     EqualTo,
 )
+
 from apps.models import (
     NetworkType,
     Sale,
@@ -74,30 +75,12 @@ class UserEditForm(FlaskForm):
     Form for admin to edit an existing user.
     Password field is excluded as it's typically handled separately.
     """
-
-    username = StringField(
-        "Nom d'utilisateur",
-        id="edit_username",
-        validators=[DataRequired()],
-        render_kw={"placeholder": "Entrer le nom d'utilisateur"},
-    )
-    email = StringField(
-        "Email",
-        id="edit_email",
-        validators=[DataRequired(), Email()],
-        render_kw={"placeholder": "Entrer email"},
-    )
-    role = SelectField(
-        "Role",
-        id="edit_role",
-        choices=[(role.value, role.name.capitalize()) for role in RoleType],
-        validators=[DataRequired()],
-    )
-    is_active = BooleanField(
-        "Actif",
-        id="edit_is_active",
-        validators=[Optional()],
-    )
+    from apps.auth.forms import validate_drc_phone_format
+    username = StringField("Nom d'utilisateur", id="edit_username", validators=[DataRequired()])
+    phone = StringField("Téléphone", id="edit_phone", validators=[DataRequired(), validate_drc_phone_format])
+    email = StringField("Email", id="edit_email", validators=[Optional(), Email()])
+    role = SelectField("Rôle", id="edit_role", choices=[], validators=[DataRequired()]) # Choices à remplir dans la route
+    is_active = BooleanField("Actif", id="edit_is_active")
     submit = SubmitField("Mettre à jour")
 
 

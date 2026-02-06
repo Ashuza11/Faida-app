@@ -11,29 +11,36 @@ def route_default():
 
 
 # Login & Registration
+from sqlalchemy import or_
+
 @bp.route("/login", methods=["GET", "POST"])
 def login():
     login_form = LoginForm(request.form)
-    if "login" in request.form:
-        username = request.form["username"]
+    
+    # Vérification si le bouton login est pressé
+    if "login" in request.form and login_form.validate():
+        login_id = request.form["login_id"]
         password = request.form["password"]
 
-        user = User.query.filter_by(username=username).first()
+        # Recherche hybride : username OU phone
+        user = User.query.filter(
+            or_(User.username == login_id, User.phone == login_id)
+        ).first()
 
         if user and user.check_password(password):
             login_user(user)
-            # welcome message
             flash(f"Bienvenue {user.username} !", "success")
-
-            # Templates will handle role-based UI
             return redirect(url_for("main_bp.index"))
 
         return render_template(
-            "auth/login.html", msg="Identifiants invalides", form=login_form
+            "auth/login.html", 
+            msg="Identifiants ou mot de passe incorrects", 
+            form=login_form
         )
 
     if not current_user.is_authenticated:
         return render_template("auth/login.html", form=login_form)
+        
     return redirect(url_for("main_bp.index"))
 
 
