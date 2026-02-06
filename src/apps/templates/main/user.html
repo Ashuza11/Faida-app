@@ -36,6 +36,7 @@
                 <tr>
                   <th scope="col">Nom</th>
                   <th scope="col">Email</th>
+                  <th scope="col">Telephone</th>
                   <th scope="col">Role</th>
                   <th scope="col">Status</th>
                   <th scope="col" class="text-right">Actions</th>
@@ -46,6 +47,7 @@
                   <tr>
                     <td>{{ user.username }}</td>
                     <td>{{ user.email }}</td>
+                    <td>{{ user.phone }}</td>
                     <td>{{ user.role.value | capitalize }}</td>
                     <td>
                       <span class="badge badge-dot mr-4">
@@ -69,6 +71,7 @@
                                 data-user-id="{{ user.id }}"
                                 data-username="{{ user.username }}"
                                 data-email="{{ user.email }}"
+                                data-phone="{{ user.phone }}"
                                 data-role="{{ user.role.value }}"
                                 data-is-active="{{ 'true' if user.is_active else 'false' }}">
                                 Editer
@@ -117,44 +120,53 @@
 {% endblock content %}
 
 
+
+
 {% block javascripts %}
-  {{ super() }}
-  {# Now for the JavaScript! Since we're not using the macro, put the JS directly here. #}
-  <script>
-    $(document).ready(function() {
-      // Show add stocker modal if there are form errors on initial load
-      {% if stocker_form.errors %}
-        $('#addStockerModal').modal('show');
-      {% endif %}
+{{ super() }}
+<script>
+$(document).ready(function() {
+  // ⚡ Réouvrir le modal "Add Stocker" si le formulaire contient des erreurs
+  {% if stocker_form.errors %}
+    $('#addStockerModal').modal('show');
+  {% endif %}
 
-      // JavaScript to populate the edit modal when 'Editer' is clicked
-      $('.edit-user-btn').on('click', function() {
-        var userId = $(this).data('user-id');
-        var username = $(this).data('username');
-        var email = $(this).data('email');
-        var role = $(this).data('role');
-        // Convert 'true'/'false' string to boolean
-        var isActive = $(this).data('is-active') === true; 
+  // ⚡ Réouvrir le modal "Edit User" si le formulaire contient des erreurs
+  {% if user_edit_form.errors %}
+    $('#editUserModal').modal('show');
+  {% endif %}
 
-        // Target the specific modal form
-        var $modalForm = $('#editUserModal form');
+  // ⚡ Remplir dynamiquement le modal "Edit User" quand on clique sur "Editer"
+  $('.edit-user-btn').on('click', function() {
+    var userId = $(this).data('user-id');
+    var username = $(this).data('username');
+    var email = $(this).data('email') || '';
+    var phone = $(this).data('phone') || '';
+    var role = $(this).attr('data-role');             // récupère la valeur du rôle
+    var isActive = $(this).attr('data-is-active') === 'true'; // récupère la valeur active
 
-        // Dynamically set the form's action URL to the user_edit route
-        // We use .replace('0', userId) to insert the actual user ID into the URL
-        $modalForm.attr('action', '{{ url_for("main_bp.user_edit", user_id=0) }}'.replace('0', userId));
+    // ⚡ Sélection du formulaire à l'intérieur du modal
+    var $modalForm = $('#editUserModal form');
 
-        // Populate the form fields inside the modal
-        $modalForm.find('#edit_username').val(username);
-        $modalForm.find('#edit_email').val(email);
-        $modalForm.find('#edit_role').val(role); // Set the selected value for the dropdown
-        $modalForm.find('#edit_is_active').prop('checked', isActive); // Set checkbox state
-      });
+    // ⚡ Mettre à jour dynamiquement l'action du formulaire avec l'ID utilisateur
+    $modalForm.attr('action', '{{ url_for("main_bp.user_edit", user_id=0) }}'.replace('0', userId));
 
-      // Optional: If the edit form had errors on submission, re-open the modal
-      // This happens if you redirect back to this page after a failed edit form submission
-      {% if user_edit_form.errors %}
-        $('#editUserModal').modal('show');
-      {% endif %}
-    });
-  </script>
+    // ⚡ Pré-remplir les champs du formulaire
+    $modalForm.find('#edit_username').val(username);
+    $modalForm.find('#edit_email').val(email);
+    $modalForm.find('#edit_phone').val(phone);
+
+    // ⚡ Sélectionner l'option du rôle correspondant (valeur par défaut)
+    $modalForm.find('#edit_role').val(role);
+
+    // ⚡ Mettre à jour le checkbox is_active
+    $modalForm.find('#edit_is_active').prop('checked', isActive);
+  });
+});
+</script>
 {% endblock javascripts %}
+
+
+
+
+

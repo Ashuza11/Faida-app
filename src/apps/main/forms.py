@@ -21,6 +21,7 @@ from wtforms.validators import (
     EqualTo,
 )
 
+from apps.auth.forms import validate_drc_phone_format
 from apps.models import (
     NetworkType,
     Sale,
@@ -36,6 +37,7 @@ from decimal import Decimal
 class StockerForm(FlaskForm):
     """
     Form for admin to add a new stocker.
+    Email is optional now.
     Fields are pre-filled with Bootstrap classes for styling.
     """
 
@@ -48,8 +50,15 @@ class StockerForm(FlaskForm):
     email = StringField(
         "Email",
         id="stocker_email",
-        validators=[DataRequired(), Email()],
+        validators=[Optional(), Email()],
         render_kw={"placeholder": " Entrer email"},
+    )
+    
+    phone = StringField(
+        "Téléphone",
+        id="stocker_phone",
+        validators=[DataRequired(), validate_drc_phone_format],
+        render_kw={"placeholder": "0812345678"},
     )
     password = PasswordField(
         "Mot de passe",
@@ -75,12 +84,39 @@ class UserEditForm(FlaskForm):
     Form for admin to edit an existing user.
     Password field is excluded as it's typically handled separately.
     """
-    from apps.auth.forms import validate_drc_phone_format
-    username = StringField("Nom d'utilisateur", id="edit_username", validators=[DataRequired()])
-    phone = StringField("Téléphone", id="edit_phone", validators=[DataRequired(), validate_drc_phone_format])
-    email = StringField("Email", id="edit_email", validators=[Optional(), Email()])
-    role = SelectField("Rôle", id="edit_role", choices=[], validators=[DataRequired()]) # Choices à remplir dans la route
+    username = StringField(
+        "Nom d'utilisateur",
+        id="edit_username",
+        validators=[DataRequired()]
+    )
+
+    phone = StringField(
+        "Téléphone",
+        id="edit_phone",
+        validators=[DataRequired(), validate_drc_phone_format]
+    )
+
+    email = StringField(
+        "Email",
+        id="edit_email",
+        validators=[Optional(), Email()]
+    )
+
+    role = SelectField(
+        "Rôle",
+        id="edit_role",
+        choices=[
+            (role.value, role.name.capitalize())
+            for role in RoleType
+            if role != RoleType.SUPERADMIN 
+        ],
+        validators=[DataRequired()]
+    )
+
+    # Tu peux laisser ce champ si tu veux permettre de cocher/décocher l'activation
+    # Sinon, tu peux le supprimer et gérer via le bouton d'activation
     is_active = BooleanField("Actif", id="edit_is_active")
+
     submit = SubmitField("Mettre à jour")
 
 
