@@ -23,7 +23,9 @@ def create_superadmin():
         if not User.query.filter_by(role=RoleType.SUPERADMIN).first():
             superadmin = User(
                 username=admin_data["username"],
-                email=admin_data["email"],
+                phone=admin_data["phone"],
+                # email=admin_data["email"],
+                email=admin_data.get("email"),
                 role=RoleType.SUPERADMIN,
                 is_active=True,
             )

@@ -59,13 +59,16 @@ class User(db.Model, UserMixin):
     username: so.Mapped[str] = so.mapped_column(
         sa.String(64), index=True, unique=True, nullable=False
     )
-    email: so.Mapped[str] = so.mapped_column(
-        sa.String(120), unique=True, nullable=False
+    email: so.Mapped[Optional[str]] = so.mapped_column(
+        sa.String(120), unique=True, nullable=True
     )
     password_hash: so.Mapped[str] = so.mapped_column(
         sa.String(128), nullable=False)
-    phone: so.Mapped[Optional[str]] = so.mapped_column(
-        sa.String(20), unique=True)
+    
+    phone: so.Mapped[str] = so.mapped_column(
+        sa.String(20), unique=True, nullable=False, index=True
+        )
+    
     role: so.Mapped[RoleType] = so.mapped_column(
         sa.Enum(RoleType), nullable=False)
     created_by: so.Mapped[Optional[int]] = so.mapped_column(
@@ -111,7 +114,8 @@ class User(db.Model, UserMixin):
         return f"<User {self.username} ({self.role.value})>"
 
     def avatar(self, size):
-        digest = md5(self.email.lower().encode("utf-8")).hexdigest()
+        email_or_alt = self.email.lower() if self.email else self.username.lower()
+        digest = md5(email_or_alt.encode("utf-8")).hexdigest()
         return f"https://www.gravatar.com/avatar/{digest}?d=identicon&s={size}"
 
 
