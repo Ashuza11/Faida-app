@@ -285,18 +285,26 @@ def stocker_management():
 
     # Handle the form submission for creating a new stocker
     if stocker_form.validate_on_submit():
-        # Check if username or email already exists
+        # Check if username already exists
         existing_user = User.query.filter(
-            (User.username == stocker_form.username.data)
-            | (User.email == stocker_form.email.data)
+            User.username == stocker_form.username.data
         ).first()
 
-        if existing_user:
+        # Si email est fourni, on vérifie s'il est déjà utilisé
+        if stocker_form.email.data:
+            existing_email = User.query.filter(
+                User.email == stocker_form.email.data
+            ).first()
+        else:
+            existing_email = None
+
+        if existing_user or existing_email:
             flash("Nom d'utilisateur ou email déjà utilisé.", "danger")
         else:
             new_user = User(
                 username=stocker_form.username.data,
-                email=stocker_form.email.data,
+                phone=stocker_form.phone.data,
+                email=stocker_form.email.data or None,  # email optionnel
                 role=RoleType(stocker_form.role.data),
                 created_by=current_user.id,
             )
@@ -305,6 +313,7 @@ def stocker_management():
             db.session.commit()
             flash("Utilisateur créé avec succès!", "success")
             return redirect(url_for("main_bp.stocker_management"))
+
 
     users = User.query.all()
     return render_template(
@@ -328,15 +337,20 @@ def user_edit(user_id):
 
     user_edit_form = UserEditForm()
     stocker_form = StockerForm()
-
+    
     if user_edit_form.validate_on_submit():
-        # Check if username or email already exists for *another* user
+        # Check if username already exists for another user
         existing_user_by_username = User.query.filter(
             User.username == user_edit_form.username.data, User.id != user_id
         ).first()
-        existing_user_by_email = User.query.filter(
-            User.email == user_edit_form.email.data, User.id != user_id
-        ).first()
+
+        # Email check only if email provided
+        if user_edit_form.email.data:
+            existing_user_by_email = User.query.filter(
+                User.email == user_edit_form.email.data, User.id != user_id
+            ).first()
+        else:
+            existing_user_by_email = None
 
         if existing_user_by_username:
             flash("Nom d'utilisateur déjà utilisé", "danger")
@@ -344,12 +358,17 @@ def user_edit(user_id):
             flash("Email déjà utilisé ", "danger")
         else:
             user.username = user_edit_form.username.data
-            user.email = user_edit_form.email.data
+            user.phone = user_edit_form.phone.data
+            user.email = user_edit_form.email.data or None
             user.role = RoleType(user_edit_form.role.data)
             user.is_active = user_edit_form.is_active.data
             db.session.commit()
             flash("Utilisateur mis à jour avec succès!", "success")
             return redirect(url_for("main_bp.stocker_management"))
+
+
+        
+
     elif request.method == "GET":
         # Pre-populate form with existing user data on GET request
         user_edit_form.username.data = user.username

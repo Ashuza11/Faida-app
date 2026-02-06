@@ -1,9 +1,9 @@
 from flask import render_template, redirect, request, url_for, flash
 from flask_login import current_user, login_user, logout_user
 from apps.auth import bp
-from apps.auth.forms import LoginForm, CreateAccountForm
+from apps.auth.forms import LoginForm, CreateAccountForm, normalize_drc_phone
 from apps.models import User
-
+from sqlalchemy import or_
 
 @bp.route("/")
 def route_default():
@@ -11,20 +11,31 @@ def route_default():
 
 
 # Login & Registration
-from sqlalchemy import or_
-
 @bp.route("/login", methods=["GET", "POST"])
 def login():
-    login_form = LoginForm(request.form)
-    
-    # Vérification si le bouton login est pressé
-    if "login" in request.form and login_form.validate():
-        login_id = request.form["login_id"]
-        password = request.form["password"]
+    form = LoginForm()
 
-        # Recherche hybride : username OU phone
+    print("METHOD:", request.method)
+
+    if request.method == "POST":
+        print("RAW FORM:", request.form)
+
+    if request.method == "POST" and not form.validate():
+        print("FORM ERRORS:", form.errors)
+
+    if form.validate_on_submit():
+        print("VALIDATED OK")
+
+        login_id = form.login_id.data.strip()
+        password = form.password.data
+
+        normalized_phone = normalize_drc_phone(login_id)
+
         user = User.query.filter(
-            or_(User.username == login_id, User.phone == login_id)
+            or_(
+                User.username == login_id,
+                User.phone == normalized_phone,
+            )
         ).first()
 
         if user and user.check_password(password):
@@ -32,16 +43,11 @@ def login():
             flash(f"Bienvenue {user.username} !", "success")
             return redirect(url_for("main_bp.index"))
 
-        return render_template(
-            "auth/login.html", 
-            msg="Identifiants ou mot de passe incorrects", 
-            form=login_form
-        )
+        print("BAD CREDENTIALS")
+        flash("Identifiants ou mot de passe incorrects", "danger")
 
-    if not current_user.is_authenticated:
-        return render_template("auth/login.html", form=login_form)
-        
-    return redirect(url_for("main_bp.index"))
+    return render_template("auth/login.html", form=form)
+
 
 
 @bp.route("/register", methods=["GET", "POST"])
@@ -52,6 +58,7 @@ def register():
         form=CreateAccountForm(request.form),
         disabled=True,
     )
+
 
 
 @bp.route("/logout")

@@ -19,13 +19,19 @@
                   <img src="/static/assets/img/brand/faida-logo.png" class="mb-3" style="width: 150px; height: auto;">
                 </a>
                 <br />
-                {% if msg %}
-                  <span class="text-danger">{{ msg | safe }}</span>
-                {% else %}
-                <span>
-                  Entrez votre nom et mot de passe pour continuer.
-                </span>
-                {% endif %}
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                  {% if messages %}
+                    {% for category, message in messages %}
+                      <span class="text-{{ 'danger' if category == 'danger' else category }}">
+                        {{ message }}
+                      </span>
+                    {% endfor %}
+                  {% else %}
+                    <span>
+                      Entrez votre nom et mot de passe pour continuer.
+                    </span>
+                  {% endif %}
+                {% endwith %}
               </div>
               
             </div>
@@ -44,7 +50,7 @@
                   </div>
                   {% if form.login_id.errors %}
                     {% for error in form.login_id.errors %}
-                      <small class="text-danger">{{ error }}</small>
+                      <small class="text-danger d-block">{{ error }}</small>
                     {% endfor %}
                   {% endif %}
                 </div>
@@ -55,6 +61,11 @@
                     </div>
                     {{ form.password(placeholder="Mot de passe",class="form-control",type="password") }}
                   </div>
+                  {% if form.password.errors %}
+                    {% for error in form.password.errors %}
+                      <small class="text-danger d-block">{{ error }}</small>
+                    {% endfor %}
+                  {% endif %}
                 </div>
 
                 <div class="text-center">
