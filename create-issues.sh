@@ -31,6 +31,51 @@ echo ""
 # Infrastructure Issues
 # ===========================================
 
+echo "🏷️  Ensuring all labels exist..."
+
+declare -A LABELS=(
+  ["infrastructure"]="1f6feb"
+  ["database"]="0969da"
+  ["devops"]="0e8a16"
+  ["docker"]="2496ed"
+  ["design"]="d4c5f9"
+  ["ui"]="a2eeef"
+  ["ux"]="bfdadc"
+  ["mobile"]="c2e0c6"
+  ["auth"]="f9d0c4"
+  ["backend"]="5319e7"
+  ["profile"]="fbca04"
+  ["bug"]="d73a4a"
+  ["notifications"]="e99695"
+  ["geolocation"]="0052cc"
+  ["feature"]="84b6eb"
+  ["support"]="0e8a16"
+  ["refactor"]="d876e3"
+  ["code-quality"]="fef2c0"
+  ["cli"]="ededed"
+  ["priority-high"]="b60205"
+  ["priority-medium"]="fbca04"
+  ["priority-low"]="0e8a16"
+)
+
+# Get ALL labels (no pagination issue)
+EXISTING_LABELS=$(gh label list --limit 1000 --json name -q '.[].name')
+
+for LABEL in "${!LABELS[@]}"; do
+  if ! echo "$EXISTING_LABELS" | grep -qx "$LABEL"; then
+    echo "➕ Creating label: $LABEL"
+    gh label create "$LABEL" --color "${LABELS[$LABEL]}"
+  else
+    echo "✅ Label exists: $LABEL"
+  fi
+done
+
+echo "🎉 All labels verified"
+
+
+
+
+
 echo "📦 Creating Infrastructure Issues..."
 
 gh issue create \
