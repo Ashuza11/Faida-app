@@ -1,10 +1,12 @@
+# ============================================================
+# Raida App Buisiness Logic
+# ============================================================
+from apps.main import pdf_routes
 from apps.main import bp
 from flask import render_template, request, flash, redirect, url_for, abort, current_app
 from flask_login import login_required, current_user
-import sqlalchemy as sa
 from sqlalchemy import func
 from jinja2 import TemplateNotFound
-from apps.decorators import superadmin_required, vendeur_required
 from apps.main.utils import (
     custom_round_up,
     get_paginated_results,
@@ -18,9 +20,18 @@ from apps.main.utils import (
 
 )
 
+from apps.decorators import (
+    platform_admin_required,
+    vendeur_required,
+    business_member_required,
+    get_current_vendeur_id,
+    filter_by_vendeur,
+    ensure_access,
+)
+
 from apps import db
 from decimal import Decimal, InvalidOperation
-from datetime import datetime, timedelta, timezone, date
+from datetime import datetime, timedelta
 import pytz
 from apps.models import (
     User,
@@ -38,10 +49,12 @@ from apps.models import (
     CashInflowCategory,
     DailyOverallReport,
     DailyStockReport,
+    normalize_phone,
+    validate_drc_phone
 )
 
 from apps.main.forms import (
-    StockerForm,
+    StockeurForm,
     UserEditForm,
     ClientForm,
     ClientEditForm,
@@ -72,25 +85,29 @@ def index():
         get_local_timezone_datetime_info()
     )
 
+    # --- Get current vendeur context ---
+    vendeur_id = get_current_vendeur_id()
+
     # --- 1. Total Stock for each network (Card stats) ---
-    current_stocks = Stock.query.all()
+    if vendeur_id:
+        current_stocks = Stock.query.filter_by(vendeur_id=vendeur_id).all()
+    else:
+        current_stocks = Stock.query.all()  # Platform admin sees all
+
     total_stocks_data = {
-        stock.network.value: stock.balance for stock in current_stocks}
+        stock.network.value: stock.balance for stock in current_stocks
+    }
 
     # --- 2. Sales Over Time (Chart 1 - Sales Value) ---
     sales_data_week = {}
-    # Iterate through local dates, but filter by UTC time range
     for i in range(6, -1, -1):
         target_local_date = today_local_date - timedelta(days=i)
-        # Recalculate UTC bounds for each target_local_date using the APP_TIMEZONE
         start_of_target_day_utc = APP_TIMEZONE.localize(
             datetime(
                 target_local_date.year,
                 target_local_date.month,
                 target_local_date.day,
-                0,
-                0,
-                0,
+                0, 0, 0,
             )
         ).astimezone(pytz.utc)
         end_of_target_day_utc = APP_TIMEZONE.localize(
@@ -98,129 +115,118 @@ def index():
                 target_local_date.year,
                 target_local_date.month,
                 target_local_date.day,
-                23,
-                59,
-                59,
-                999999,
+                23, 59, 59, 999999,
             )
         ).astimezone(pytz.utc)
 
-        # Query using the UTC datetime range
-        daily_sales = (
-            db.session.query(func.sum(Sale.total_amount_due))
-            .filter(
-                Sale.created_at >= start_of_target_day_utc,
-                Sale.created_at <= end_of_target_day_utc,
-            )
-            .scalar()
-        )
+        # Query with vendeur filtering
+        query = db.session.query(func.sum(Sale.total_amount_due))
+        if vendeur_id:
+            query = query.filter(Sale.vendeur_id == vendeur_id)
+        daily_sales = query.filter(
+            Sale.created_at >= start_of_target_day_utc,
+            Sale.created_at <= end_of_target_day_utc,
+        ).scalar()
+
         sales_data_week[target_local_date.strftime("%a")] = (
             float(daily_sales) if daily_sales else 0.00
         )
 
-    # --- 3. Sales by Network (Chart 2 - Total Orders/Performance) ---
+    # --- 3. Sales by Network (Chart 2) ---
     sales_by_network = {}
     for network in NetworkType:
-        network_sales = (
-            db.session.query(func.sum(SaleItem.subtotal))
-            .filter(
-                SaleItem.network == network,
-                # Filter by UTC datetime range for the current local day
-                SaleItem.created_at >= start_of_local_day_utc,
-                SaleItem.created_at <= end_of_local_day_utc,
-            )
-            .scalar()
-        )
+        query = db.session.query(func.sum(SaleItem.subtotal)).join(Sale)
+        if vendeur_id:
+            query = query.filter(Sale.vendeur_id == vendeur_id)
+        network_sales = query.filter(
+            SaleItem.network == network,
+            SaleItem.created_at >= start_of_local_day_utc,
+            SaleItem.created_at <= end_of_local_day_utc,
+        ).scalar()
         sales_by_network[network.value] = (
             float(network_sales) if network_sales else 0.00
         )
 
-    # --- 4. Key Performance Indicators (Card Stats) ---
-    # Total Sales (Today - based on local timezone's definition of "today")
-    total_sales_today = (
-        db.session.query(func.sum(Sale.total_amount_due))
-        .filter(
-            Sale.created_at >= start_of_local_day_utc,
-            Sale.created_at <= end_of_local_day_utc,
-        )
-        .scalar()
-    )
+    # --- 4. Key Performance Indicators ---
+    # Total Sales Today
+    query = db.session.query(func.sum(Sale.total_amount_due))
+    if vendeur_id:
+        query = query.filter(Sale.vendeur_id == vendeur_id)
+    total_sales_today = query.filter(
+        Sale.created_at >= start_of_local_day_utc,
+        Sale.created_at <= end_of_local_day_utc,
+    ).scalar()
     total_sales_today = float(total_sales_today) if total_sales_today else 0.00
 
-    # Total Debt (Currently outstanding) - This query is fine as it's not date-specific
-    total_debt = (
-        db.session.query(func.sum(Sale.debt_amount))
-        .filter(
-            Sale.debt_amount > 0,
-            # If you want to show total debt *as of end of today's local time*, uncomment below:
-            # Sale.created_at <= end_of_local_day_utc,
-        )
-        .scalar()
-    )
+    # Total Debt
+    query = db.session.query(func.sum(Sale.debt_amount)
+                             ).filter(Sale.debt_amount > 0)
+    if vendeur_id:
+        query = query.filter(Sale.vendeur_id == vendeur_id)
+    total_debt = query.scalar()
     total_debt = float(total_debt) if total_debt else 0.00
 
-    # Total Cash Inflow (Today, from sales collection and other inflows)
-    total_cash_inflow_sales = (
-        db.session.query(func.sum(Sale.cash_paid))
-        .filter(
-            Sale.created_at >= start_of_local_day_utc,
-            Sale.created_at <= end_of_local_day_utc,
-        )
-        .scalar()
-    )
-    total_cash_inflow_other = (
-        db.session.query(func.sum(CashInflow.amount))
-        .filter(
-            CashInflow.created_at >= start_of_local_day_utc,
-            CashInflow.created_at <= end_of_local_day_utc,
-        )
-        .scalar()
-    )
+    # Total Cash Inflow (Today)
+    query = db.session.query(func.sum(Sale.cash_paid))
+    if vendeur_id:
+        query = query.filter(Sale.vendeur_id == vendeur_id)
+    total_cash_inflow_sales = query.filter(
+        Sale.created_at >= start_of_local_day_utc,
+        Sale.created_at <= end_of_local_day_utc,
+    ).scalar()
+
+    query = db.session.query(func.sum(CashInflow.amount))
+    if vendeur_id:
+        query = query.filter(CashInflow.vendeur_id == vendeur_id)
+    total_cash_inflow_other = query.filter(
+        CashInflow.created_at >= start_of_local_day_utc,
+        CashInflow.created_at <= end_of_local_day_utc,
+    ).scalar()
 
     total_cash_inflow_today = (
-        total_cash_inflow_sales if total_cash_inflow_sales else Decimal("0.00")
-    ) + (total_cash_inflow_other if total_cash_inflow_other else Decimal("0.00"))
+        (total_cash_inflow_sales or Decimal("0.00")) +
+        (total_cash_inflow_other or Decimal("0.00"))
+    )
     total_cash_inflow_today = float(total_cash_inflow_today)
 
     # Total Cash Outflow (Today)
-    total_cash_outflow_today = (
-        db.session.query(func.sum(CashOutflow.amount))
-        .filter(
-            CashOutflow.created_at >= start_of_local_day_utc,
-            CashOutflow.created_at <= end_of_local_day_utc,
-        )
-        .scalar()
-    )
+    query = db.session.query(func.sum(CashOutflow.amount))
+    if vendeur_id:
+        query = query.filter(CashOutflow.vendeur_id == vendeur_id)
+    total_cash_outflow_today = query.filter(
+        CashOutflow.created_at >= start_of_local_day_utc,
+        CashOutflow.created_at <= end_of_local_day_utc,
+    ).scalar()
     total_cash_outflow_today = (
         float(total_cash_outflow_today) if total_cash_outflow_today else 0.00
     )
 
     # --- 5. Recent Sales History (Table) ---
-    recent_sales = (
-        Sale.query.options(
-            db.joinedload(Sale.vendeur),
-            db.joinedload(Sale.client),
-            db.joinedload(Sale.sale_items),
-        )
-        .order_by(Sale.created_at.desc())
-        .limit(5)
-        .all()
-    )
+    base_query = Sale.query.options(
+        db.joinedload(Sale.client),
+        db.joinedload(Sale.sale_items),
+    ).order_by(Sale.created_at.desc())
 
-    # --- 6. Daily Stock Report and Overall Report (Summary Tables) ---
-    # Query for yesterday's reports for display on the index,
-    # as they are typically generated for the completed previous day.
+    filtered_query = filter_by_vendeur(base_query, Sale)
+    recent_sales = filtered_query.limit(5).all()
+
+    # --- 6. Daily Reports ---
     yesterday_local_date = today_local_date - timedelta(days=1)
 
-    daily_stock_reports = DailyStockReport.query.filter_by(
-        report_date=yesterday_local_date
-    ).all()
-    daily_overall_report = DailyOverallReport.query.filter_by(
-        report_date=yesterday_local_date
-    ).first()
-
-    # Optional: If you want to display 'No Report Yet' for today if the cron hasn't run
-    # You could check if daily_overall_report is None and provide a message to the template.
+    if vendeur_id:
+        daily_stock_reports = DailyStockReport.query.filter_by(
+            report_date=yesterday_local_date, vendeur_id=vendeur_id
+        ).all()
+        daily_overall_report = DailyOverallReport.query.filter_by(
+            report_date=yesterday_local_date, vendeur_id=vendeur_id
+        ).first()
+    else:
+        daily_stock_reports = DailyStockReport.query.filter_by(
+            report_date=yesterday_local_date
+        ).all()
+        daily_overall_report = DailyOverallReport.query.filter_by(
+            report_date=yesterday_local_date
+        ).first()
 
     return render_template(
         "main/index.html",
@@ -272,41 +278,90 @@ def get_segment(request):
         return None
 
 
-# User management
 @bp.route("/admin/stocker", methods=["GET", "POST"])
 @login_required
-@superadmin_required
+@vendeur_required
 def stocker_management():
     """
-    Renders the stocker management page and handles creation of new users (stocker).
+    Renders the stockeur management page for a VENDEUR to manage their employees.
+
+    Access: VENDEUR only (not stockeurs, not platform admin here)
+    Shows: The vendeur + all their stockeurs
+    Creates: New stockeurs linked to this vendeur
     """
-    stocker_form = StockerForm()
+    stocker_form = StockeurForm()
     user_edit_form = UserEditForm()
 
-    # Handle the form submission for creating a new stocker
+    # --- Handle POST: Create new stockeur ---
     if stocker_form.validate_on_submit():
-        # Check if username or email already exists
-        existing_user = User.query.filter(
-            (User.username == stocker_form.username.data)
-            | (User.email == stocker_form.email.data)
-        ).first()
+        try:
+            # Normalize phone number
+            phone = normalize_phone(stocker_form.phone.data)
 
-        if existing_user:
-            flash("Nom d'utilisateur ou email déjà utilisé.", "danger")
-        else:
-            new_user = User(
+            # Check if phone already exists (phone is unique across all users)
+            existing_by_phone = User.query.filter_by(phone=phone).first()
+            if existing_by_phone:
+                flash("Ce numéro de téléphone est déjà utilisé.", "danger")
+                return redirect(url_for("main_bp.stocker_management"))
+
+            # Check if username already exists
+            existing_by_username = User.query.filter_by(
+                username=stocker_form.username.data
+            ).first()
+            if existing_by_username:
+                flash("Ce nom d'utilisateur est déjà utilisé.", "danger")
+                return redirect(url_for("main_bp.stocker_management"))
+
+            # Check email if provided
+            if stocker_form.email.data:
+                existing_by_email = User.query.filter_by(
+                    email=stocker_form.email.data.lower()
+                ).first()
+                if existing_by_email:
+                    flash("Cette adresse email est déjà utilisée.", "danger")
+                    return redirect(url_for("main_bp.stocker_management"))
+
+            # Create new STOCKEUR linked to current vendeur
+            new_stockeur = User(
                 username=stocker_form.username.data,
-                email=stocker_form.email.data,
-                role=RoleType(stocker_form.role.data),
+                phone=phone,
+                email=stocker_form.email.data.lower() if stocker_form.email.data else None,
+                role=RoleType.STOCKEUR,  # Always STOCKEUR - vendeurs can only create stockeurs
+                # Link to current vendeur (the employer)
+                vendeur_id=current_user.id,
                 created_by=current_user.id,
+                is_active=True,
             )
-            new_user.set_password(stocker_form.password.data)
-            db.session.add(new_user)
+            new_stockeur.set_password(stocker_form.password.data)
+
+            db.session.add(new_stockeur)
             db.session.commit()
-            flash("Utilisateur créé avec succès!", "success")
+
+            flash(
+                f"Stockeur '{new_stockeur.username}' créé avec succès!", "success")
             return redirect(url_for("main_bp.stocker_management"))
 
-    users = User.query.all()
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error creating stockeur: {e}")
+            flash("Une erreur est survenue lors de la création.", "danger")
+
+    # --- Handle GET: Fetch users for display ---
+
+    # Get the current vendeur's ID
+    vendeur_id = current_user.id  # Since @vendeur_required, current_user IS the vendeur
+
+    # Query: Get the vendeur (themselves) + all their stockeurs
+    users = User.query.filter(
+        db.or_(
+            User.id == vendeur_id,  # The vendeur themselves
+            User.vendeur_id == vendeur_id  # Their stockeurs
+        )
+    ).order_by(
+        User.role.asc(),  # Vendeur first, then stockeurs
+        User.created_at.desc()  # Newest first within each role
+    ).all()
+
     return render_template(
         "main/user.html",
         users=users,
@@ -319,50 +374,82 @@ def stocker_management():
 
 @bp.route("/admin/user/edit/<int:user_id>", methods=["GET", "POST"])
 @login_required
-@superadmin_required
+@vendeur_required
 def user_edit(user_id):
+    """
+    Edit a stockeur's information.
+    Vendeurs can only edit their own stockeurs.
+    """
     user = db.session.get(User, user_id)
+
     if not user:
         flash("Utilisateur non trouvé.", "danger")
         return redirect(url_for("main_bp.stocker_management"))
 
+    # Security check: Can only edit own stockeurs (or self)
+    if user.id != current_user.id and user.vendeur_id != current_user.id:
+        flash("Vous n'êtes pas autorisé à modifier cet utilisateur.", "danger")
+        return redirect(url_for("main_bp.stocker_management"))
+
+    # Prevent vendeur from changing their own role
+    if user.id == current_user.id:
+        flash("Utilisez la page profil pour modifier vos informations.", "warning")
+        return redirect(url_for("main_bp.profile"))
+
     user_edit_form = UserEditForm()
-    stocker_form = StockerForm()
+    stocker_form = StockeurForm()
 
     if user_edit_form.validate_on_submit():
-        # Check if username or email already exists for *another* user
-        existing_user_by_username = User.query.filter(
-            User.username == user_edit_form.username.data, User.id != user_id
-        ).first()
-        existing_user_by_email = User.query.filter(
-            User.email == user_edit_form.email.data, User.id != user_id
+        # Check username uniqueness (excluding current user)
+        existing_by_username = User.query.filter(
+            User.username == user_edit_form.username.data,
+            User.id != user_id
         ).first()
 
-        if existing_user_by_username:
-            flash("Nom d'utilisateur déjà utilisé", "danger")
-        elif existing_user_by_email:
-            flash("Email déjà utilisé ", "danger")
+        if existing_by_username:
+            flash("Ce nom d'utilisateur est déjà utilisé.", "danger")
         else:
+            # Check email uniqueness if provided
+            if user_edit_form.email.data:
+                existing_by_email = User.query.filter(
+                    User.email == user_edit_form.email.data.lower(),
+                    User.id != user_id
+                ).first()
+                if existing_by_email:
+                    flash("Cette adresse email est déjà utilisée.", "danger")
+                    return redirect(url_for("main_bp.stocker_management"))
+
+            # Update user
             user.username = user_edit_form.username.data
-            user.email = user_edit_form.email.data
-            user.role = RoleType(user_edit_form.role.data)
+            user.email = user_edit_form.email.data.lower() if user_edit_form.email.data else None
             user.is_active = user_edit_form.is_active.data
+            # Note: Don't allow changing role - stockeurs stay stockeurs
+
             db.session.commit()
             flash("Utilisateur mis à jour avec succès!", "success")
             return redirect(url_for("main_bp.stocker_management"))
+
     elif request.method == "GET":
-        # Pre-populate form with existing user data on GET request
+        # Pre-populate form
         user_edit_form.username.data = user.username
         user_edit_form.email.data = user.email
-        user_edit_form.role.data = user.role.value
         user_edit_form.is_active.data = user.is_active
 
-    users = User.query.all()
+    # Re-fetch users for the page
+    vendeur_id = current_user.id
+    users = User.query.filter(
+        db.or_(
+            User.id == vendeur_id,
+            User.vendeur_id == vendeur_id
+        )
+    ).order_by(User.role.asc(), User.created_at.desc()).all()
+
     return render_template(
         "main/user.html",
         users=users,
         stocker_form=stocker_form,
         user_edit_form=user_edit_form,
+        editing_user=user,  # Pass the user being edited
         segment="admin",
         sub_segment="stocker",
     )
@@ -370,14 +457,14 @@ def user_edit(user_id):
 
 @bp.route("/admin/user/toggle_active/<int:user_id>", methods=["POST"])
 @login_required
-@superadmin_required
+@vendeur_required
 def user_toggle_active(user_id):
     user = db.session.get(User, user_id)
     if not user:
         flash("Utilisateur non trouvé.", "danger")
     else:
         # Prevent deactivating the superadmin who is currently logged in
-        if user.id == current_user.id and user.role == RoleType.SUPERADMIN:
+        if user.id == current_user.id and user.role == RoleType.PLATFORM_ADMIN:
             flash("Impossible de désactiver votre compte", "warning")
         else:
             user.is_active = not user.is_active  # Toggle the status
@@ -395,59 +482,54 @@ def user_toggle_active(user_id):
 # Client Management
 @bp.route("/admin/clients", methods=["GET", "POST"])
 @login_required
-@vendeur_required
+@business_member_required
 def client_management():
-    """
-    Renders the client management page and handles creation of new clients.
-    """
     client_form = ClientForm()
     client_edit_form = ClientEditForm()
 
     if client_form.validate_on_submit():
-        # Retrieve GPS data directly from request.form as it's no longer part of WTForms
-        # Use .get() to safely retrieve, in case the values are not present
         gps_lat = request.form.get("gps_lat")
         gps_long = request.form.get("gps_long")
 
-        # Convert to float if not None
         try:
             gps_lat = float(gps_lat) if gps_lat else None
             gps_long = float(gps_long) if gps_long else None
         except ValueError:
             flash("Coordonnées GPS invalides.", "danger")
-            # If conversion fails, you might want to render the template again
-            # with existing form data to show error, or set to None
             gps_lat = None
             gps_long = None
 
         existing_client = Client.query.filter_by(
-            name=client_form.name.data).first()
+            name=client_form.name.data,
+            vendeur_id=current_user.business_vendeur_id
+        ).first()
 
         if existing_client:
             flash("Un client avec ce nom existe déjà.", "danger")
         else:
+            # FIX: Use vendeur_id instead of vendeur
             new_client = Client(
                 name=client_form.name.data,
-                # email=client_form.email.data if client_form.email.data else None,
                 phone_airtel=client_form.phone_airtel.data,
                 phone_africel=client_form.phone_africel.data,
                 phone_orange=client_form.phone_orange.data,
                 phone_vodacom=client_form.phone_vodacom.data,
                 address=client_form.address.data,
-                gps_lat=gps_lat,  # Use the retrieved GPS data
-                gps_long=gps_long,  # Use the retrieved GPS data
-                vendeur=current_user,
+                gps_lat=gps_lat,
+                gps_long=gps_long,
+                vendeur_id=current_user.business_vendeur_id,  # ← FIXED
             )
             db.session.add(new_client)
             db.session.commit()
             flash("Client créé avec succès!", "success")
             return redirect(url_for("main_bp.client_management"))
 
-    # Query clients
-    if current_user.role == RoleType.SUPERADMIN:
-        clients = Client.query.all()
+    # FIX: Use the helper instead of role check
+    vendeur_id = get_current_vendeur_id()
+    if vendeur_id:
+        clients = Client.query.filter_by(vendeur_id=vendeur_id).all()
     else:
-        clients = Client.query.filter_by(vendeur_id=current_user.id).all()
+        clients = Client.query.all()  # Platform admin sees all
 
     return render_template(
         "main/clients.html",
@@ -469,10 +551,7 @@ def client_edit(client_id):
     client = Client.query.get_or_404(client_id)
 
     # Authorization check: Vendeur can only edit their own clients
-    if (
-        current_user.role != RoleType.SUPERADMIN
-        and client.vendeur_id != current_user.id
-    ):
+    if not current_user.can_access_vendeur_data(client.vendeur_id):
         flash("Vous n'êtes pas autorisé à modifier ce client.", "danger")
         return redirect(url_for("main_bp.client_management"))
 
@@ -495,15 +574,10 @@ def client_edit(client_id):
         flash("Client mis à jour avec succès!", "success")
         return redirect(url_for("main_bp.client_management"))
     else:
-        # If validation fails, repopulate the form with existing data and show errors
-        # This is where the modal JS will pick up errors and reopen the modal
         flash(
             "Erreur lors de la mise à jour du client. Veuillez vérifier les champs.",
             "danger",
         )
-        # Pre-populate form for re-rendering if validation fails (important for modal)
-        # This part is handled by the data attributes in the JS when the modal is re-opened.
-        # However, if you redirect with errors, you might want to flash them more specifically.
     return redirect(url_for("main_bp.client_management"))
 
 
@@ -517,11 +591,8 @@ def client_toggle_active(client_id):
     client = Client.query.get_or_404(client_id)
 
     # Authorization check: Vendeur can only toggle their own clients
-    if (
-        current_user.role != RoleType.SUPERADMIN
-        and client.vendeur_id != current_user.id
-    ):
-        flash("Vous n'êtes pas autorisé à modifier le statut de ce client.", "danger")
+    if not current_user.can_access_vendeur_data(client.vendeur_id):
+        flash("Vous n'êtes pas autorisé à modifier ce client.", "danger")
         return redirect(url_for("main_bp.client_management"))
 
     client.is_active = not client.is_active
@@ -533,7 +604,7 @@ def client_toggle_active(client_id):
 
 @bp.route("/achat_stock", methods=["GET", "POST"])
 @login_required
-@superadmin_required
+@vendeur_required
 def achat_stock():
     form = StockPurchaseForm()
 
@@ -574,7 +645,8 @@ def achat_stock():
                     "Veuillez sélectionner ou entrer un prix d'achat et un prix de vente.")
 
             # F. Database Operations
-            stock_item = Stock.query.filter_by(network=network_enum).first()
+            stock_item = Stock.query.filter_by(
+                vendeur_id=current_user.business_vendeur_id, network=network_enum).first()
 
             if stock_item:
                 stock_item.balance += amount_purchased
@@ -582,6 +654,7 @@ def achat_stock():
                 stock_item.selling_price_per_unit = selling_price_to_record
             else:
                 stock_item = Stock(
+                    vendeur_id=current_user.business_vendeur_id,
                     network=network_enum,
                     balance=amount_purchased,
                     buying_price_per_unit=buying_price_to_record,
@@ -650,7 +723,7 @@ def achat_stock():
 # Edit Stock Purchase
 @bp.route("/achat_stock/editer/<int:purchase_id>", methods=["GET", "POST"])
 @login_required
-@superadmin_required
+@business_member_required
 def edit_stock_purchase(purchase_id):
     purchase = StockPurchase.query.get_or_404(purchase_id)
     form = StockPurchaseForm(obj=purchase)
@@ -700,7 +773,7 @@ def edit_stock_purchase(purchase_id):
                     "main/edit_stock_purchase.html",
                     form=form,
                     purchase=purchase,
-                    page_title="Editer Achat de Stock",
+                    page_title="Editer Achat Stock",
                     segment="stock",
                     sub_segment="achat_stock",
                 )
@@ -732,7 +805,7 @@ def edit_stock_purchase(purchase_id):
                     "main/edit_stock_purchase.html",
                     form=form,
                     purchase=purchase,
-                    page_title="Editer Achat de Stock",
+                    page_title="Editer Achat Stock",
                     segment="stock",
                     sub_segment="achat_stock",
                 )
@@ -746,14 +819,15 @@ def edit_stock_purchase(purchase_id):
 
             # --- Adjust Stock Balance and Buying/Selling Prices on Stock model ---
             # Step 1: Revert old amount from old network's stock
-            old_stock_item = Stock.query.filter_by(network=old_network).first()
+            old_stock_item = Stock.query.filter_by(
+                vendeur_id=current_user.business_vendeur_id, network=old_network).first()
             if old_stock_item:
                 old_stock_item.balance -= old_amount_purchased
                 db.session.add(old_stock_item)
 
             # Step 2: Apply new amount to new network's stock, and update its current prices
             new_stock_item = Stock.query.filter_by(
-                network=network_enum).first()
+                vendeur_id=current_user.business_vendeur_id, network=network_enum).first()
             if new_stock_item:
                 new_stock_item.balance += amount_purchased
                 # Update the buying_price_per_unit in the Stock table for the new (or same) network
@@ -765,6 +839,7 @@ def edit_stock_purchase(purchase_id):
                 db.session.add(new_stock_item)
             else:
                 new_stock_item = Stock(
+                    vendeur_id=current_user.business_vendeur_id,
                     network=network_enum,
                     balance=amount_purchased,
                     buying_price_per_unit=buying_price_to_record,  # Corrected here
@@ -789,7 +864,7 @@ def edit_stock_purchase(purchase_id):
         "main/edit_stock_purchase.html",
         form=form,
         purchase=purchase,
-        page_title="Editer Achat de Stock",
+        page_title="Editer Achat Stock",
         segment="stock",
         sub_segment="achat_stock",
     )
@@ -798,7 +873,7 @@ def edit_stock_purchase(purchase_id):
 # Delete Stock Purchase
 @bp.route("/achat_stock/supprimer/<int:purchase_id>", methods=["GET", "POST"])
 @login_required
-@superadmin_required
+@business_member_required
 def delete_stock_purchase(purchase_id):
     purchase = StockPurchase.query.get_or_404(purchase_id)
 
@@ -806,7 +881,7 @@ def delete_stock_purchase(purchase_id):
         try:
             # Revert the stock balance
             stock_item = Stock.query.filter_by(
-                network=purchase.network).first()
+                vendeur_id=current_user.business_vendeur_id, network=purchase.network).first()
             if stock_item:
                 stock_item.balance -= purchase.amount_purchased
                 # Note: deleting a purchase does not adjust buying_price_per_unit/selling_price_per_unit
@@ -849,14 +924,21 @@ def delete_stock_purchase(purchase_id):
 
 @bp.route("/vente_stock", methods=["GET", "POST"])
 @login_required
-@vendeur_required
+@business_member_required
 def vente_stock():
     form = SaleForm()
 
     # --- 1. SETUP FORM DATA ---
     # Populate client choices dynamically
-    clients = Client.query.filter_by(
-        is_active=True).order_by(Client.name).all()
+    # NEW
+    vendeur_id = get_current_vendeur_id()
+    if vendeur_id:
+        clients = Client.query.filter_by(
+            vendeur_id=vendeur_id, is_active=True).order_by(Client.name).all()
+    else:
+        clients = Client.query.filter_by(
+            is_active=True).order_by(Client.name).all()
+
     client_choices = [("", "Sélectionnez un client existant")]
     client_choices.extend([(str(c.id), c.name) for c in clients])
     form.existing_client_id.choices = client_choices
@@ -909,8 +991,9 @@ def vente_stock():
                 price_override = item_data.form.price_per_unit_applied.data
 
                 # Check Stock Availability
+                vendeur_id = current_user.business_vendeur_id
                 stock_item = Stock.query.filter_by(
-                    network=network_type).first()
+                    vendeur_id=vendeur_id, network=network_type).first()
 
                 if not stock_item:
                     raise ValueError(
@@ -968,7 +1051,8 @@ def vente_stock():
 
             # D. Save Sale
             new_sale = Sale(
-                vendeur=current_user,
+                seller_id=current_user.id,
+                vendeur_id=current_user.business_vendeur_id,
                 client=client,
                 client_name_adhoc=client_name_adhoc,
                 total_amount_due=total_amount_due,
@@ -1025,8 +1109,7 @@ def vente_stock():
 
 @bp.route("/update-sale-cash/<int:sale_id>", methods=["POST"])
 @login_required
-@superadmin_required
-@vendeur_required
+@business_member_required
 def update_sale_cash(sale_id):
     sale = Sale.query.get_or_404(sale_id)
     try:
@@ -1064,14 +1147,20 @@ def update_sale_cash(sale_id):
 
 @bp.route("/edit_sale/<int:sale_id>", methods=["GET", "POST"])
 @login_required
-@vendeur_required
+@business_member_required
 def edit_sale(sale_id):
     sale = Sale.query.get_or_404(sale_id)
     form = SaleForm()
 
     # Populate client choices
-    clients = Client.query.filter_by(
-        is_active=True).order_by(Client.name).all()
+    vendeur_id = get_current_vendeur_id()
+    if vendeur_id:
+        clients = Client.query.filter_by(
+            vendeur_id=vendeur_id, is_active=True).order_by(Client.name).all()
+    else:
+        clients = Client.query.filter_by(
+            is_active=True).order_by(Client.name).all()
+
     client_choices = [("", "Sélectionnez un client existant")]
     client_choices.extend([(str(client.id), client.name)
                           for client in clients])
@@ -1114,7 +1203,9 @@ def edit_sale(sale_id):
 
             # 2. Revert stock based on old quantities *after* deleting SaleItems
             for network, quantity in old_quantities_map.items():
-                stock_item = Stock.query.filter_by(network=network).first()
+                vendeur_id = current_user.business_vendeur_id
+                stock_item = Stock.query.filter_by(
+                    vendeur_id=vendeur_id, network=network).first()
                 if stock_item:
                     stock_item.balance += quantity
                     db.session.add(stock_item)
@@ -1171,8 +1262,9 @@ def edit_sale(sale_id):
                 quantity = item_data.form.quantity.data
                 price_per_unit_applied = item_data.form.price_per_unit_applied.data
 
+                vendeur_id = current_user.business_vendeur_id
                 stock_item = Stock.query.filter_by(
-                    network=network_type).first()
+                    vendeur_id=vendeur_id, network=network_type).first()
 
                 if not stock_item:
                     errors_during_sale.append(
@@ -1321,7 +1413,7 @@ def edit_sale(sale_id):
 
 @bp.route("/delete_sale/<int:sale_id>", methods=["GET", "POST"])
 @login_required
-@vendeur_required
+@business_member_required
 def delete_sale(sale_id):
     sale = Sale.query.get_or_404(sale_id)
     confirm_form = DeleteConfirmForm()
@@ -1333,7 +1425,9 @@ def delete_sale(sale_id):
             db.session.begin_nested()
 
             for sale_item in sale.sale_items:
+
                 stock_item = Stock.query.filter_by(
+                    vendeur_id=current_user.business_vendeur_id,
                     network=sale_item.network).first()
                 if stock_item:
                     stock_item.balance += sale_item.quantity
@@ -1379,6 +1473,7 @@ def delete_sale(sale_id):
 
 @bp.route("/view_sale_details/<int:sale_id>", methods=["GET"])
 @login_required
+@business_member_required
 def view_sale_details(sale_id):
     sale = Sale.query.get_or_404(sale_id)
     return render_template(
@@ -1388,54 +1483,99 @@ def view_sale_details(sale_id):
         sub_segment="vente_stock",
     )
 
+# ============================================================
+# UPDATED: sorties_cash route with DATE FILTERING
+# ============================================================
 
-# sorties_cash route
+
 @bp.route("/sorties_cash", methods=["GET"])
 @login_required
+@business_member_required
 def sorties_cash():
-    # Fetch all cash movements for display
-    all_outflows = CashOutflow.query.order_by(
-        CashOutflow.created_at.desc()).all()
-    all_inflows = CashInflow.query.order_by(CashInflow.created_at.desc()).all()
+    """
+    Display cash movements (inflows and outflows) for the business.
+    Supports date filtering via URL parameter: ?date=YYYY-MM-DD
+    """
 
-    # Calculate total cash outflow
+    # --- 1. Get Date Context (handles URL param and UTC conversion) ---
+    ctx = get_date_context()
+    selected_date_str = ctx['date_str']
+    start_utc = ctx['start_utc']
+    end_utc = ctx['end_utc']
+
+    # --- 2. Get Vendeur Context ---
+    vendeur_id = get_current_vendeur_id()
+
+    # --- 3. Build Queries with Date + Vendeur Filtering ---
+
+    # Base queries
+    outflow_query = CashOutflow.query.filter(
+        CashOutflow.created_at >= start_utc,
+        CashOutflow.created_at <= end_utc
+    )
+
+    inflow_query = CashInflow.query.filter(
+        CashInflow.created_at >= start_utc,
+        CashInflow.created_at <= end_utc
+    )
+
+    sales_cash_query = db.session.query(db.func.sum(Sale.cash_paid)).filter(
+        Sale.created_at >= start_utc,
+        Sale.created_at <= end_utc
+    )
+
+    # Apply vendeur filter if not platform admin
+    if vendeur_id:
+        outflow_query = outflow_query.filter(
+            CashOutflow.vendeur_id == vendeur_id)
+        inflow_query = inflow_query.filter(CashInflow.vendeur_id == vendeur_id)
+        sales_cash_query = sales_cash_query.filter(
+            Sale.vendeur_id == vendeur_id)
+
+    # Execute queries
+    all_outflows = outflow_query.order_by(CashOutflow.created_at.desc()).all()
+    all_inflows = inflow_query.order_by(CashInflow.created_at.desc()).all()
+    all_sales_cash_paid_sum = sales_cash_query.scalar()
+
+    # --- 4. Calculate Totals ---
     total_outflow = (
         sum(outflow.amount for outflow in all_outflows)
         if all_outflows
         else Decimal("0.00")
     )
 
-    # Note: The previous logic for total_inflow was overwritten here.
-    # total_inflow should combine actual CashInflow records AND cash_paid from sales.
     total_cash_inflows_records = (
-        sum(inflow.amount for inflow in all_inflows) if all_inflows else Decimal("0.00")
+        sum(inflow.amount for inflow in all_inflows)
+        if all_inflows
+        else Decimal("0.00")
     )
 
-    # Get total cash paid directly from Sales (initial payment at sale time)
-    # Use scalar() to get the sum directly, it will be None if no sales, so handle it.
-    all_sales_cash_paid_sum = db.session.query(
-        db.func.sum(Sale.cash_paid)).scalar()
     total_sales_cash_paid = (
         all_sales_cash_paid_sum if all_sales_cash_paid_sum else Decimal("0.00")
     )
 
     total_inflow = total_cash_inflows_records + total_sales_cash_paid
 
+    # --- 5. Render Template with selected_date for the filter ---
     return render_template(
         "main/sorties_cash.html",
         outflows=all_outflows,
         inflows=all_inflows,
         total_outflow=total_outflow,
         total_inflow=total_inflow,
+        total_sales_cash_paid=total_sales_cash_paid,  # Bonus: separate display if needed
+        total_cash_inflows_records=total_cash_inflows_records,  # Bonus: separate display
+        selected_date=selected_date_str,  # ← This is what the filter needs!
         segment="stock",
         sub_segment="Sorties_Cash",
     )
 
-
 # Enregistre une Sortie (Cash Outflow)
+
+
 @bp.route("/enregistrer_sortie", methods=["GET", "POST"])
 @login_required
-@vendeur_required
+@business_member_required
 def enregistrer_sortie():
     form = CashOutflowForm(request.form)
     page_title = "Gestion Cash"
@@ -1448,9 +1588,8 @@ def enregistrer_sortie():
                     amount=form.amount.data,
                     category=form.category.data,
                     description=form.description.data,
-                    # FIX IS HERE: Assign the User object, not its ID
-                    # Assign the current_user object (which is a User model instance)
                     recorded_by=current_user,
+                    vendeur_id=current_user.business_vendeur_id,
                 )
                 db.session.add(new_outflow)
                 db.session.commit()
@@ -1485,6 +1624,7 @@ def enregistrer_sortie():
 # Encaisser une Dette (Debt Collection)
 @bp.route("/sorties_cash/encaisser_dette", methods=["GET", "POST"])
 @login_required
+@business_member_required
 def encaisser_dette():
     form = DebtCollectionForm()
 
@@ -1516,6 +1656,7 @@ def encaisser_dette():
                 category=CashInflowCategory.SALE_COLLECTION,
                 description=description,
                 recorded_by=current_user,
+                vendeur_id=current_user.business_vendeur_id,
                 sale=sale_to_update,
             )
             db.session.add(new_inflow)
@@ -1556,7 +1697,7 @@ def encaisser_dette():
 
 @bp.route("/rapports", methods=["GET"])
 @login_required
-@superadmin_required
+@vendeur_required
 def rapports():
     page_title = "Rapport Journalier"
 
@@ -1689,15 +1830,16 @@ def rapports():
         selected_date=ctx['date_str'],
         # Pass the lists to the template
         recent_purchases=recent_purchases,
-        recent_sales=recent_sales
+        recent_sales=recent_sales,
+        segment="rapports",
     )
 
 
 @bp.route("/rapports/archive", methods=["POST"])
 @login_required
-@superadmin_required
+@vendeur_required
 def archive_daily_report():
-    # 1. Get the date from the hidden input in your HTML form
+    # 1. Get the date from the hidden input
     date_str = request.form.get('date_to_archive')
 
     if not date_str:
@@ -1708,20 +1850,28 @@ def archive_daily_report():
         # Convert string 'YYYY-MM-DD' to a date object
         report_date = datetime.strptime(date_str, '%Y-%m-%d').date()
 
-        # 2. Call your existing helper function!
-        # This will create or update the DailyStockReport and DailyOverallReport
-        update_daily_reports(current_app._get_current_object(),
-                             report_date_to_update=report_date)
+        # 2. Get the vendeur_id for multi-tenant filtering
+        vendeur_id = get_current_vendeur_id()
+
+        if not vendeur_id:
+            flash("Impossible de déterminer le vendeur.", "danger")
+            return redirect(url_for('main_bp.rapports', date=date_str))
+
+        # 3. Call helper function WITH vendeur_id
+        update_daily_reports(
+            current_app._get_current_object(),
+            report_date_to_update=report_date,
+            vendeur_id=vendeur_id  # ← ADD THIS
+        )
 
         flash(
-            f"Le rapport du {date_str} a été validé et archivé avec succès.", "success")
+            f"Le rapport du {date_str} a été archivé avec succès.", "success")
 
     except Exception as e:
-        current_app.logger.error(f"Erreur d'archivage manuelle: {str(e)}")
-        flash(
-            f"Une erreur est survenue lors de l'archivage : {str(e)}", "danger")
+        current_app.logger.error(
+            f"Erreur d'archivage: {str(e)}", exc_info=True)
+        flash(f"Une erreur est survenue: {str(e)}", "danger")
 
-    # Redirect back to the reports page for that specific date
     return redirect(url_for('main_bp.rapports', date=date_str))
 
 
@@ -1765,7 +1915,7 @@ def profile():
         try:
             db.session.commit()
             flash("Votre profil a été mis à jour !", "success")
-            return redirect(url_for("auth_bpe.profile"))
+            return redirect(url_for("main_bp.profile"))
         except Exception as e:
             db.session.rollback()
             flash(f"Une erreur est survenue : {e}", "danger")
@@ -1814,7 +1964,7 @@ def profile():
 # Client Map route
 @bp.route("/client-map", methods=["GET"])
 @login_required
-@vendeur_required
+@business_member_required
 def client_map():
     """
     Renders a map displaying clients based on their GPS coordinates.

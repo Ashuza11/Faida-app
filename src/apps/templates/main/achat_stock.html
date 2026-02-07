@@ -33,9 +33,15 @@
                                 {% endif %}
                             </div>
                         </div>
-                        <div class="mt-4">
-                            {# Render the filter component #}
-                            {{ filters.render_date_filter(url_for('main_bp.achat_stock'), selected_date) }}
+                        <div class="mt-2">
+                            <form method="GET" action="{{ url_for('main_bp.achat_stock') }}" class="d-flex align-items-center m-0">
+                                <input type="date" 
+                                    name="date" 
+                                    value="{{ selected_date }}" 
+                                    class="form-control form-control-sm bg-white"
+                                    style="width: 150px; height: 38px;"
+                                    onchange="this.form.submit()">
+                            </form>
                         </div>
                     </div>
 

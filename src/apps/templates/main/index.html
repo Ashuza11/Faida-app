@@ -208,7 +208,7 @@
                 <tbody>
                   {% for sale in recent_sales %}
                   <tr>
-                    <th scope="row">{{ sale.vendeur.username }}</th>
+                    <th scope="row">{{ sale.seller.username }}</th>
                     <td>
                       {% for item in sale.sale_items %}
                         {{ item.quantity }} unités @ {{ "%.2f" | format(item.price_per_unit_applied) }} FC - Sous-total: {{ "%.2f" | format(item.subtotal) }} FC ({{ item.network.value.capitalize() }})<br>

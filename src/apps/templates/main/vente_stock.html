@@ -166,7 +166,7 @@
                                     <tr>
                                         <td>{{ sale.id }}</td>
                                         <td>{{ sale.client.name if sale.client else sale.client_name_adhoc }}</td>
-                                        <td>{{ sale.vendeur.username }}</td>
+                                        <td>{{ sale.seller.username }}</td>
                                         <td>
                                             {% for item in sale.sale_items %}
                                                 <div>

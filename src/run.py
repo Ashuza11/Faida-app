@@ -1,47 +1,140 @@
+# run.py
+"""
+Flask Application Entry Point
+
+Environment detection is based on FLASK_ENV:
+- production: Neon PostgreSQL on Render
+- development: Neon dev branch or local PostgreSQL
+- debug: Local SQLite (no external dependencies)
+- testing: In-memory SQLite
+
+Usage:
+    # Development with Flask dev server
+    flask run
+    
+    # Production with Gunicorn
+    gunicorn -c gunicorn-cfg.py run:app
+"""
+
+import os
+import logging
 from flask_migrate import Migrate
-from sys import exit
-from decouple import config 
 from apps import create_app, db
 from apps.config import config_dict
-import os
 
-# --- ENVIRONMENT DETECTION LOGIC ---
-
-# 1. Production Mode Check (Highest Priority)
-IS_PRODUCTION = "RUNNING_IN_PRODUCTION" in os.environ
-
-if IS_PRODUCTION:
-    get_config_mode = "Production"
-    DEBUG = False
-    
-# 2. Local Docker Compose Check
-elif os.environ.get("FLASK_ENV") == "development" and "DBHOST" in os.environ: 
-    get_config_mode = "Development"
-    DEBUG = True
-    
-# 3. Default Local Debug (Fallback to SQLite)
-else:
-    get_config_mode = "Debug"
-    DEBUG = True
-
-# Set the environment string used for logging
-ENVIRONMENT = get_config_mode.lower()
+# ===========================================
+# Environment Detection
+# ===========================================
 
 
-# --- APP INITIALIZATION ---
+def get_environment():
+    """
+    Determine the application environment.
 
-app_config = config_dict[get_config_mode]
+    Priority:
+    1. FLASK_ENV environment variable (explicit)
+    2. RUNNING_IN_PRODUCTION flag (Render/Azure)
+    3. DATABASE_URL presence (cloud deployment)
+    4. Default to 'debug' (safest for local)
+    """
+    # Explicit environment setting (preferred)
+    flask_env = os.environ.get('FLASK_ENV', '').lower()
 
-# Create Flask app using the determined configuration
+    if flask_env in ['production', 'development', 'testing', 'debug']:
+        return flask_env
+
+    # Legacy: Check for production flag
+    if os.environ.get('RUNNING_IN_PRODUCTION'):
+        return 'production'
+
+    # Infer from DATABASE_URL
+    if os.environ.get('DATABASE_URL'):
+        # Has external DB, likely development with Neon
+        return 'development'
+
+    # Default: Local SQLite debug mode
+    return 'debug'
+
+
+# ===========================================
+# Application Setup
+# ===========================================
+
+# Determine environment
+ENVIRONMENT = get_environment()
+DEBUG = ENVIRONMENT in ['development', 'debug', 'testing']
+
+# Get configuration class
+config_mode = ENVIRONMENT.capitalize() if ENVIRONMENT != 'debug' else 'Debug'
+app_config = config_dict.get(config_mode, config_dict['Debug'])
+
+# Create Flask application
 app = create_app(app_config)
-app.app_context().push()
-Migrate(app, db) # Initialize Flask-Migrate
 
-# Log environment info
-app.logger.info(f"Environment: {ENVIRONMENT}")
-app.logger.info(f"DEBUG: {DEBUG}")
-app.logger.info(f"DB URI: {app_config.SQLALCHEMY_DATABASE_URI}")
+# Initialize Flask-Migrate
+migrate = Migrate(app, db)
+
+# ===========================================
+# Logging Setup
+# ===========================================
+
+# Configure logging level
+log_level = logging.DEBUG if DEBUG else logging.INFO
+logging.basicConfig(
+    level=log_level,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+# Log startup information
+with app.app_context():
+    app.logger.info(f"🚀 Starting Faida App in {ENVIRONMENT.upper()} mode")
+    app.logger.info(f"   Debug: {DEBUG}")
+
+    # Log database type (without exposing credentials)
+    db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+    if 'sqlite' in db_uri:
+        app.logger.info("   Database: SQLite (local)")
+    elif 'neon.tech' in db_uri:
+        app.logger.info("   Database: Neon PostgreSQL (cloud)")
+    elif 'postgresql' in db_uri:
+        app.logger.info("   Database: PostgreSQL")
+    else:
+        app.logger.info("   Database: Unknown")
+
+
+# ===========================================
+# CLI Commands Registration
+# ===========================================
+
+@app.cli.command('check-db')
+def check_db():
+    """Check database connection."""
+    from sqlalchemy import text
+    try:
+        with db.engine.connect() as conn:
+            result = conn.execute(text("SELECT 1"))
+            print("✅ Database connection successful!")
+
+            # Show PostgreSQL version if applicable
+            if 'postgresql' in str(db.engine.url):
+                version = conn.execute(text("SELECT version()")).scalar()
+                print(f"   PostgreSQL: {version[:50]}...")
+    except Exception as e:
+        print(f"❌ Database connection failed: {e}")
+        return 1
+
+
+# ===========================================
+# Development Server
+# ===========================================
 
 if __name__ == "__main__":
-    # Use the determined DEBUG flag
-    app.run(host="0.0.0.0", port=config("PORT", default=5000, cast=int), debug=DEBUG)
+    # Get port from environment or default to 5000
+    port = int(os.environ.get('PORT', 5000))
+
+    # Run development server
+    app.run(
+        host='0.0.0.0',
+        port=port,
+        debug=DEBUG
+    )

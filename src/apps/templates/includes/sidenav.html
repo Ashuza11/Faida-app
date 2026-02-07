@@ -1,9 +1,9 @@
-<nav class="sidenav navbar navbar-vertical  fixed-left  navbar-expand-xs navbar-light bg-white" id="sidenav-main">
+<nav class="sidenav navbar navbar-vertical fixed-left navbar-expand-xs navbar-light bg-white" id="sidenav-main">
   <div class="scrollbar-inner">
     <!-- Brand -->
-    <div class="sidenav-header  align-items-center">
+    <div class="sidenav-header align-items-center">
       <a class="navbar-brand" href="/">
-       <img src="/static/assets/img/brand/faida-logo.png" class="navbar-brand-img" alt="Faida Logo." style="max-height: 3rem;">
+        <img src="/static/assets/img/brand/faida-logo.png" class="navbar-brand-img" alt="Faida Logo." style="max-height: 3rem;">
       </a>
     </div>
     <div class="navbar-inner">
@@ -11,101 +11,165 @@
       <div class="collapse navbar-collapse" id="sidenav-collapse-main">
         <!-- Nav items -->
         <ul class="navbar-nav">
+          
+          <!-- ========================================== -->
+          <!-- ACCUEIL - Everyone can see -->
+          <!-- ========================================== -->
           <li class="nav-item">
             <a class="nav-link {% if 'index' in segment %} active {% endif %}" href="/index">
               <i class="fas fa-home text-primary"></i>
               <span class="nav-link-text">Accueil</span>
             </a>
           </li>
+
+          <!-- ========================================== -->
+          <!-- STOCK - All business members can see -->
+          <!-- ========================================== -->
           <li class="nav-item">
-              <a class="nav-link {% if segment == 'stock' %}active{% endif %}" href="#navbar-stock" data-toggle="collapse" role="button" aria-expanded="{% if segment == 'stock' %}true{% else %}false{% endif %}" data-target="#navbar-stock"> {# Added data-target for consistency #}
-                  <i class="fas fa-boxes text-primary"></i> {# <i class="fas fa-warehouse text-primary"></i> #} {# <i class="fas fa-cubes text-primary"></i> #} <span class="nav-link-text">Stock</span>
-              </a>
-              <div class="collapse {% if segment == 'stock' %}show{% endif %}" id="navbar-stock">
-                  <ul class="nav nav-sm flex-column">
-                    {% if current_user.is_authenticated and current_user.role.value == 'superadmin' %}
-                      <li class="nav-item">
-                          <a class="nav-link {% if sub_segment == 'achat_stock' %}active{% endif %}" href="{{ url_for('main_bp.achat_stock') }}">
-                              <i class="fas fa-cart-plus"></i> {# <i class="fas fa-hand-holding-usd"></i> #} {# <i class="fas fa-truck-loading"></i> #} <span class="nav-link-text">Achat stock</span>
-                          </a>
-                      </li>
-                    {% endif %}
-                      <li class="nav-item">
-                        <a class="nav-link {% if sub_segment == 'vente_stock' %}active{% endif %}" href="{{ url_for('main_bp.vente_stock') }}">
-                            <i class="fas fa-shopping-cart"></i> <span class="nav-link-text">Vente stock</span>
-                        </a>
-                      </li>
-                      <li class="nav-item">
-                          <a class="nav-link {% if sub_segment == 'Sorties_Cash' %}active{% endif %}" href="{{url_for('main_bp.sorties_cash')}}">
-                              <i class="fas fa-money-bill-wave-alt"></i> {# <i class="fas fa-dollar-sign"></i> #} <span class="nav-link-text">Cash</span> 
-                          </a>
-                      </li>
-                  </ul>
-              </div>
+            <a class="nav-link {% if segment == 'stock' %}active{% endif %}" href="#navbar-stock" data-toggle="collapse" role="button" aria-expanded="{% if segment == 'stock' %}true{% else %}false{% endif %}" data-target="#navbar-stock">
+              <i class="fas fa-boxes text-primary"></i>
+              <span class="nav-link-text">Stock</span>
+            </a>
+            <div class="collapse {% if segment == 'stock' %}show{% endif %}" id="navbar-stock">
+              <ul class="nav nav-sm flex-column">
+                
+                <!-- Achat Stock - VENDEUR & PLATFORM_ADMIN only (not stockeurs) -->
+                {% if current_user.is_authenticated and (current_user.is_vendeur or current_user.is_platform_admin) %}
+                <li class="nav-item">
+                  <a class="nav-link {% if sub_segment == 'achat_stock' %}active{% endif %}" href="{{ url_for('main_bp.achat_stock') }}">
+                    <i class="fas fa-cart-plus"></i>
+                    <span class="nav-link-text">Achat stock</span>
+                  </a>
+                </li>
+                {% endif %}
+
+                <!-- Vente Stock - Everyone in business (vendeur, stockeur, platform_admin) -->
+                <li class="nav-item">
+                  <a class="nav-link {% if sub_segment == 'vente_stock' %}active{% endif %}" href="{{ url_for('main_bp.vente_stock') }}">
+                    <i class="fas fa-shopping-cart"></i>
+                    <span class="nav-link-text">Vente stock</span>
+                  </a>
+                </li>
+
+                <!-- Cash - Everyone in business -->
+                <li class="nav-item">
+                  <a class="nav-link {% if sub_segment == 'Sorties_Cash' %}active{% endif %}" href="{{ url_for('main_bp.sorties_cash') }}">
+                    <i class="fas fa-money-bill-wave-alt"></i>
+                    <span class="nav-link-text">Cash</span>
+                  </a>
+                </li>
+
+              </ul>
+            </div>
           </li>
+
+          <!-- ========================================== -->
+          <!-- CARTE SIM - Future feature -->
+          <!-- ========================================== -->
           <li class="nav-item">
             <a class="nav-link {% if 'Carte_SIM' in segment %} active {% endif %}" href="#">
-              <i class="fas fa-sim-card text-primary" ></i> 
+              <i class="fas fa-sim-card text-primary"></i>
               <span class="nav-link-text">Carte SIM</span>
             </a>
           </li>
+
+          <!-- ========================================== -->
+          <!-- TERRAIN (Map) - VENDEUR & PLATFORM_ADMIN only -->
+          <!-- ========================================== -->
+          {% if current_user.is_authenticated %}
           <li class="nav-item">
-            <a class="nav-link {% if 'client_map' in sub_segment %}active{% endif %}" href="{{ url_for('main_bp.client_map') }}">
+            <a class="nav-link {% if 'client_map' in segment %}active{% endif %}" href="{{ url_for('main_bp.client_map') }}">
               <i class="ni ni-map-big text-primary"></i>
-                <span class="nav-link-text">Terrain</span>
-              </a>
+              <span class="nav-link-text">Terrain</span>
+            </a>
           </li>
+          {% endif %}
+
+          <!-- ========================================== -->
+          <!-- RAPPORTS - VENDEUR & PLATFORM_ADMIN only -->
+          <!-- ========================================== -->
+          {% if current_user.is_authenticated and (current_user.is_vendeur or current_user.is_platform_admin) %}
           <li class="nav-item">
-            <a class="nav-link {% if segment == 'rapports' %} active {% endif %}" href="{{ url_for('main_bp.rapports') }}"> 
+            <a class="nav-link {% if segment == 'rapports' %} active {% endif %}" href="{{ url_for('main_bp.rapports') }}">
               <i class="ni ni-chart-bar-32 text-primary"></i>
               <span class="nav-link-text">Rapports</span>
             </a>
           </li>
+          {% endif %}
 
-          <!-- Admin Nav Item -->
+          <!-- ========================================== -->
+          <!-- ADMIN / GESTION Section -->
+          <!-- ========================================== -->
+          {% if current_user.is_authenticated %}
           <li class="nav-item">
             <a class="nav-link {% if segment == 'admin' %}active{% endif %}" href="#navbar-admin" data-toggle="collapse" role="button" aria-expanded="{% if segment == 'admin' %}true{% else %}false{% endif %}">
               <i class="fas fa-users text-primary"></i>
-              {% if current_user.is_authenticated and current_user.role.value == 'superadmin' %}
-                <span class="nav-link-text">Admin</span>
+              {% if current_user.is_platform_admin %}
+                <span class="nav-link-text">Administration</span>
               {% else %}
-                <span class="nav-link-text">Clients</span>
+                <span class="nav-link-text">Gestion</span>
               {% endif %}
             </a>
             <div class="collapse {% if segment == 'admin' %}show{% endif %}" id="navbar-admin">
               <ul class="nav nav-sm flex-column">
-                {% if current_user.is_authenticated and current_user.role.value == 'superadmin' %}
-                  <li class="nav-item">
-                    <a class="nav-link {% if sub_segment == 'stocker' %}active{% endif %}" href="{{ url_for('.stocker_management') }}">
-                      <i class="fas fa-user-tie"></i>
-                      <span class="nav-link-text">Stockeur</span>
-                    </a>
-                  </li>
+                
+                <!-- Stockeur Management - VENDEUR can manage their stockeurs, PLATFORM_ADMIN can see all -->
+                {% if current_user.is_vendeur or current_user.is_platform_admin %}
+                <li class="nav-item">
+                  <a class="nav-link {% if sub_segment == 'stocker' %}active{% endif %}" href="{{ url_for('main_bp.stocker_management') }}">
+                    <i class="fas fa-user-tie"></i>
+                    <span class="nav-link-text">Stockeurs</span>
+                  </a>
+                </li>
                 {% endif %}
-                {% if current_user.is_authenticated and (current_user.role.value == 'superadmin' or current_user.role.value == 'vendeur') %}
-                  <li class="nav-item">
-                    <a class="nav-link {% if sub_segment == 'client' %}active{% endif %}" href="{{ url_for('.client_management') }}">
-                      <i class="fas fa-user"></i>
-                      <span class="nav-link-text">Client</span>
-                    </a>
-                  </li>
+
+                <!-- Client Management - VENDEUR & PLATFORM_ADMIN -->
+                <li class="nav-item">
+                  <a class="nav-link {% if sub_segment == 'clients' %}active{% endif %}" href="{{ url_for('main_bp.client_management') }}">
+                    <i class="fas fa-user"></i>
+                    <span class="nav-link-text">Clients</span>
+                  </a>
+                </li>
+
+                <!-- Platform Admin Only: View All Businesses -->
+                {% if current_user.is_platform_admin %}
+                <li class="nav-item">
+                  <a class="nav-link {% if sub_segment == 'vendeurs' %}active{% endif %}" href="#">
+                    <i class="fas fa-store"></i>
+                    <span class="nav-link-text">Vendeurs</span>
+                  </a>
+                </li>
+                <li class="nav-item">
+                  <a class="nav-link {% if sub_segment == 'invite_codes' %}active{% endif %}" href="#">
+                    <i class="fas fa-key"></i>
+                    <span class="nav-link-text">Codes d'invitation</span>
+                  </a>
+                </li>
                 {% endif %}
 
               </ul>
             </div>
           </li>
+          {% endif %}
+
         </ul>
+
         <!-- Divider -->
         <hr class="my-3">
-        <!-- Heading -->
+
+        <!-- Bottom Section -->
         <ul class="navbar-nav mb-md-3">
+        
+          <!-- Logout -->
           <li class="nav-item">
             <a class="nav-link" href="{{ url_for('auth_bp.logout') }}">
               <i class="fas fa-sign-out-alt text-primary"></i>
-              <span class="nav-link-text">Deconexion</span>
+              <span class="nav-link-text">Déconnexion</span>
             </a>
-          </li>  
-        </ul> 
+          </li>
+
+        </ul>
+
       </div>
     </div>
   </div>

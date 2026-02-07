@@ -22,7 +22,7 @@
               </div>
               <div class="col text-right">
                 {# "Ajouter Client" button with role check #}
-                {% if current_user.is_authenticated and (current_user.role.value == 'superadmin' or current_user.role.value == 'vendeur') %}
+                {% if current_user.is_authenticated %}
                   <button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#addClientModal">
                     <i class="fas fa-plus"></i> Ajouter Client
                   </button>
@@ -174,7 +174,7 @@
 
   {# Include the "Edit Client" Modal (Using the existing modal_form include) #}
   {% set modal_id = 'editClientModal' %}
-  {% set modal_title = 'Editer le client' %}
+  {% set modal_title = 'Editer client' %}
   {% set form = client_edit_form %}
   {# The modal_form.html should correctly render all fields, including gps_lat/long #}
   {% include 'includes/modal_form.html' %} 

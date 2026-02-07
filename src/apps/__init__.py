@@ -1,11 +1,10 @@
+from .config import DebugConfig
 import logging
-from flask import Flask
+from flask import Flask, app
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_login import LoginManager
 
-
-from .config import DebugConfig
 
 # --- Extension Instantiation ---
 db = SQLAlchemy()
@@ -41,8 +40,14 @@ def create_app(config_object=DebugConfig):
     # --- Register Blueprints ---
     with app.app_context():
         from .main import bp as main_bp
+        from apps.health import health_bp
 
         app.register_blueprint(main_bp)
+        app.register_blueprint(health_bp)
+
+        # Register PDF blueprint
+        from apps.main.pdf_routes import pdf_bp
+        app.register_blueprint(pdf_bp)
 
         from .auth import bp as auth_bp
 
@@ -60,7 +65,8 @@ def create_app(config_object=DebugConfig):
         app_logger.info("Blueprints registered.")
 
     # --- Register CLI Commands (AFTER everything else is initialized) ---
-    from apps.cli import register_cli_commands  # Import it here, inside the function
+    # Import it here, inside the function
+    from apps.cli import register_cli_commands
 
     register_cli_commands(app)  # Call the registration function
 

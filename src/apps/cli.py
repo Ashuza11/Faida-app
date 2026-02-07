@@ -1,233 +1,365 @@
+"""
+Flask CLI Commands for Faida - Multi-Tenant
+
+Commands:
+- setup init: Full initialization
+- setup create-platform-admin: Create platform admin
+- setup create-invite-code: Generate invite code for new vendeur
+- setup create-vendeur: Directly create vendeur (bypasses invite code)
+- setup list-vendeurs: List all vendeurs
+- setup check: System status check
+"""
+
 import click
-from flask.cli import with_appcontext
-from datetime import datetime, timedelta, date
-from decimal import Decimal
+import secrets
 from flask import current_app
-from sqlalchemy import select  # Import select for SQLAlchemy 2.0 style queries
-
-
-# Only import utility functions that don't depend on 'db' at the global level.
-# NOTE: If your utility functions (seed_initial_stock_balances, etc.)
-# also import 'from apps import db', you'll need to modify them to accept
-# 'current_app' and use 'from flask import current_app' to get the database
-# object *inside* the utility function.
-# Based on the previous solution, they should be designed to accept `app`
-# or use `current_app`, which is good.
-
-from apps.main.utils import (
-    seed_initial_stock_balances,
-    update_daily_reports,
-    initialize_stock_items,
-)
-from apps.auth.utils import create_superadmin
-
-# Keep model imports only if they don't depend on db/app context being initialized
-# For safety, let's move the models inside the simulate-transactions command.
+from flask.cli import with_appcontext
+from datetime import datetime, timezone, timedelta
 
 
 def register_cli_commands(app):
-    """
-    Registers custom commands with the Flask CLI under the 'setup' group.
-    This function should be called inside your create_app() function.
-    """
+    """Register custom CLI commands with the Flask app."""
 
     @app.cli.group()
     def setup():
-        """Application setup, data initialization, and report generation commands."""
+        """Application setup and management commands."""
         pass
 
-    # --- Database & Setup Commands ---
+    # ===========================================
+    # Platform Admin Commands
+    # ===========================================
 
-    @setup.command("init-db")
+    @setup.command("create-platform-admin")
+    @click.option('--username', default='admin', help='Admin username')
+    @click.option('--phone', prompt='Phone number (e.g., +243812345678)', help='Phone number')
+    @click.option('--password', prompt=True, hide_input=True, confirmation_prompt=True)
+    @click.option('--email', default=None, help='Email (optional)')
     @with_appcontext
-    def init_db_command():
-        """Creates database tables from models."""
-        # IMPORT DB LOCALLY: db is now imported from current_app's context
+    def create_platform_admin(username, phone, password, email):
+        """Create the platform administrator account."""
         from apps import db
+        from apps.models import User, RoleType, normalize_phone, validate_drc_phone
 
-        db.create_all()
-        click.echo("Initialized the database.")
-
-    @setup.command("create-superadmin")
-    @with_appcontext
-    def create_superadmin_command():
-        """Creates the initial superadmin user if one doesn't exist."""
-        # create_superadmin utility function should handle context internally.
-        if create_superadmin():
-            click.echo("Superadmin created successfully.")
-        else:
-            click.echo("Superadmin already exists or an error occurred.")
-
-    @setup.command("init-stock")
-    @with_appcontext
-    def init_stock_command():
-        """Initializes stock items for all network types."""
-        # utility function uses current_app, which is fine
-        initialize_stock_items(current_app)
-        click.echo("Stock items initialized.")
-
-    # --- Data & Reporting Commands ---
-
-    @setup.command("seed-reports")
-    @with_appcontext
-    @click.option(
-        "--date",
-        "date_str",
-        default=None,
-        help="Optional seed date (YYYY-MM-DD). Defaults to 2 days ago.",
-    )
-    def seed_reports_command(date_str):
-        """Seeds initial stock balances for a specific date."""
-        if date_str:
-            try:
-                seed_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-            except ValueError:
-                click.echo("Invalid date format. Please use YYYY-MM-DD.")
-                return
-        else:
-            seed_date = date.today() - timedelta(days=2)
-
-        click.echo(f"Attempting to seed reports for {seed_date}...")
-        try:
-            seed_initial_stock_balances(current_app, seed_date)
-            click.echo(f"Successfully seeded reports for {seed_date}.")
-        except Exception as e:
-            click.echo(f"Failed to seed reports for {seed_date}: {e}")
-            current_app.logger.error(f"Seed reports failed: {e}", exc_info=True)
-
-    @setup.command("generate-reports")
-    @with_appcontext
-    @click.option(
-        "--date",
-        default=None,
-        help="Date for report (YYYY-MM-DD). Defaults to yesterday.",
-    )
-    def generate_reports_command(date):
-        """Generates/updates daily reports for a given date."""
-        if date:
-            try:
-                report_date = datetime.strptime(date, "%Y-%m-%d").date()
-            except ValueError:
-                click.echo("Invalid date format. Please use YYYY-MM-DD.")
-                return
-        else:
-            report_date = date.today() - timedelta(days=1)
-
-        click.echo(f"Generating reports for {report_date}...")
-        try:
-            update_daily_reports(current_app, report_date_to_update=report_date)
-            click.echo(f"Reports for {report_date} generated successfully.")
-        except Exception as e:
-            click.echo(f"Failed to generate reports for {report_date}: {e}")
-            current_app.logger.error(f"Generate reports failed: {e}", exc_info=True)
-
-    @setup.command("simulate-transactions")
-    @with_appcontext
-    @click.option(
-        "--date",
-        default=None,
-        help="Date for simulation (YYYY-MM-DD). Defaults to today.",
-    )
-    @click.option(
-        "--purchases",
-        default=100,
-        type=int,
-        help="Amount of stock to purchase per network.",
-    )
-    @click.option(
-        "--sales", default=50, type=int, help="Amount of stock to sell per network."
-    )
-    def simulate_transactions_command(date_str, purchases, sales):
-        """Simulates stock purchases and sales for a given date."""
-        # IMPORT ALL DEPENDENCIES LOCALLY
-        from apps import db  # Get the db object
-        from apps.models import (
-            NetworkType,
-            User,
-            Stock,
-            StockPurchase,
-            Sale,
-            SaleItem,
-        )  # Get the models
-
-        if date_str:
-            try:
-                transaction_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-            except ValueError:
-                click.echo("Invalid date format. Please use YYYY-MM-DD.")
-                return
-        else:
-            transaction_date = date.today()
-
-        click.echo(f"Simulating transactions for {transaction_date}...")
-
-        networks = list(NetworkType.__members__.values())
-
-        # Use SQLAlchemy 2.0 select method
-        user = db.session.execute(select(User)).scalar()
-
-        if not user:
-            click.echo("Error: No user found. Please create a user first.")
+        # Check if platform admin already exists
+        existing = User.query.filter_by(role=RoleType.PLATFORM_ADMIN).first()
+        if existing:
+            click.echo(
+                f"⚠️  Platform admin already exists: {existing.username}")
+            click.echo("   Only one platform admin is allowed.")
             return
 
-        for network in networks:
-            stock_item = db.session.execute(
-                select(Stock).filter_by(network=network)
-            ).scalar()
-            if not stock_item:
-                click.echo(f"Warning: Stock for {network.name} not found. Skipping.")
-                continue
-
-            # Simulate Purchase
-            new_purchase = StockPurchase(
-                stock_item_id=stock_item.id,
-                network=network,
-                buying_price_at_purchase=stock_item.buying_price_per_unit,
-                selling_price_at_purchase=stock_item.selling_price_per_unit,
-                amount_purchased=purchases,
-                purchased_by=user,
-                # Ensure created_at is timezone-aware if your model expects it
-                created_at=datetime.combine(transaction_date, datetime.now().time()),
-            )
-            db.session.add(new_purchase)
-            stock_item.balance += purchases
+        # Validate phone
+        if not validate_drc_phone(phone):
             click.echo(
-                f"  {network.name}: Purchased {purchases}. New balance: {stock_item.balance}"
+                "❌ Invalid phone number format. Use format: +243812345678 or 0812345678")
+            raise click.Abort()
+
+        # Check if phone already used
+        normalized_phone = normalize_phone(phone)
+        if User.query.filter_by(phone=normalized_phone).first():
+            click.echo("❌ Phone number already in use")
+            raise click.Abort()
+
+        try:
+            admin = User(
+                username=username,
+                phone=normalized_phone,
+                email=email,
+                role=RoleType.PLATFORM_ADMIN,
+                is_active=True,
+            )
+            admin.set_password(password)
+
+            db.session.add(admin)
+            db.session.commit()
+
+            click.echo("✅ Platform admin created successfully!")
+            click.echo(f"   Username: {username}")
+            click.echo(f"   Phone: {normalized_phone}")
+            click.echo(f"   Role: PLATFORM_ADMIN")
+
+        except Exception as e:
+            db.session.rollback()
+            click.echo(f"❌ Failed to create admin: {e}")
+            raise click.Abort()
+
+    # ===========================================
+    # Invite Code Commands
+    # ===========================================
+
+    @setup.command("create-invite-code")
+    @click.option('--expires-days', default=7, type=int, help='Days until expiration (default: 7)')
+    @with_appcontext
+    def create_invite_code(expires_days):
+        """Generate an invite code for a new vendeur."""
+        from apps import db
+        from apps.models import User, RoleType, InviteCode
+
+        # Get platform admin (for created_by)
+        admin = User.query.filter_by(role=RoleType.PLATFORM_ADMIN).first()
+
+        # Generate unique code
+        code = f"AIRT-{secrets.token_hex(4).upper()}"
+
+        # Ensure uniqueness
+        while InviteCode.query.filter_by(code=code).first():
+            code = f"AIRT-{secrets.token_hex(4).upper()}"
+
+        try:
+            invite = InviteCode(
+                code=code,
+                created_by_id=admin.id if admin else None,
+                expires_at=datetime.now(timezone.utc) +
+                timedelta(days=expires_days),
             )
 
-            # Simulate Sale
-            if stock_item.balance >= sales:
-                total_sale_amount = Decimal(sales) * stock_item.selling_price_per_unit
-                new_sale = Sale(
-                    vendeur=user,
-                    total_amount=total_sale_amount,
-                    amount_paid=total_sale_amount,
-                    debt_amount=Decimal("0.00"),
-                    created_at=datetime.combine(
-                        transaction_date, datetime.now().time()
-                    ),
-                )
-                db.session.add(new_sale)
-                db.session.flush()
+            db.session.add(invite)
+            db.session.commit()
 
-                new_sale_item = SaleItem(
-                    sale=new_sale,
-                    stock_item=stock_item,
-                    network=network,
-                    quantity=sales,
-                    price_per_unit_applied=stock_item.selling_price_per_unit,
-                    subtotal=total_sale_amount,
-                )
-                db.session.add(new_sale_item)
-                stock_item.balance -= sales
-                click.echo(
-                    f" {network.name}: Sold {sales}. New balance: {stock_item.balance}"
-                )
-            else:
-                click.echo(f" {network.name}: Not enough stock to sell. Skipping sale.")
+            click.echo("✅ Invite code created!")
+            click.echo(f"\n   Code: {code}")
+            click.echo(f"   Expires in: {expires_days} days")
+            click.echo(f"\n📱 Registration link:")
+            click.echo(f"   /auth/register?code={code}")
 
-        db.session.commit()
-        click.echo("Transaction simulation complete.")
+        except Exception as e:
+            db.session.rollback()
+            click.echo(f"❌ Failed to create invite code: {e}")
+            raise click.Abort()
 
+    @setup.command("list-invite-codes")
+    @with_appcontext
+    def list_invite_codes():
+        """List all invite codes."""
+        from apps.models import InviteCode
 
-# --- End of register_cli_commands function ---
+        codes = InviteCode.query.order_by(InviteCode.created_at.desc()).all()
+
+        if not codes:
+            click.echo("No invite codes found.")
+            return
+
+        click.echo("\n📋 Invite Codes:")
+        click.echo("-" * 50)
+
+        for code in codes:
+            status = "✅ Valid" if code.is_valid else "🔴 Used/Expired"
+            click.echo(f"   {code.code} - {status}")
+
+    # ===========================================
+    # Vendeur Management Commands
+    # ===========================================
+
+    @setup.command("create-vendeur")
+    @click.option('--username', prompt='Business name', help='Business name')
+    @click.option('--phone', prompt='Phone number', help='Phone')
+    @click.option('--password', prompt=True, hide_input=True, confirmation_prompt=True)
+    @click.option('--email', default=None, help='Email (optional)')
+    @with_appcontext
+    def create_vendeur_directly(username, phone, password, email):
+        """Create a vendeur account directly (bypasses invite code)."""
+        from apps import db
+        from apps.models import (
+            User, RoleType,
+            normalize_phone, validate_drc_phone,
+            create_stock_for_vendeur
+        )
+
+        # Validate phone
+        if not validate_drc_phone(phone):
+            click.echo("❌ Invalid phone number format")
+            raise click.Abort()
+
+        normalized_phone = normalize_phone(phone)
+
+        # Check uniqueness
+        if User.query.filter_by(phone=normalized_phone).first():
+            click.echo("❌ Phone number already in use")
+            raise click.Abort()
+
+        if User.query.filter_by(username=username).first():
+            click.echo("❌ Username already in use")
+            raise click.Abort()
+
+        try:
+            # Create vendeur
+            vendeur = User(
+                username=username,
+                phone=normalized_phone,
+                email=email,
+                role=RoleType.VENDEUR,
+                is_active=True,
+            )
+            vendeur.set_password(password)
+
+            db.session.add(vendeur)
+            db.session.flush()  # Get ID
+
+            # Create stock items (one per network, balance 0)
+            stocks = create_stock_for_vendeur(vendeur.id)
+
+            db.session.commit()
+
+            click.echo("✅ Vendeur created successfully!")
+            click.echo(f"   Business: {username}")
+            click.echo(f"   Phone: {normalized_phone}")
+            click.echo(
+                f"   Stock items: {len(stocks)} networks initialized with balance 0")
+
+        except Exception as e:
+            db.session.rollback()
+            click.echo(f"❌ Failed to create vendeur: {e}")
+            raise click.Abort()
+
+    @setup.command("list-vendeurs")
+    @with_appcontext
+    def list_vendeurs():
+        """List all vendeurs."""
+        from apps.models import User, RoleType, Stock
+
+        vendeurs = User.query.filter_by(role=RoleType.VENDEUR).all()
+
+        if not vendeurs:
+            click.echo("No vendeurs found.")
+            return
+
+        click.echo("\n📊 Vendeurs:")
+        click.echo("-" * 60)
+
+        for v in vendeurs:
+            status = "✅ Active" if v.is_active else "❌ Inactive"
+            stockeur_count = v.stockeurs.count()
+            client_count = len(v.clients)
+            click.echo(f"\n   {v.username} ({v.display_phone})")
+            click.echo(f"      Status: {status}")
+            click.echo(f"      Stockeurs: {stockeur_count}")
+            click.echo(f"      Clients: {client_count}")
+            click.echo(f"      Created: {v.created_at.strftime('%Y-%m-%d')}")
+
+    # ===========================================
+    # System Check Commands
+    # ===========================================
+
+    @setup.command("check")
+    @with_appcontext
+    def check_system():
+        """Check system status and configuration."""
+        from apps import db
+        from apps.models import User, RoleType, Stock, Sale, Client
+        from sqlalchemy import text
+        import os
+
+        click.echo("\n🔍 Faida App Multi-Tenant System Check")
+        click.echo("=" * 50)
+
+        # Environment
+        click.echo(f"\n📋 Environment:")
+        click.echo(f"   FLASK_ENV: {os.environ.get('FLASK_ENV', 'not set')}")
+        click.echo(f"   Debug: {current_app.debug}")
+
+        # Database
+        click.echo(f"\n💾 Database:")
+        db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
+        if 'sqlite' in db_uri:
+            click.echo("   Type: SQLite (local)")
+        elif 'neon.tech' in db_uri:
+            click.echo("   Type: Neon PostgreSQL")
+        elif 'postgresql' in db_uri:
+            click.echo("   Type: PostgreSQL")
+
+        try:
+            with db.engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            click.echo("   Connection: ✅ OK")
+        except Exception as e:
+            click.echo(f"   Connection: ❌ Failed - {e}")
+
+        # Users
+        click.echo(f"\n👥 Users:")
+        admin_count = User.query.filter_by(
+            role=RoleType.PLATFORM_ADMIN).count()
+        vendeur_count = User.query.filter_by(role=RoleType.VENDEUR).count()
+        stockeur_count = User.query.filter_by(role=RoleType.STOCKEUR).count()
+        click.echo(f"   Platform Admins: {admin_count}")
+        click.echo(f"   Vendeurs: {vendeur_count}")
+        click.echo(f"   Stockeurs: {stockeur_count}")
+
+        # Business Data
+        click.echo(f"\n📊 Data:")
+        click.echo(f"   Stock records: {Stock.query.count()}")
+        click.echo(f"   Clients: {Client.query.count()}")
+        click.echo(f"   Sales: {Sale.query.count()}")
+
+        click.echo("\n✅ System check complete!")
+
+    # ===========================================
+    # Database Commands
+    # ===========================================
+
+    @app.cli.command("check-db")
+    @with_appcontext
+    def check_db():
+        """Check database connection."""
+        from apps import db
+        from sqlalchemy import text
+
+        try:
+            with db.engine.connect() as conn:
+                result = conn.execute(text("SELECT 1"))
+                click.echo("✅ Database connection successful!")
+
+                if 'postgresql' in str(db.engine.url):
+                    version = conn.execute(text("SELECT version()")).scalar()
+                    click.echo(f"   PostgreSQL: {version[:60]}...")
+        except Exception as e:
+            click.echo(f"❌ Database connection failed: {e}")
+            return 1
+
+    # ===========================================
+    # Initialization Command
+    # ===========================================
+
+    @setup.command("init")
+    @with_appcontext
+    def init_all():
+        """Full system initialization (check connection + status)."""
+        from apps import db
+        from sqlalchemy import text
+
+        click.echo("🚀 Faida Multi-Tenant Initialization")
+        click.echo("=" * 50)
+
+        # Check database connection
+        click.echo("\n📡 Checking database connection...")
+        try:
+            with db.engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            click.echo("   ✅ Database connected")
+        except Exception as e:
+            click.echo(f"   ❌ Database connection failed: {e}")
+            click.echo("\n   Please check your DATABASE_URL configuration")
+            raise click.Abort()
+
+        # Check for platform admin
+        click.echo("\n👤 Checking platform admin...")
+        from apps.models import User, RoleType
+
+        admin_exists = User.query.filter_by(
+            role=RoleType.PLATFORM_ADMIN).first()
+        if admin_exists:
+            click.echo(f"   ✅ Platform admin exists: {admin_exists.username}")
+        else:
+            click.echo("   ⚠️  No platform admin found. Create one with:")
+            click.echo("      flask setup create-platform-admin")
+
+        # Count vendeurs
+        vendeur_count = User.query.filter_by(role=RoleType.VENDEUR).count()
+        click.echo(f"\n📊 Statistics:")
+        click.echo(f"   Vendeurs: {vendeur_count}")
+
+        click.echo("\n✨ Initialization complete!")
+        click.echo("\nNext steps:")
+        if not admin_exists:
+            click.echo("   1. flask setup create-platform-admin")
+        click.echo("   2. flask setup create-invite-code")
+        click.echo("   3. Share invite code with new vendeur")
