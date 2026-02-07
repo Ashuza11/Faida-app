@@ -12,29 +12,50 @@ def validate_drc_phone_format(form, field):
 
 
 def normalize_drc_phone(phone: str) -> str:
+    """
+    Normalise un numéro de téléphone de la RDC vers le format international +243XXXXXXXXX
+    Gère les formats :
+    - 0812345678
+    - +243812345678
+    - 00243812345678
+    - 912345678
+    """
     phone = phone.replace(" ", "").strip()
 
-    if phone.startswith("+243"):
-        return "0" + phone[4:]
+    if phone.startswith("00243"):
+        phone = phone[5:]  # enlever 00243
+    elif phone.startswith("+243"):
+        phone = phone[4:]  # enlever +243
+    elif phone.startswith("0"):
+        phone = phone[1:]  # enlever 0
+
+    if len(phone) == 9 and phone.isdigit():
+        return "+243" + phone
 
     return phone
 
 
 
+
 # login and registration
 class LoginForm(FlaskForm):
-    login_id = StringField("Nom d'utilisateur ou Téléphone", id="login_id", validators=[DataRequired()])
-    password = PasswordField("Mot de passe", id="pwd_login", validators=[DataRequired()])
+    phone = StringField(
+        "Téléphone",
+        validators=[DataRequired()],
+        render_kw={"placeholder": "Ex: 0812345678 ou +243812345678"}
+    )
+    password = PasswordField(
+        "Mot de passe",
+        validators=[DataRequired()],
+        render_kw={"placeholder": "Mot de passe"}
+    )
 
-    def validate_login_id(self, field):
-        data = field.data.strip()
+    def validate_phone(self, field):
+        data = field.data.strip().replace(" ", "")
+        pattern = r'^(?:\+243|0)?(80|81|82|83|84|85|86|87|88|89|90|91|92|93|94|95|96|97|98|99)\d{7}$'
+        if not re.match(pattern, data):
+            raise ValidationError("Numéro RDC invalide.")
 
-        # Si ça commence par 0 ou +243, c'est un téléphone
-        if data.startswith("0") or data.startswith("+243"):
-            pattern = r'^(?:\+243|0)?(80|81|82|83|84|85|86|87|88|89|90|91|92|93|94|95|96|97|98|99)\d{7}$'
-            if not re.match(pattern, data):
-                raise ValidationError("Format de numéro RDC invalide.")
-        # Sinon, c'est un username → on ne fait rien
 
 
 
