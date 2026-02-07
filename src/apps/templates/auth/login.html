@@ -4,6 +4,7 @@
 
 <!-- Specific CSS goes HERE -->
 {% block stylesheets %}{% endblock stylesheets %}
+{% from "includes/_messages.html" import render_messages %}
 
 {% block content %}
 
@@ -19,19 +20,7 @@
                   <img src="/static/assets/img/brand/faida-logo.png" class="mb-3" style="width: 150px; height: auto;">
                 </a>
                 <br />
-                {% with messages = get_flashed_messages(with_categories=true) %}
-                  {% if messages %}
-                    {% for category, message in messages %}
-                      <span class="text-{{ 'danger' if category == 'danger' else category }}">
-                        {{ message }}
-                      </span>
-                    {% endfor %}
-                  {% else %}
-                    <span>
-                      Entrez votre nom et mot de passe pour continuer.
-                    </span>
-                  {% endif %}
-                {% endwith %}
+                {{ render_messages() }}
               </div>
               
             </div>
@@ -46,7 +35,7 @@
                     <div class="input-group-prepend">
                       <span class="input-group-text"><i class="ni ni-single-02"></i></span>
                     </div>
-                    {{ form.phone(placeholder="Nom d'utilisateur ou Téléphone", class="form-control") }}
+                    {{ form.phone(placeholder="Numéro de Téléphone", class="form-control") }}
                   </div>
                   {% if form.phone.errors %}
                     {% for error in form.phone.errors %}

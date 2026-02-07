@@ -404,11 +404,9 @@ def user_toggle_active(user_id):
             user.is_active = not user.is_active  # Toggle the status
             db.session.commit()
             if user.is_active:
-                flash(
-                    f"Utilisateur '{user.username}' activé avec succès!", "success")
+                flash(        f"Utilisateur '{user.username}' activé avec succès!", "success")
             else:
-                flash(
-                    f"Utilisateur '{user.username}' désactivé avec succès!", "success"
+                flash(        f"Utilisateur '{user.username}' désactivé avec succès!", "success"
                 )
     return redirect(url_for("main_bp.stocker_management"))
 
@@ -518,8 +516,7 @@ def client_edit(client_id):
     else:
         # If validation fails, repopulate the form with existing data and show errors
         # This is where the modal JS will pick up errors and reopen the modal
-        flash(
-            "Erreur lors de la mise à jour du client. Veuillez vérifier les champs.",
+        flash("Erreur lors de la mise à jour du client. Veuillez vérifier les champs.",
             "danger",
         )
         # Pre-populate form for re-rendering if validation fails (important for modal)
@@ -713,8 +710,7 @@ def edit_stock_purchase(purchase_id):
                 network_enum = NetworkType(
                     network_type_string_from_form.lower())
             except ValueError:
-                flash(
-                    f"Le type de réseau '{network_type_string_from_form}' n'est pas valide.",
+                flash(        f"Le type de réseau '{network_type_string_from_form}' n'est pas valide.",
                     "danger",
                 )
                 return render_template(
@@ -745,8 +741,7 @@ def edit_stock_purchase(purchase_id):
 
             # Re-validate prices (though form.validate_on_submit() should catch this)
             if buying_price_to_record is None or selling_price_to_record is None:
-                flash(
-                    "Veuillez sélectionner ou entrer un prix d'achat et un prix de vente valides.",
+                flash(        "Veuillez sélectionner ou entrer un prix d'achat et un prix de vente valides.",
                     "danger",
                 )
                 return render_template(
@@ -803,8 +798,7 @@ def edit_stock_purchase(purchase_id):
             current_app.logger.error(
                 f"Error updating stock purchase {purchase_id}: {e}"
             )
-            flash(
-                f"Une erreur est survenue lors de la mise à jour: {e}", "danger")
+            flash(    f"Une erreur est survenue lors de la mise à jour: {e}", "danger")
 
     return render_template(
         "main/edit_stock_purchase.html",
@@ -837,16 +831,14 @@ def delete_stock_purchase(purchase_id):
                 # but for simplicity, we leave them as is.
                 db.session.add(stock_item)
             else:
-                flash(
-                    "Erreur: L'article de stock correspondant est introuvable.",
+                flash(        "Erreur: L'article de stock correspondant est introuvable.",
                     "danger",
                 )
                 return redirect(url_for("main_bp.achat_stock"))
 
             db.session.delete(purchase)
             db.session.commit()
-            flash(
-                f"Achat de stock #{purchase_id} supprimé avec succès!", "success")
+            flash(    f"Achat de stock #{purchase_id} supprimé avec succès!", "success")
             return redirect(url_for("main_bp.achat_stock"))
 
         except Exception as e:
@@ -854,8 +846,7 @@ def delete_stock_purchase(purchase_id):
             current_app.logger.error(
                 f"Error deleting stock purchase {purchase_id}: {e}"
             )
-            flash(
-                f"Une erreur est survenue lors de la suppression: {e}", "danger")
+            flash(    f"Une erreur est survenue lors de la suppression: {e}", "danger")
             return redirect(url_for("main_bp.achat_stock"))
 
     flash("Confirmez la suppression de l'achat de stock.", "warning")
@@ -1241,8 +1232,7 @@ def edit_sale(sale_id):
 
                 # Calculate rounded subtotal using your custom_round_up function
                 if price_per_unit_applied is None:
-                    flash(
-                        f"Prix unitaire non défini pour '{network_type.value}'.",
+                    flash(            f"Prix unitaire non défini pour '{network_type.value}'.",
                         "danger",
                     )
                     continue
@@ -1319,8 +1309,7 @@ def edit_sale(sale_id):
             )
         except Exception as e:
             db.session.rollback()
-            flash(
-                f"Erreur inattendue lors de la modification de la vente: {e}", "danger"
+            flash(    f"Erreur inattendue lors de la modification de la vente: {e}", "danger"
             )
             print(f"Error during sale edit: {e}")
             return render_template(
@@ -1381,8 +1370,7 @@ def delete_sale(sale_id):
             current_app.logger.error(
                 f"Error deleting sale {sale_id}: {e}", exc_info=True
             )
-            flash(
-                f"Une erreur est survenue lors de la suppression de la vente: {e}",
+            flash(    f"Une erreur est survenue lors de la suppression de la vente: {e}",
                 "danger",
             )
             return redirect(url_for("main_bp.vente_stock"))
@@ -1481,16 +1469,14 @@ def enregistrer_sortie():
 
             except Exception as e:
                 db.session.rollback()
-                flash(
-                    f"Erreur lors de l'enregistrement de la sortie: {str(e)}", "danger"
+                flash(        f"Erreur lors de l'enregistrement de la sortie: {str(e)}", "danger"
                 )
                 print(f"Error saving cash outflow: {e}")
 
         else:
             for field, errors in form.errors.items():
                 for error in errors:
-                    flash(
-                        f"Erreur dans le champ '{form[field].label.text}': {error}",
+                    flash(            f"Erreur dans le champ '{form[field].label.text}': {error}",
                         "danger",
                     )
 
@@ -1524,8 +1510,7 @@ def encaisser_dette():
                 raise ValueError("Le montant payé doit être positif.")
 
             if amount_paid > sale_to_update.debt_amount:
-                flash(
-                    f"Le montant payé ({amount_paid:,.2f} FC) est supérieur à la dette restante ({sale_to_update.debt_amount:,.2f} FC). Ajustement à la dette.",
+                flash(        f"Le montant payé ({amount_paid:,.2f} FC) est supérieur à la dette restante ({sale_to_update.debt_amount:,.2f} FC). Ajustement à la dette.",
                     "warning",
                 )
                 amount_paid = (
@@ -1547,8 +1532,7 @@ def encaisser_dette():
             db.session.add(sale_to_update)
 
             db.session.commit()
-            flash(
-                f"Paiement de {amount_paid:,.2f} FC pour la vente #{sale_id} enregistré avec succès. Nouvelle dette: {sale_to_update.debt_amount:,.2f} FC.",
+            flash(    f"Paiement de {amount_paid:,.2f} FC pour la vente #{sale_id} enregistré avec succès. Nouvelle dette: {sale_to_update.debt_amount:,.2f} FC.",
                 "success",
             )
             return redirect(
@@ -1562,8 +1546,7 @@ def encaisser_dette():
             db.session.rollback()
         except Exception as e:
             db.session.rollback()
-            flash(
-                f"Erreur lors de l'enregistrement du paiement: {e}", "danger")
+            flash(    f"Erreur lors de l'enregistrement du paiement: {e}", "danger")
             print(f"Error recording debt collection: {e}")
 
     return render_template(
@@ -1691,8 +1674,7 @@ def rapports():
                         "virtual_value": r.virtual_value,
                     })
         else:
-            flash(
-                f"Aucun rapport archivé trouvé pour le {ctx['date_str']}.", "warning")
+            flash(    f"Aucun rapport archivé trouvé pour le {ctx['date_str']}.", "warning")
 
     # 5. Final Calculation (Applied to both scenarios)
     grand_totals["total_calculated_sold_stock"] = (
@@ -1731,16 +1713,16 @@ def archive_daily_report():
 
         # 2. Call your existing helper function!
         # This will create or update the DailyStockReport and DailyOverallReport
-        update_daily_reports(current_app._get_current_object(),
-                             report_date_to_update=report_date)
+        update_daily_reports(
+            current_app._get_current_object(),
+            report_date_to_update=report_date
+        )
 
-        flash(
-            f"Le rapport du {date_str} a été validé et archivé avec succès.", "success")
+        flash(f"Le rapport du {date_str} a été validé et archivé avec succès.", "success")
 
     except Exception as e:
         current_app.logger.error(f"Erreur d'archivage manuelle: {str(e)}")
-        flash(
-            f"Une erreur est survenue lors de l'archivage : {str(e)}", "danger")
+        flash(f"Une erreur est survenue lors de l'archivage : {str(e)}", "danger")
 
     # Redirect back to the reports page for that specific date
     return redirect(url_for('main_bp.rapports', date=date_str))
