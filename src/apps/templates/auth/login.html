@@ -46,10 +46,10 @@
                     <div class="input-group-prepend">
                       <span class="input-group-text"><i class="ni ni-single-02"></i></span>
                     </div>
-                    {{ form.login_id(placeholder="Nom d'utilisateur ou Téléphone", class="form-control") }}
+                    {{ form.phone(placeholder="Nom d'utilisateur ou Téléphone", class="form-control") }}
                   </div>
-                  {% if form.login_id.errors %}
-                    {% for error in form.login_id.errors %}
+                  {% if form.phone.errors %}
+                    {% for error in form.phone.errors %}
                       <small class="text-danger d-block">{{ error }}</small>
                     {% endfor %}
                   {% endif %}
