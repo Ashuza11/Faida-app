@@ -485,6 +485,65 @@ class EditProfileForm(FlaskForm):
                 )
 
 
+
+class UpdateProfileForm(FlaskForm):
+    username = StringField(
+        "Nom d'utilisateur",
+        validators=[DataRequired(), Length(min=3, max=64)],
+    )
+    email = StringField(
+        "Adresse e-mail",
+        validators=[DataRequired(), Email(), Length(max=120)],
+    )
+    phone = StringField(
+        "Numéro de téléphone",
+        validators=[Optional(), Length(max=20)],
+    )
+
+    submit_profile = SubmitField("Mettre à jour le profil")
+
+    def __init__(self, original_username, original_email, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.original_username = original_username
+        self.original_email = original_email
+
+    def validate_username(self, field):
+        if field.data != self.original_username:
+            if User.query.filter_by(username=field.data).first():
+                raise ValidationError("Nom d'utilisateur déjà utilisé.")
+
+    def validate_email(self, field):
+        if field.data != self.original_email:
+            if User.query.filter_by(email=field.data).first():
+                raise ValidationError("Email déjà utilisé.")
+
+
+
+class ChangePasswordForm(FlaskForm):
+    current_password = PasswordField(
+        "Mot de passe actuel",
+        validators=[DataRequired()],
+    )
+
+    new_password = PasswordField(
+        "Nouveau mot de passe",
+        validators=[DataRequired(), Length(min=6)],
+    )
+
+    confirm_password = PasswordField(
+        "Confirmer le mot de passe",
+        validators=[
+            EqualTo("new_password", message="Les mots de passe doivent correspondre")
+        ],
+    )
+
+    submit_password = SubmitField("Changer le mot de passe")
+
+
+
+
 # Form for confirming deletion of a sale
 class DeleteConfirmForm(FlaskForm):
     submit = SubmitField("Oui, Supprimer", validators=[DataRequired()])
+
+
