@@ -4,6 +4,8 @@ from pathlib import Path
 from decimal import Decimal
 from apps import db
 from flask import current_app, request, url_for
+from apps.decorators import filter_by_vendeur, get_current_vendeur_id
+from apps.decorators import filter_by_vendeur
 from apps.models import (
     DailyStockReport,
     NetworkType,
@@ -148,7 +150,7 @@ def parse_date_param(date_str, default_date):
         return datetime.strptime(date_str, "%Y-%m-%d").date()
     except ValueError:
         current_app.logger.warning(
-                f"Invalid date format received: {date_str}. Using default."
+            f"Invalid date format received: {date_str}. Using default."
         )
         return default_date
 
@@ -159,7 +161,7 @@ def get_utc_range_for_date(target_date):
     UTC start and end datetimes for that full day in the APP_TIMEZONE.
     """
     # 1. Create midnight (00:00:00) and end-of-day (23:59:59) in LOCAL time
-    start_local = datetime.combine(target_date, time.min) # 00:00:00
+    start_local = datetime.combine(target_date, time.min)  # 00:00:00
     end_local = datetime.combine(target_date, time.max)   # 23:59:59.999999
 
     # 2. Attach the App's Timezone (Lubumbashi)
@@ -174,11 +176,10 @@ def get_utc_range_for_date(target_date):
     return start_utc, end_utc
 
 
-
 def get_date_context(arg_key='date'):
     """
     Standardizes date handling across all endpoints.
-    
+
     Usage:
         ctx = get_date_context()
         print(ctx['selected_date']) # Date object
@@ -212,7 +213,6 @@ def get_date_context(arg_key='date'):
     }
 
 
-
 def get_paginated_results(base_query, endpoint_name, per_page_config_key, **extra_args):
     """
     Handles standard pagination logic for any SQLAlchemy query.
@@ -230,7 +230,8 @@ def get_paginated_results(base_query, endpoint_name, per_page_config_key, **extr
     page = request.args.get("page", 1, type=int)
 
     # 2. Determine items per page from application config
-    per_page = current_app.config.get(per_page_config_key, 5) # Default to 5 if config not set
+    # Default to 5 if config not set
+    per_page = current_app.config.get(per_page_config_key, 5)
 
     # 3. Perform pagination
     pagination = db.paginate(
@@ -254,7 +255,6 @@ def get_paginated_results(base_query, endpoint_name, per_page_config_key, **extr
     return pagination, next_url, prev_url
 
 
-
 def get_stock_purchase_history_query(date_filter=True, date_arg_key='date'):
     """
     Builds the base SQLAlchemy query for 'Historique des Achats Stock',
@@ -267,14 +267,14 @@ def get_stock_purchase_history_query(date_filter=True, date_arg_key='date'):
     Returns:
         SQLAlchemy Query object: The base query, ordered by creation date (desc).
     """
-    
+
     # Start with the base query for the StockPurchase model
     query = StockPurchase.query.order_by(StockPurchase.created_at.desc())
-    
+
     # Apply date filter if requested
     if date_filter:
         ctx = get_date_context(arg_key=date_arg_key)
-        
+
         # Apply the date range filtering using UTC timestamps
         query = query.filter(
             StockPurchase.created_at >= ctx['start_utc'],
@@ -282,7 +282,7 @@ def get_stock_purchase_history_query(date_filter=True, date_arg_key='date'):
         )
         # Return the context needed by the endpoint for the frontend filter
         return query, ctx
-    
+
     # If no date filter, just return the base query and an empty context
     return query, {}
 
@@ -299,24 +299,27 @@ def get_sales_history_query(date_filter=True, date_arg_key='date'):
     Returns:
         tuple: (SQLAlchemy Query object, dict of date context)
     """
-    
+
     # Start with the base query for the Sale model, ordered by creation date (desc)
-    query = Sale.query.order_by(Sale.created_at.desc())
-    
+    base_query = Sale.query.order_by(Sale.created_at.desc())
+    filtered_query = filter_by_vendeur(base_query, Sale)
+    # sales = filtered_query.all()
+    # query = Sale.query.order_by(Sale.created_at.desc())
+
     # Apply date filter if requested
     if date_filter:
         ctx = get_date_context(arg_key=date_arg_key)
-        
+
         # Apply the date range filtering using UTC timestamps
-        query = query.filter(
+        query = filtered_query.filter(
             Sale.created_at >= ctx['start_utc'],
             Sale.created_at <= ctx['end_utc']
         )
         # Return the context needed by the endpoint for the frontend filter
         return query, ctx
-    
+
     # If no date filter, just return the base query and an empty context
-    return query, {}
+    return filtered_query, {}
 
 
 def get_daily_report_data(
@@ -324,16 +327,17 @@ def get_daily_report_data(
     target_date: date,
     start_of_utc_range: datetime,
     end_of_utc_range: datetime,
+    vendeur_id: int = None,
 ):
     """
     Calculates comprehensive report data for a single target date based on live transactions.
     It includes the critical fix for the 'Initial Stock' calculation when no prior report exists.
     """
-    
+
     # Use the passed UTC ranges directly as they are correctly calculated by the caller (rapports)
     filter_start_dt = start_of_utc_range
     filter_end_dt = end_of_utc_range
-    
+
     # 1. Setup Environment (Needed for determining is_live_report later in the loop)
     # The caller (rapports) already handles timezone conversion for TODAY.
     # We re-fetch TODAY's date to verify if target_date is TODAY for the 'Initial Stock' fix.
@@ -349,7 +353,7 @@ def get_daily_report_data(
     live_stock_map = {s.network: s for s in live_stock_items}
 
     # 3. Calculate Today's Movements (Purchases and Sales)
-    
+
     # A. Purchases
     daily_purchases = (
         db.session.query(
@@ -360,7 +364,8 @@ def get_daily_report_data(
         .group_by(StockPurchase.network)
         .all()
     )
-    purchases_map = {p.network: Decimal(str(p.total or 0)) for p in daily_purchases}
+    purchases_map = {p.network: Decimal(
+        str(p.total or 0)) for p in daily_purchases}
 
     # B. Sales (Quantity & Value)
     daily_sales = (
@@ -379,8 +384,10 @@ def get_daily_report_data(
 
     # 4. Determine Previous Final Stock (Initial Stock Basis)
     previous_day = target_date - timedelta(days=1)
-    previous_day_reports = DailyStockReport.query.filter_by(report_date=previous_day).all()
-    previous_stock_map = {r.network: r.final_stock_balance for r in previous_day_reports}
+    previous_day_reports = DailyStockReport.query.filter_by(
+        report_date=previous_day).all()
+    previous_stock_map = {
+        r.network: r.final_stock_balance for r in previous_day_reports}
 
     # 5. Calculate Debts (Cumulative up to end of period)
     network_debts_map = {}
@@ -403,11 +410,11 @@ def get_daily_report_data(
         qty_purchased = purchases_map.get(network, Decimal("0.00"))
         qty_sold = sales_qty_map.get(network, Decimal("0.00"))
         val_sold = sales_val_map.get(network, Decimal("0.00"))
-        
+
         live_item = live_stock_map.get(network)
         current_balance = live_item.balance if live_item else Decimal("0.00")
         selling_price = (
-            live_item.selling_price_per_unit if live_item and live_item.selling_price_per_unit is not None 
+            live_item.selling_price_per_unit if live_item and live_item.selling_price_per_unit is not None
             else Decimal("1.00")
         )
 
@@ -419,7 +426,7 @@ def get_daily_report_data(
             if is_live_report:
                 # REVERSE CALCULATION for TODAY's report: Initial = Current + Sold - Purchased
                 initial_stock = current_balance + qty_sold - qty_purchased
-                
+
                 app.logger.debug(
                     f"[{network.name}] LIVE FIX: Initial Stock reverse calculated to {initial_stock} "
                     f"from Current: {current_balance}, Sold: {qty_sold}, Purchased: {qty_purchased}."
@@ -427,11 +434,10 @@ def get_daily_report_data(
             else:
                 # If it's a historical date AND no record exists, assume the start was 0.
                 initial_stock = Decimal("0.00")
-        
+
         # If initial_stock was found in history, ensure it's Decimal
         elif not isinstance(initial_stock, Decimal):
-             initial_stock = Decimal(str(initial_stock))
-
+            initial_stock = Decimal(str(initial_stock))
 
         # --- STEP 6b: CALCULATE FINAL STOCK ---
         final_stock = initial_stock + qty_purchased - qty_sold
@@ -451,7 +457,7 @@ def get_daily_report_data(
             "virtual_value": virtual_value,
             "debt_amount": debt_amount,
         }
-        
+
         total_sales_value_all += val_sold
 
     return (
@@ -462,7 +468,7 @@ def get_daily_report_data(
 
 
 # Change this and user a button to register daily reports
-def update_daily_reports(app, report_date_to_update=None):
+def update_daily_reports(app, report_date_to_update=None, vendeur_id=None):
     """
     Calculates and updates DailyStockReport and DailyOverallReport for a given date.
     This should be run daily, ideally after all transactions for the day are recorded.
@@ -483,14 +489,14 @@ def update_daily_reports(app, report_date_to_update=None):
         try:
             # 1. Calculate the necessary UTC date range for the target report date
             start_utc, end_utc = get_utc_range_for_date(report_date_to_update)
-            
+
             # 2. Pass the full set of required arguments to the calculator function
             report_data, total_sales_from_transactions, total_debts_overall = (
                 get_daily_report_data(
-                    app, 
+                    app,
                     report_date_to_update,
-                    start_utc,          
-                    end_utc             
+                    start_utc,
+                    end_utc
                 )
             )
 
@@ -537,11 +543,15 @@ def update_daily_reports(app, report_date_to_update=None):
 
             # --- Update/Create DailyOverallReport for the target_date ---
             overall_report = DailyOverallReport.query.filter_by(
-                report_date=report_date_to_update
+                report_date=report_date_to_update,
+                vendeur_id=vendeur_id,
             ).first()
 
             if not overall_report:
-                overall_report = DailyOverallReport(report_date=report_date_to_update)
+                overall_report = DailyOverallReport(
+                    report_date=report_date_to_update,
+                    vendeur_id=vendeur_id
+                )
                 db.session.add(overall_report)
                 app.logger.debug(
                     f"Creating new DailyOverallReport for {report_date_to_update}"
@@ -813,8 +823,7 @@ def seed_initial_stock_balances(app, seed_report_date: date):
             )
 
         except Exception as e:
-            app.logger.error(f"Error seeding initial report data: {e}", exc_info=True)
+            app.logger.error(
+                f"Error seeding initial report data: {e}", exc_info=True)
             db.session.rollback()
             raise  # Re-raise the exception to fail the setup command
-
-

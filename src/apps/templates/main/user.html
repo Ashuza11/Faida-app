@@ -7,7 +7,7 @@
   {% set page_title = 'Gestion des utilisateurs' %}
   {% set breadcrumb_items = [
     {'text': 'Admin', 'url': url_for('main_bp.stocker_management')}, 
-    {'text': 'Utilisateurs', 'url': url_for('main_bp.stocker_management')}
+    {'text': 'Stockeur', 'url': url_for('main_bp.stocker_management')}
   ] %}
   {% include 'includes/page_header.html' %}
 
@@ -18,12 +18,12 @@
           <div class="card-header border-0">
             <div class="row align-items-center">
               <div class="col">
-                <h3 class="mb-0">Utilisateurs</h3>
+                <h3 class="mb-0">Stockeurs</h3>
               </div>
               <div class="col text-right">
-                {% if current_user.is_authenticated and current_user.role.value == 'superadmin' %}
+                {% if current_user.is_authenticated and (current_user.is_vendeur or current_user.is_platform_admin) %}
                     <button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#addStockerModal">
-                      <i class="fas fa-plus"></i> Ajouter un Utilisateur
+                      <i class="fas fa-plus"></i> Ajouter stockeur
                     </button>
                 {% endif %}
               </div>
@@ -35,7 +35,7 @@
               <thead class="thead-light">
                 <tr>
                   <th scope="col">Nom</th>
-                  <th scope="col">Email</th>
+                  <th scope="col">Téléphone</th>
                   <th scope="col">Role</th>
                   <th scope="col">Status</th>
                   <th scope="col" class="text-right">Actions</th>
@@ -45,7 +45,7 @@
                 {% for user in users %}
                   <tr>
                     <td>{{ user.username }}</td>
-                    <td>{{ user.email }}</td>
+                    <td>{{ user.phone }}</td>
                     <td>{{ user.role.value | capitalize }}</td>
                     <td>
                       <span class="badge badge-dot mr-4">
@@ -56,40 +56,39 @@
                       </span>
                     </td>
                     <td class="text-right">
-                        <div class="dropdown">
-                          <a class="btn btn-sm btn-icon-only text-light" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                            <i class="fas fa-ellipsis-v"></i>
-                          </a>
-                          <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
-                            {# Display actions ONLY if current_user is a superadmin #}
-                            {% if current_user.role.value == 'superadmin' %}
-                              {# Editer Link (opens modal) #}
-                              <a class="dropdown-item edit-user-btn" href="#"
-                                data-toggle="modal" data-target="#editUserModal"
-                                data-user-id="{{ user.id }}"
-                                data-username="{{ user.username }}"
-                                data-email="{{ user.email }}"
-                                data-role="{{ user.role.value }}"
-                                data-is-active="{{ 'true' if user.is_active else 'false' }}">
-                                Editer
-                              </a>
-                              {# Deactivate/Activate Link (submit form) #}
-                              {# Add condition to prevent superadmin from deactivating self #}
-                              {% if user.id != current_user.id or user.role.value != 'superadmin' %} 
-                                <form action="{{ url_for('main_bp.user_toggle_active', user_id=user.id) }}" method="post" class="d-inline">
-                                  <button type="submit" class="dropdown-item">
-                                    {% if user.is_active %}
-                                      Deactiver
-                                    {% else %}
-                                      Activer
-                                    {% endif %}
-                                  </button>
-                                </form>
-                              {% endif %}
-                            {% else %}
-                              <span class="dropdown-item text-muted">Pas d'actions disponible</span> 
+                      <div class="dropdown">
+                        <a class="btn btn-sm btn-icon-only text-light" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                          <i class="fas fa-ellipsis-v"></i>
+                        </a>
+                        <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
+                          {% if current_user.is_authenticated and (current_user.is_vendeur or current_user.is_platform_admin) %}
+
+                            {# Edit #}
+                            <a class="dropdown-item edit-user-btn" href="#"
+                              data-toggle="modal" data-target="#editUserModal"
+                              data-user-id="{{ user.id }}"
+                              data-username="{{ user.username }}"
+                              data-phone="{{ user.phone }}"
+                              data-email="{{ user.email }}"
+                              data-role="{{ user.role.value }}"
+                              data-is-active="{{ 'true' if user.is_active else 'false' }}">
+                              Editer
+                            </a>
+
+                            {# Activate / Deactivate #}
+                            {% if user.id != current_user.id %}
+                              <form action="{{ url_for('main_bp.user_toggle_active', user_id=user.id) }}"
+                                    method="post"
+                                    class="d-inline">
+                                <button type="submit" class="dropdown-item">
+                                  {{ 'Deactiver' if user.is_active else 'Activer' }}
+                                </button>
+                              </form>
                             {% endif %}
-                          </div>
+
+                          {% else %}
+                            <span class="dropdown-item text-muted">Pas d'actions disponible</span>
+                          {% endif %}
                         </div>
                     </td>
                   </tr>
@@ -110,7 +109,7 @@
 
   {# Include the "Edit User" Modal #}
   {% set modal_id = 'editUserModal' %}
-  {% set modal_title = 'Editer l\'utilisateur' %}
+  {% set modal_title = 'Editer Stockeur' %}
   {% set form = user_edit_form %}
   {% include 'includes/modal_form.html' %} 
 
@@ -131,6 +130,7 @@
       $('.edit-user-btn').on('click', function() {
         var userId = $(this).data('user-id');
         var username = $(this).data('username');
+        var phone = $(this).data('phone');
         var email = $(this).data('email');
         var role = $(this).data('role');
         // Convert 'true'/'false' string to boolean
@@ -145,6 +145,7 @@
 
         // Populate the form fields inside the modal
         $modalForm.find('#edit_username').val(username);
+        $modalForm.find('#edit_phone').val(phone);
         $modalForm.find('#edit_email').val(email);
         $modalForm.find('#edit_role').val(role); // Set the selected value for the dropdown
         $modalForm.find('#edit_is_active').prop('checked', isActive); // Set checkbox state

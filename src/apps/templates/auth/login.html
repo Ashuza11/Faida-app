@@ -16,14 +16,14 @@
 
               <div class="text-muted text-center mt-2 mb-3">              
                 <a href="/">
-                  <img src="/static/assets/img/brand/faida-logo.png" class="mb-3" style="width: 150px; height: auto;">
+                  <img src="/static/assets/img/brand/faida-logo-outligned.png" class="mb-3" style="width: 150px; height: auto;">
                 </a>
                 <br />
                 {% if msg %}
                   <span class="text-danger">{{ msg | safe }}</span>
                 {% else %}
                 <span>
-                  Entrez votre nom et mot de passe pour continuer.
+                  Tiya numéro yako na mot de passe yako kwaku kuingiya. 
                 </span>
                 {% endif %}
               </div>
@@ -38,9 +38,9 @@
                 <div class="form-group mb-3">
                   <div class="input-group input-group-alternative">
                     <div class="input-group-prepend">
-                      <span class="input-group-text"><i class="ni ni-single-02"></i></span>
+                      <span class="input-group-text"><i class="ni ni-mobile-button"></i></span>
                     </div>
-                    {{ form.username(placeholder="Nom d'utilisateur",class="form-control") }}
+                    {{ form.phone(class="form-control", placeholder="Ex: 0812345678") }}
                   </div>
                 </div>
                 <div class="form-group">

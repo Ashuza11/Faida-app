@@ -9,38 +9,56 @@
       <div class="container-fluid">
         <div class="header-body">
           <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center py-4">
-            
             {# LEFT SIDE: Title and Breadcrumbs #}
-            <div class="d-flex align-items-center mb-3 mb-md-0 w-100 w-md-auto">
-              <h6 class="h2 text-white d-inline-block mb-0">Rapports</h6>
-              <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
-                <ol class="breadcrumb breadcrumb-links breadcrumb-dark mb-0">
-                  <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}"><i class="fas fa-home"></i></a></li>
-                  <li class="breadcrumb-item active">{{ page_title }}</li>
-                </ol>
-              </nav>
+            <div class="d-flex align-items-center mb-3 mb-md-0">
+                <h6 class="h2 text-white d-inline-block mb-0">Rapports</h6>
+                <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
+                    <ol class="breadcrumb breadcrumb-links breadcrumb-dark mb-0">
+                        <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}"><i class="fas fa-home"></i></a></li>
+                        <li class="breadcrumb-item active">{{ page_title }}</li>
+                    </ol>
+                </nav>
             </div>
 
-            {# RIGHT SIDE: Buttons Bloc #}
-            <div class="d-flex align-items-center flex-wrap w-100 w-md-auto justify-content-start justify-content-md-end">
-                {# 1. Date Filter #}
-                <div class="mr-2">
-                    {{ filters.render_date_filter(url_for('main_bp.rapports'), selected_date, show_label=False) }}
-                </div>
+            {# RIGHT SIDE: All Controls in One Row #}
+            <div class="d-flex align-items-center flex-wrap">
+                
+                {# Date Filter - integrated inline #}
+                <form method="GET" action="{{ url_for('main_bp.rapports') }}" class="d-flex align-items-center m-0">
+                    <input type="date" 
+                          name="date" 
+                          value="{{ selected_date }}" 
+                          class="form-control form-control-sm bg-white"
+                          style="width: 150px; height: 38px;"
+                          onchange="this.form.submit()">
+                </form>
 
-                {# 2. The Archive Form #}
-                <form action="{{ url_for('main_bp.archive_daily_report') }}" method="POST" 
-                      class="m-0 p-0"
-                      onsubmit="return confirm('Voulez-vous vraiment enregistrer/mettre à jour les rapports pour le {{ selected_date }} ?');">
-                    
+                {# PDF Download Button #}
+                <a href="{{ url_for('pdf_bp.download_report_pdf', date=selected_date) }}" 
+                  class="btn btn-success ml-2"
+                  title="Télécharger PDF"
+                  style="height: 38px; display: flex; align-items: center;">
+                    <i class="fas fa-file-pdf"></i>
+                    <span class="d-none d-lg-inline ml-2">PDF</span>
+                </a>
+
+                {# Archive Button #}
+                {# Archive Button - No onsubmit, uses SweetAlert2 #}
+                <form id="archive-form" 
+                      action="{{ url_for('main_bp.archive_daily_report') }}" 
+                      method="POST" 
+                      class="m-0 ml-2">
                     <input type="hidden" name="date_to_archive" value="{{ selected_date }}">
-                    
-                    <button type="submit" class="btn btn-neutral text-primary shadow-sm" style="min-height: 40px; white-space: nowrap;">
-                        <i class="fas fa-cloud-upload-alt"></i> <span class="d-none d-sm-inline">Archiver le Journal</span>
+                    <button type="button"
+                            id="archive-btn"
+                            class="btn btn-primary"
+                            title="Archiver le rapport"
+                            style="height: 38px; display: flex; align-items: center;">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <span class="d-none d-lg-inline ml-2">Archiver</span>
                     </button>
                 </form>
             </div>
-
           </div>
         </div>
       </div>
@@ -119,7 +137,7 @@
                         {{ sale.client_name_adhoc or 'Client Anonyme' }}
                       {% endif %}
                     </td>
-                    <td>{{ sale.vendeur.username }}</td>
+                    <td>{{ sale.seller.username }}</td>
                     <td>{{ "{:,.2f}".format(sale.total_amount_due | default(0)) }}</td>
                     <td>{{ "{:,.2f}".format(sale.cash_paid | default(0)) }}</td>
                     <td>
@@ -195,3 +213,43 @@
     </div>
 
 {% endblock content %}
+{% block javascripts %}
+{{ super() }}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var archiveBtn = document.getElementById('archive-btn');
+    var archiveForm = document.getElementById('archive-form');
+    
+    console.log('Button found:', archiveBtn);  // Debug
+    console.log('Form found:', archiveForm);   // Debug
+    
+    if (archiveBtn && archiveForm) {
+        archiveBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('Button clicked!');  // Debug
+            
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    title: 'Archiver le rapport ?',
+                    text: 'Voulez-vous archiver le rapport du {{ selected_date }} ?',
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: 'Oui, archiver',
+                    cancelButtonText: 'Annuler'
+                }).then(function(result) {
+                    if (result.isConfirmed) {
+                        archiveForm.submit();
+                    }
+                });
+            } else {
+                // Fallback
+                if (confirm('Archiver le rapport du {{ selected_date }} ?')) {
+                    archiveForm.submit();
+                }
+            }
+        });
+    }
+});
+</script>
+{% endblock javascripts %}

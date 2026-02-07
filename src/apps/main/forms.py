@@ -26,47 +26,80 @@ from apps.models import (
     CashOutflowCategory,
     RoleType,
     User,
+    validate_drc_phone,
 )
 import enum
 from decimal import Decimal
 
 
 # New Stocker (user)
-class StockerForm(FlaskForm):
+class StockeurForm(FlaskForm):
     """
-    Form for admin to add a new stocker.
-    Fields are pre-filled with Bootstrap classes for styling.
+    Form for VENDEUR to create a new STOCKEUR (employee).
+
+    Note: No role field - vendeurs can ONLY create stockeurs.
+    The role is automatically set to STOCKEUR in the route.
     """
 
     username = StringField(
-        "Nom",
-        id="stocker_username",
-        validators=[DataRequired()],
-        render_kw={"placeholder": "Entrer le nom d'utilisateur"},
+        "Nom d'utilisateur",
+        validators=[
+            DataRequired(message="Le nom d'utilisateur est requis"),
+            Length(min=2, max=64,
+                   message="Le nom doit contenir entre 2 et 64 caractères")
+        ],
+        render_kw={
+            "placeholder": "Ex: Jean Mutombo",
+            "class": "form-control"
+        }
     )
+
+    phone = StringField(
+        "Numéro de téléphone",
+        validators=[
+            DataRequired(message="Le numéro de téléphone est requis"),
+            Length(min=9, max=20)
+        ],
+        render_kw={
+            "placeholder": "Ex: 0812345678",
+            "class": "form-control"
+        }
+    )
+
     email = StringField(
-        "Email",
-        id="stocker_email",
-        validators=[DataRequired(), Email()],
-        render_kw={"placeholder": " Entrer email"},
+        "Email (optionnel)",
+        validators=[
+            Optional(),
+            Email(message="Adresse email invalide"),
+            Length(max=120)
+        ],
+        render_kw={
+            "placeholder": "email@exemple.com (optionnel)",
+            "class": "form-control"
+        }
     )
+
     password = PasswordField(
         "Mot de passe",
-        id="stocker_password",
-        validators=[DataRequired()],
-        render_kw={"placeholder": "Entrer Mot de passe"},
-    )
-    role = SelectField(
-        "Role",
-        id="stocker_role",
-        choices=[
-            (role.value, role.name.capitalize())
-            for role in RoleType
-            if role != RoleType.SUPERADMIN
+        validators=[
+            DataRequired(message="Le mot de passe est requis"),
+            Length(min=6, message="Le mot de passe doit contenir au moins 6 caractères")
         ],
-        validators=[DataRequired()],
+        render_kw={
+            "placeholder": "Minimum 6 caractères",
+            "class": "form-control"
+        }
     )
-    submit = SubmitField("Enregistrer")
+
+    submit = SubmitField("Créer le stockeur")
+
+    def validate_phone(self, field):
+        """Validate phone is a valid DRC number."""
+        if not validate_drc_phone(field.data):
+            raise ValidationError(
+                "Numéro de téléphone invalide. "
+                "Format accepté: 0812345678 ou +243812345678"
+            )
 
 
 class UserEditForm(FlaskForm):
@@ -76,10 +109,16 @@ class UserEditForm(FlaskForm):
     """
 
     username = StringField(
-        "Nom d'utilisateur",
+        "Nom",
         id="edit_username",
         validators=[DataRequired()],
         render_kw={"placeholder": "Entrer le nom d'utilisateur"},
+    )
+    phone = StringField(
+        "Numéro",
+        id="edit_phone",
+        validators=[Optional(), Length(min=9, max=20)],
+        render_kw={"placeholder": "Ex: 0812345678"},
     )
     email = StringField(
         "Email",
@@ -281,7 +320,8 @@ class SaleItemForm(FlaskForm):
 
     network = SelectField(
         "Réseau",
-        choices=[(network.name, network.value.capitalize()) for network in NetworkType],
+        choices=[(network.name, network.value.capitalize())
+                 for network in NetworkType],
         validators=[DataRequired(message="Veuillez sélectionner un réseau.")],
     )
     quantity = IntegerField(
@@ -311,7 +351,8 @@ class SaleForm(FlaskForm):
             ("existing", "Client Existant"),
             ("new", "Nouveau Client (Ad-hoc)"),
         ],
-        validators=[DataRequired(message="Veuillez choisir une option client.")],
+        validators=[DataRequired(
+            message="Veuillez choisir une option client.")],
     )
     existing_client_id = SelectField(
         "Sélectionnez un client existant",
@@ -427,7 +468,8 @@ class EditProfileForm(FlaskForm):
     )
 
     # Include 'about_me' only if you have this column in your User model
-    about_me = TextAreaField("À propos de moi", validators=[Length(min=0, max=140)])
+    about_me = TextAreaField("À propos de moi", validators=[
+                             Length(min=0, max=140)])
 
     current_password = PasswordField(
         "Mot de passe actuel (pour les modifications)", validators=[Optional()]
@@ -438,7 +480,8 @@ class EditProfileForm(FlaskForm):
     confirm_new_password = PasswordField(
         "Confirmer le nouveau mot de passe",
         validators=[
-            EqualTo("new_password", message="Les mots de passe doivent correspondre")
+            EqualTo("new_password",
+                    message="Les mots de passe doivent correspondre")
         ],
     )
 
