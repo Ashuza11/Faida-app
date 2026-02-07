@@ -1,13 +1,13 @@
 #!/bin/bash
 # ===========================================
-# Script to Create GitHub Issues for AirtFast Renovation
+# Script to Create GitHub Issues for Faida App Renovation
 # ===========================================
 # Prerequisites: GitHub CLI (gh) installed and authenticated
 # Run: ./create-issues.sh
 
 set -e
 
-echo "🚀 Creating GitHub Issues for AirtFast Renovation..."
+echo "🚀 Creating GitHub Issues for Faida App Renovation..."
 echo ""
 
 # Check if gh is installed
@@ -394,7 +394,7 @@ Add a WhatsApp link for customer support.
 - [ ] Add to sidebar or footer
 
 ## WhatsApp Link Format
-https://wa.me/243XXXXXXXXX?text=Bonjour,%20j'ai%20besoin%20d'aide%20avec%20AirtFast
+https://wa.me/243XXXXXXXXX?text=Bonjour,%20j'ai%20besoin%20d'aide%20avec%20Faida App
 
 ## Acceptance Criteria
 - WhatsApp link opens WhatsApp with support number

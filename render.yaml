@@ -1,90 +1,74 @@
-# render.yaml
-# Render Blueprint - Infrastructure as Code
+# render.yaml - Render Blueprint for Faida App
 # https://render.com/docs/blueprint-spec
+#
+# This uses Neon PostgreSQL (external) instead of Render's database
+# for better free tier and serverless support.
 
 services:
-  # ===========================================
-  # Web Service - Main Flask Application
-  # ===========================================
   - type: web
-    name: faida-app
+    name: Faida App
     runtime: docker
-    
+
     # Docker configuration
     dockerfilePath: ./src/Dockerfile
     dockerContext: ./src
-    
-    # Build settings
-    plan: free  # Options: free, starter, standard, pro
-    region: frankfurt  # Closest to Central Africa
-    
-    # Branch to deploy
+
+    # Plan (free tier available)
+    plan: free
+
+    # Region - closest to Central Africa
+    region: frankfurt
+
+    # Auto-deploy from main branch
     branch: main
-    
-    # Auto-deploy on push
     autoDeploy: true
-    
-    # Health check
+
+    # Health check endpoint
     healthCheckPath: /health
-    
+
     # Environment variables
     envVars:
-      - key: FLASK_ENV
-        value: production
+      # Flask configuration
       - key: FLASK_APP
         value: run.py
+      - key: FLASK_ENV
+        value: production
+
+      # Security - auto-generate secure key
       - key: SECRET_KEY
-        generateValue: true  # Render generates a secure random value
+        generateValue: true
+
+      # Database - Neon PostgreSQL (set manually in dashboard)
+      # Copy your Neon production connection string here
       - key: DATABASE_URL
-        fromDatabase:
-          name: airtfast-db
-          property: connectionString
-      # Or use Neon DB instead:
-      # - key: DATABASE_URL
-      #   sync: false  # Set manually in dashboard
+        sync: false # Must be set manually in Render dashboard
+
+      # Python settings
       - key: PYTHON_VERSION
         value: "3.11"
+
+      # Gunicorn workers
       - key: WEB_CONCURRENCY
         value: "2"
-      
-    # Build command
+
+    # Build command (runs during build phase)
     buildCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
-    
-    # Start command
-    startCommand: |
-      flask db upgrade && gunicorn --config gunicorn-cfg.py run:app
 
-  # ===========================================
-  # Background Worker (Optional)
-  # ===========================================
-  # - type: worker
-  #   name: faida-worker
-  #   runtime: docker
-  #   dockerfilePath: ./src/Dockerfile
-  #   dockerContext: ./src
-  #   envVars:
-  #     - fromGroup: faida-env
-  #   startCommand: celery -A apps.celery worker --loglevel=info
+    # Start command (runs when starting the service)
+    # The entrypoint.sh handles migrations and initialization
+    startCommand: ./entrypoint.sh
 
 # ===========================================
-# Database (if using Render PostgreSQL)
+# IMPORTANT: After deploying, you must:
 # ===========================================
-databases:
-  - name: airtfast-db
-    plan: free  # 90 days free, then $7/month
-    databaseName: airtfast
-    user: airtfast_user
-    region: frankfurt
-
+# 1. Go to Render Dashboard → Faida App service → Environment
+# 2. Add DATABASE_URL with your Neon production connection string
+# 3. Trigger a manual deploy or push a new commit
+#
+# Neon connection string format:
+# postgresql://user:password@ep-xxx-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require
+#
+# Make sure to use the POOLED connection string (-pooler in hostname)
 # ===========================================
-# Environment Variable Groups
-# ===========================================
-envVarGroups:
-  - name: airtfast-env
-    envVars:
-      - key: FLASK_ENV
-        value: production
-      - key: LOG_LEVEL
-        value: INFO
