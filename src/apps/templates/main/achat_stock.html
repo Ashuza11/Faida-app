@@ -69,12 +69,12 @@
                                     <td>{{ purchase.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
                                     <td class="text-right">
                                         <div class="dropdown">
-                                            <a class="btn btn-sm btn-icon-only text-light" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                                            <a class="btn btn-sm btn-icon-only text-light btn-loader" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                                                 <i class="fas fa-ellipsis-v" style="color: #5e72e4;"></i>
                                             </a>
                                             <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
-                                                <a class="dropdown-item" href="{{ url_for('main_bp.edit_stock_purchase', purchase_id=purchase.id) }}">Editer</a>
-                                                <a class="dropdown-item text-danger" href="{{ url_for('main_bp.delete_stock_purchase', purchase_id=purchase.id) }}">Supprimer</a>
+                                                <a class="dropdown-item btn-loader" href="{{ url_for('main_bp.edit_stock_purchase', purchase_id=purchase.id) }}">Editer</a>
+                                                <a class="dropdown-item text-danger btn-loader" href="{{ url_for('main_bp.delete_stock_purchase', purchase_id=purchase.id) }}">Supprimer</a>
                                             </div>
                                         </div>
                                     </td>
@@ -195,7 +195,9 @@
 
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" data-dismiss="modal">Annuler</button>
-                            <button type="submit" class="btn btn-primary">Enregistrer Achat</button>
+                            {% with btn_text="Enregistrer", btn_class="btn-primary" %}
+                                {% include "includes/_button_loader.html" %}
+                            {% endwith %}
                         </div>
                     </div>
                 </form>

@@ -137,7 +137,7 @@
                             </div>
 
                             <div class="text-right">
-                                <a href="{{ url_for('main_bp.vente_stock') }}" class="btn btn-secondary my-4">Annuler</a> {# Add a Cancel button #}
+                                <a href="{{ url_for('main_bp.vente_stock') }}" class="btn btn-secondary my-4 btn-loader">Annuler</a> {# Add a Cancel button #}
                                 {{ form.submit(class="btn btn-primary my-4", value="Mettre à jour la Vente") }} {# Changed button text #}
                             </div>
                         </form>
@@ -186,7 +186,7 @@
                 <input type="hidden" name="sale_id_hidden" id="sale_id_hidden">
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-dismiss="modal">Annuler</button>
-                    <button type="submit" class="btn btn-primary">Enregistrer</button>
+                    {% include "includes/_button_loader.html" with btn_text="Enregistrer", btn_class="btn-primary" %}
                 </div>
                 </form>
             </div>

@@ -23,17 +23,17 @@
                 <p>Votre session a peut-être expiré ou vous essayez d'accéder à une page sans être authentifié.</p>
                 
                 {# KEEP: The call to action is now the primary focus for a 401 error #}
-                <a href="{{ url_for('auth_bp.login') }}" class="btn btn-primary my-4">Se connecter</a>
+                <a href="{{ url_for('auth_bp.login') }}" class="btn btn-primary my-4 btn-loader">Se connecter</a>
               </div>
 
             </div>
           </div>
           <div class="row mt-3">
             <div class="col-6">
-              <a href="{{ url_for('main_bp.index') }}" class="text-light"><small>Retour à l'accueil</small></a>
+              <a href="{{ url_for('main_bp.index') }}" class="text-light btn-loader"><small>Retour à l'accueil</small></a>
             </div>
             <div class="col-6 text-right">
-              <a target="_blank" href="#" class="text-light"><small>Obtenir de l'aide</small></a>
+              <a target="_blank" href="#" class="text-light btn-loader"><small>Obtenir de l'aide</small></a>
             </div>
           </div>
         </div>

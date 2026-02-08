@@ -3,294 +3,290 @@
 {% block title %} Gestion des Clients {% endblock title %}
 
 {% block content %}
-  {# Render the Page Header #}
-  {% set page_title = 'Gestion Clients' %}
-  {% set breadcrumb_items = [
-    {'text': 'Admin', 'url': url_for('main_bp.index')}, 
-    {'text': 'Clients', 'url': url_for('main_bp.client_management')}
-  ] %}
-  {% include 'includes/page_header.html' %}
+{# Render the Page Header #}
+{% set page_title = 'Gestion Clients' %}
+{% set breadcrumb_items = [
+{'text': 'Admin', 'url': url_for('main_bp.index')},
+{'text': 'Clients', 'url': url_for('main_bp.client_management')}
+] %}
+{% include 'includes/page_header.html' %}
 
-  <div class="container-fluid mt--6">
-    <div class="row">
-      <div class="col">
-        <div class="card">
-          <div class="card-header border-0">
-            <div class="row align-items-center">
-              <div class="col">
-                <h3 class="mb-0">Clients</h3>
-              </div>
-              <div class="col text-right">
-                {# "Ajouter Client" button with role check #}
-                {% if current_user.is_authenticated %}
-                  <button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#addClientModal">
-                    <i class="fas fa-plus"></i> Ajouter Client
-                  </button>
-                {% endif %}
-              </div>
+<div class="container-fluid mt--6">
+  <div class="row">
+    <div class="col">
+      <div class="card">
+        <div class="card-header border-0">
+          <div class="row align-items-center">
+            <div class="col">
+              <h3 class="mb-0">Clients</h3>
             </div>
-          </div>
-          
-          <div class="table-responsive">
-            <table class="table align-items-center table-flush">
-              <thead class="thead-light">
-                <tr>
-                  <th scope="col">Nom</th>
-                  <th scope="col">Num Airtel</th>
-                  <th scope="col">Num Africell</th>
-                  <th scope="col">Num Orange</th>
-                  <th scope="col">Num Vodacom</th>
-                  <th scope="col">Adresse</th>
-                  <th scope="col">Statut</th>
-                  <th scope="col">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for client in clients %}
-                  <tr>
-                    <td>{{ client.name }}</td>
-                    <td>{{ client.phone_airtel if client.phone_airtel else 'N/A' }}</td>
-                    <td>{{ client.phone_africel if client.phone_africel else 'N/A' }}</td>
-                    <td>{{ client.phone_orange if client.phone_orange else 'N/A' }}</td>
-                    <td>{{ client.phone_vodacom if client.phone_vodacom else 'N/A' }}</td>
-                    <td>{{ client.address if client.address else 'N/A' }}</td>
-                    <td>
-                      <span class="badge badge-dot mr-4">
-                        <span class="status">
-                          <i class="{{ 'bg-success' if client.is_active else 'bg-warning' }}"></i>
-                          {{ 'Actif' if client.is_active else 'Inactif' }}
-                        </span>
-                      </span>
-                    </td>
-                    <td class="text-right">
-                      <div class="dropdown">
-                        <a class="btn btn-sm btn-icon-only text-light" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                          <i class="fas fa-ellipsis-v"></i>
-                        </a>
-                        <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
-                          {% if current_user.role.value == 'superadmin' or current_user.id == client.vendeur_id %}
-                            <a class="dropdown-item edit-client-btn" href="#"
-                                data-toggle="modal" data-target="#editClientModal"
-                                data-id="{{ client.id }}"
-                                data-name="{{ client.name }}"
-                                data-email="{{ client.email }}"
-                                data-phone-airtel="{{ client.phone_airtel }}"
-                                data-phone-africel="{{ client.phone_africel }}"
-                                data-phone-orange="{{ client.phone_orange }}"
-                                data-phone-vodacom="{{ client.phone_vodacom }}"
-                                data-address="{{ client.address }}"
-                                data-gps-lat="{{ client.gps_lat }}"
-                                data-gps-long="{{ client.gps_long }}"
-                                data-is-active="{{ 'true' if client.is_active else 'false' }}">
-                                Editer
-                            </a>
-                            <form action="{{ url_for('main_bp.client_toggle_active', client_id=client.id) }}" method="post" class="d-inline">
-                              <button type="submit" class="dropdown-item">
-                                {% if client.is_active %}
-                                  Désactiver
-                                {% else %}
-                                  Activer
-                                {% endif %}
-                              </button>
-                            </form>
-                          {% else %}
-                            <span class="dropdown-item text-muted">Pas d'actions disponible</span>
-                          {% endif %}
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                {% endfor %}
-                {% if not clients %}
-                  <tr>
-                    <td colspan="8" class="text-center">Aucun client trouvé.</td>
-                  </tr>
-                {% endif %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  {# Include the "Add Client" Modal #}
-  {% set modal_id = 'addClientModal' %}
-  {% set modal_title = 'Ajouter un nouveau Client' %}
-  {% set form = client_form %} {# Pass the client_form #}
-  <div class="modal fade" id="{{ modal_id }}" tabindex="-1" role="dialog" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered" role="document">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">{{ modal_title }}</h5>
-          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-            <span aria-hidden="true">&times;</span>
-          </button>
-        </div>
-        {# The form itself #}
-        <form method="post" action="{{ url_for('main_bp.client_management') }}">
-          <div class="modal-body">
-            {# Render all form fields from client_form #}
-            {% for field in form %}
-              {% if field.widget.input_type != 'hidden' and field.name not in ['csrf_token', 'submit'] %}
-                <div class="form-group{% if field.errors %} has-danger{% endif %}">
-                  {{ field.label(class="form-control-label") }}
-                  {{ field(class="form-control" + (" is-invalid" if field.errors else ""), placeholder=field.label.text) }}
-                  {% for error in field.errors %}
-                    <div class="invalid-feedback d-block">{{ error }}</div>
-                  {% endfor %}
-                </div>
+            <div class="col text-right">
+              {# "Ajouter Client" button with role check #}
+              {% if current_user.is_authenticated %}
+              <button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#addClientModal">
+                <i class="fas fa-plus"></i> Ajouter Client
+              </button>
               {% endif %}
-            {% endfor %}
-
-            {# GPS coordinates display and "Get Location" button #}
-            <div class="form-group">
-                <label class="form-control-label">Localisation GPS (Optionnel)</label>
-                <div class="input-group mb-3">
-                    <input type="text" id="add_gps_lat" name="gps_lat" class="form-control" placeholder="Latitude" readonly>
-                    <input type="text" id="add_gps_long" name="gps_long" class="form-control ml-2" placeholder="Longitude" readonly>
-                    <div class="input-group-append">
-                        <button class="btn btn-outline-primary" type="button" id="getGeolocationBtn">
-                            <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-                            Obtenir ma position
-                        </button>
-                    </div>
-                </div>
-                <small class="form-text text-muted" id="geolocation_status_message">Cliquez sur le bouton pour obtenir les coordonnées GPS actuelles.</small>
             </div>
-
-
-            {# CSRF token for security #}
-            {{ form.csrf_token }} 
           </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-dismiss="modal">Annuler</button>
-            <button type="submit" class="btn btn-primary">Ajouter</button>
-          </div>
-        </form>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table align-items-center table-flush">
+            <thead class="thead-light">
+              <tr>
+                <th scope="col">Nom</th>
+                <th scope="col">Num Airtel</th>
+                <th scope="col">Num Africell</th>
+                <th scope="col">Num Orange</th>
+                <th scope="col">Num Vodacom</th>
+                <th scope="col">Adresse</th>
+                <th scope="col">Statut</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for client in clients %}
+              <tr>
+                <td>{{ client.name }}</td>
+                <td>{{ client.phone_airtel if client.phone_airtel else 'N/A' }}</td>
+                <td>{{ client.phone_africel if client.phone_africel else 'N/A' }}</td>
+                <td>{{ client.phone_orange if client.phone_orange else 'N/A' }}</td>
+                <td>{{ client.phone_vodacom if client.phone_vodacom else 'N/A' }}</td>
+                <td>{{ client.address if client.address else 'N/A' }}</td>
+                <td>
+                  <span class="badge badge-dot mr-4">
+                    <span class="status">
+                      <i class="{{ 'bg-success' if client.is_active else 'bg-warning' }}"></i>
+                      {{ 'Actif' if client.is_active else 'Inactif' }}
+                    </span>
+                  </span>
+                </td>
+                <td class="text-right">
+                  <div class="dropdown">
+                    <a class="btn btn-sm btn-icon-only text-light btn-loader" href="#" role="button" data-toggle="dropdown"
+                      aria-haspopup="true" aria-expanded="false">
+                      <i class="fas fa-ellipsis-v"></i>
+                    </a>
+                    <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
+                      {% if current_user.role.value == 'superadmin' or current_user.id == client.vendeur_id %}
+                      <a class="dropdown-item edit-client-btn btn-loader" href="#" data-toggle="modal"
+                        data-target="#editClientModal" data-id="{{ client.id }}" data-name="{{ client.name }}"
+                        data-email="{{ client.email }}" data-phone-airtel="{{ client.phone_airtel }}"
+                        data-phone-africel="{{ client.phone_africel }}" data-phone-orange="{{ client.phone_orange }}"
+                        data-phone-vodacom="{{ client.phone_vodacom }}" data-address="{{ client.address }}"
+                        data-gps-lat="{{ client.gps_lat }}" data-gps-long="{{ client.gps_long }}"
+                        data-is-active="{{ 'true' if client.is_active else 'false' }}">
+                        Editer
+                      </a>
+                      <form action="{{ url_for('main_bp.client_toggle_active', client_id=client.id) }}" method="post"
+                        class="d-inline">
+                        {% with btn_text=('Désactiver' if client.is_active else 'Activer'), btn_class="dropdown-item" %}
+                        {% include "includes/_button_loader.html" %}
+                        {% endwith %}
+                      </form>
+                      {% else %}
+                      <span class="dropdown-item text-muted">Pas d'actions disponible</span>
+                      {% endif %}
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+              {% if not clients %}
+              <tr>
+                <td colspan="8" class="text-center">Aucun client trouvé.</td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
+</div>
 
-  {# Include the "Edit Client" Modal (Using the existing modal_form include) #}
-  {% set modal_id = 'editClientModal' %}
-  {% set modal_title = 'Editer client' %}
-  {% set form = client_edit_form %}
-  {# The modal_form.html should correctly render all fields, including gps_lat/long #}
-  {% include 'includes/modal_form.html' %} 
+{# Include the "Add Client" Modal #}
+{% set modal_id = 'addClientModal' %}
+{% set modal_title = 'Ajouter un nouveau Client' %}
+{% set form = client_form %} {# Pass the client_form #}
+<div class="modal fade" id="{{ modal_id }}" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">{{ modal_title }}</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      {# The form itself #}
+      <form method="post" action="{{ url_for('main_bp.client_management') }}">
+        <div class="modal-body">
+          {# Render all form fields from client_form #}
+          {% for field in form %}
+          {% if field.widget.input_type != 'hidden' and field.name not in ['csrf_token', 'submit'] %}
+          <div class="form-group{% if field.errors %} has-danger{% endif %}">
+            {{ field.label(class="form-control-label") }}
+            {{ field(class="form-control" + (" is-invalid" if field.errors else ""), placeholder=field.label.text) }}
+            {% for error in field.errors %}
+            <div class="invalid-feedback d-block">{{ error }}</div>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% endfor %}
+
+          {# GPS coordinates display and "Get Location" button #}
+          <div class="form-group">
+            <label class="form-control-label">Localisation GPS (Optionnel)</label>
+            <div class="input-group mb-3">
+              <input type="text" id="add_gps_lat" name="gps_lat" class="form-control" placeholder="Latitude" readonly>
+              <input type="text" id="add_gps_long" name="gps_long" class="form-control ml-2" placeholder="Longitude"
+                readonly>
+              <div class="input-group-append">
+                <button class="btn btn-outline-primary" type="button" id="getGeolocationBtn">
+                  <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                  Obtenir ma position
+                </button>
+              </div>
+            </div>
+            <small class="form-text text-muted" id="geolocation_status_message">Cliquez sur le bouton pour obtenir les
+              coordonnées GPS actuelles.</small>
+          </div>
+
+
+          {# CSRF token for security #}
+          {{ form.csrf_token }}
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Annuler</button>
+          {% with btn_text="Ajouter", btn_class="btn-primary" %}
+            {% include "includes/_button_loader.html" %}
+          {% endwith %}
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# Include the "Edit Client" Modal (Using the existing modal_form include) #}
+{% set modal_id = 'editClientModal' %}
+{% set modal_title = 'Editer client' %}
+{% set form = client_edit_form %}
+{# The modal_form.html should correctly render all fields, including gps_lat/long #}
+{% include 'includes/modal_form.html' %}
 
 {% endblock content %}
 
 {% block javascripts %}
-  {{ super() }}
-  <script>
-    $(document).ready(function() {
-      // Function to get geolocation
-      function getGeolocation() {
-        const latField = $('#add_gps_lat');
-        const longField = $('#add_gps_long');
-        const statusMessage = $('#geolocation_status_message');
-        const getBtn = $('#getGeolocationBtn');
-        const spinner = getBtn.find('.spinner-border');
+{{ super() }}
+<script>
+  $(document).ready(function () {
+    // Function to get geolocation
+    function getGeolocation() {
+      const latField = $('#add_gps_lat');
+      const longField = $('#add_gps_long');
+      const statusMessage = $('#geolocation_status_message');
+      const getBtn = $('#getGeolocationBtn');
+      const spinner = getBtn.find('.spinner-border');
 
-        if (navigator.geolocation) {
-          spinner.removeClass('d-none'); // Show spinner
-          getBtn.prop('disabled', true); // Disable button
-          statusMessage.text("Acquisition de la position en cours...");
+      if (navigator.geolocation) {
+        spinner.removeClass('d-none'); // Show spinner
+        getBtn.prop('disabled', true); // Disable button
+        statusMessage.text("Acquisition de la position en cours...");
 
-          navigator.geolocation.getCurrentPosition(function(position) {
-            latField.val(position.coords.latitude);
-            longField.val(position.coords.longitude);
-            statusMessage.text("Coordonnées GPS obtenues avec succès.");
-            console.log("GPS coordinates populated:", position.coords.latitude, position.coords.longitude);
-            spinner.addClass('d-none'); // Hide spinner
-            getBtn.prop('disabled', false); // Re-enable button
-          }, function(error) {
-            let errorMessage = "Erreur lors de l'obtention de la localisation.";
-            switch(error.code) {
-              case error.PERMISSION_DENIED:
-                errorMessage = "Géolocalisation refusée par l'utilisateur. Veuillez l'activer dans les paramètres de votre navigateur.";
-                break;
-              case error.POSITION_UNAVAILABLE:
-                errorMessage = "Informations de localisation indisponibles.";
-                break;
-              case error.TIMEOUT:
-                errorMessage = "La demande de localisation a expiré.";
-                break;
-              case error.UNKNOWN_ERROR:
-                errorMessage = "Une erreur inconnue est survenue lors de la géolocalisation.";
-                break;
-            }
-            statusMessage.text(errorMessage + " Veuillez entrer les coordonnées manuellement si nécessaire.");
-            console.warn('ERROR(' + error.code + '): ' + error.message);
-            spinner.addClass('d-none'); // Hide spinner
-            getBtn.prop('disabled', false); // Re-enable button
-          }, {
-            enableHighAccuracy: true,
-            timeout: 10000, // 10 seconds
-            maximumAge: 0 // No cached location
-          });
-        } else {
-          statusMessage.text("Votre navigateur ne prend pas en charge la géolocalisation.");
-          console.log("Geolocation is not supported by this browser.");
-        }
+        navigator.geolocation.getCurrentPosition(function (position) {
+          latField.val(position.coords.latitude);
+          longField.val(position.coords.longitude);
+          statusMessage.text("Coordonnées GPS obtenues avec succès.");
+          console.log("GPS coordinates populated:", position.coords.latitude, position.coords.longitude);
+          spinner.addClass('d-none'); // Hide spinner
+          getBtn.prop('disabled', false); // Re-enable button
+        }, function (error) {
+          let errorMessage = "Erreur lors de l'obtention de la localisation.";
+          switch (error.code) {
+            case error.PERMISSION_DENIED:
+              errorMessage = "Géolocalisation refusée par l'utilisateur. Veuillez l'activer dans les paramètres de votre navigateur.";
+              break;
+            case error.POSITION_UNAVAILABLE:
+              errorMessage = "Informations de localisation indisponibles.";
+              break;
+            case error.TIMEOUT:
+              errorMessage = "La demande de localisation a expiré.";
+              break;
+            case error.UNKNOWN_ERROR:
+              errorMessage = "Une erreur inconnue est survenue lors de la géolocalisation.";
+              break;
+          }
+          statusMessage.text(errorMessage + " Veuillez entrer les coordonnées manuellement si nécessaire.");
+          console.warn('ERROR(' + error.code + '): ' + error.message);
+          spinner.addClass('d-none'); // Hide spinner
+          getBtn.prop('disabled', false); // Re-enable button
+        }, {
+          enableHighAccuracy: true,
+          timeout: 10000, // 10 seconds
+          maximumAge: 0 // No cached location
+        });
+      } else {
+        statusMessage.text("Votre navigateur ne prend pas en charge la géolocalisation.");
+        console.log("Geolocation is not supported by this browser.");
       }
+    }
 
-      // --- Geolocation for Add Client Modal ---
-      // When the add client modal is shown
-      $('#addClientModal').on('show.bs.modal', function (e) {
-        // If fields are empty, attempt to get location immediately
-        if (!($('#add_gps_lat').val() && $('#add_gps_long').val())) {
-          getGeolocation();
-        }
-      });
-
-      // When the "Get Current Location" button is clicked
-      $('#getGeolocationBtn').on('click', function() {
+    // --- Geolocation for Add Client Modal ---
+    // When the add client modal is shown
+    $('#addClientModal').on('show.bs.modal', function (e) {
+      // If fields are empty, attempt to get location immediately
+      if (!($('#add_gps_lat').val() && $('#add_gps_long').val())) {
         getGeolocation();
-      });
-
-      // Show add client modal if there are form errors on initial load
-      {% if client_form.errors %}
-        $('#addClientModal').modal('show');
-      {% endif %}
-
-      // JavaScript to populate the edit modal when 'Editer' is clicked
-      $('.edit-client-btn').on('click', function() {
-        var clientId = $(this).data('id');
-        var name = $(this).data('name');
-        var email = $(this).data('email');
-        var phoneAirtel = $(this).data('phone-airtel');
-        var phoneAfricell = $(this).data('phone-africell');
-        var phoneOrange = $(this).data('phone-orange');
-        var phoneVodacom = $(this).data('phone-vodacom');
-        var address = $(this).data('address');
-        var gpsLat = $(this).data('gps-lat');
-        var gpsLong = $(this).data('gps-long');
-        // var discountRate = $(this).data('discount-rate');
-        var isActive = $(this).data('is-active') === true; 
-
-        var $modalForm = $('#editClientModal form');
-
-        $modalForm.attr('action', '{{ url_for("main_bp.client_edit", client_id=0) }}'.replace('0', clientId));
-
-        // Populate the form fields inside the modal
-        $modalForm.find('#name').val(name); 
-        $modalForm.find('#email').val(email);
-        $modalForm.find('#phone_airtel').val(phoneAirtel);
-        $modalForm.find('#phone_africel').val(phoneAfricell);
-        $modalForm.find('#phone_orange').val(phoneOrange);
-        $modalForm.find('#phone_vodacom').val(phoneVodacom);
-        $modalForm.find('#address').val(address);
-        $modalForm.find('#gps_lat').val(gpsLat);
-        $modalForm.find('#gps_long').val(gpsLong);
-        $modalForm.find('#is_active').prop('checked', isActive); 
-      });
-
-      // Optional: If the edit form had errors on submission, re-open the modal
-      {% if client_edit_form.errors %}
-        $('#editClientModal').modal('show');
-      {% endif %}
+      }
     });
-  </script>
+
+    // When the "Get Current Location" button is clicked
+    $('#getGeolocationBtn').on('click', function () {
+      getGeolocation();
+    });
+
+    // Show add client modal if there are form errors on initial load
+    {% if client_form.errors %}
+    $('#addClientModal').modal('show');
+    {% endif %}
+
+    // JavaScript to populate the edit modal when 'Editer' is clicked
+    $('.edit-client-btn').on('click', function () {
+      var clientId = $(this).data('id');
+      var name = $(this).data('name');
+      var email = $(this).data('email');
+      var phoneAirtel = $(this).data('phone-airtel');
+      var phoneAfricell = $(this).data('phone-africell');
+      var phoneOrange = $(this).data('phone-orange');
+      var phoneVodacom = $(this).data('phone-vodacom');
+      var address = $(this).data('address');
+      var gpsLat = $(this).data('gps-lat');
+      var gpsLong = $(this).data('gps-long');
+      // var discountRate = $(this).data('discount-rate');
+      var isActive = $(this).data('is-active') === true;
+
+      var $modalForm = $('#editClientModal form');
+
+      $modalForm.attr('action', '{{ url_for("main_bp.client_edit", client_id=0) }}'.replace('0', clientId));
+
+      // Populate the form fields inside the modal
+      $modalForm.find('#name').val(name);
+      $modalForm.find('#email').val(email);
+      $modalForm.find('#phone_airtel').val(phoneAirtel);
+      $modalForm.find('#phone_africel').val(phoneAfricell);
+      $modalForm.find('#phone_orange').val(phoneOrange);
+      $modalForm.find('#phone_vodacom').val(phoneVodacom);
+      $modalForm.find('#address').val(address);
+      $modalForm.find('#gps_lat').val(gpsLat);
+      $modalForm.find('#gps_long').val(gpsLong);
+      $modalForm.find('#is_active').prop('checked', isActive);
+    });
+
+    // Optional: If the edit form had errors on submission, re-open the modal
+    {% if client_edit_form.errors %}
+    $('#editClientModal').modal('show');
+    {% endif %}
+  });
+</script>
 {% endblock javascripts %}

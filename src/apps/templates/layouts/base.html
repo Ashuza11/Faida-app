@@ -11,63 +11,63 @@
 <html lang="en">
 
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-  <link rel="canonical" href="https://appseed.us/admin-dashboards/flask-boilerplate-dashboard-argon">
-  
-  <title>
-    Faida - {% block title %} Dashboard {% endblock %}
-  </title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="canonical" href="https://appseed.us/admin-dashboards/flask-boilerplate-dashboard-argon">
 
-  <!-- Favicon - loaded as static -->
-  <link rel="icon" href="/static/assets/img/brand/favicon.ico" type="image/ico">
-  <!-- Fonts -->
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,600,700">
-  <!-- Icons -->
-  <link rel="stylesheet" href="/static/assets/vendor/nucleo/css/nucleo.css" type="text/css">
-  <link rel="stylesheet" href="/static/assets/vendor/@fortawesome/fontawesome-free/css/all.min.css" type="text/css">
-  <!-- Page plugins -->
-  <!-- Argon CSS -->
-  <link rel="stylesheet" href="/static/assets/css/argon.css?v=1.2.0" type="text/css">
+    <title>
+        Faida - {% block title %} Dashboard {% endblock %}
+    </title>
+
+    <!-- Favicon - loaded as static -->
+    <link rel="icon" href="/static/assets/img/brand/favicon.ico" type="image/ico">
+    <!-- Fonts -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,600,700">
+    <!-- Icons -->
+    <link rel="stylesheet" href="/static/assets/vendor/nucleo/css/nucleo.css" type="text/css">
+    <link rel="stylesheet" href="/static/assets/vendor/@fortawesome/fontawesome-free/css/all.min.css" type="text/css">
+    <!-- Page plugins -->
+    <!-- Argon CSS -->
+    <link rel="stylesheet" href="/static/assets/css/argon.css?v=1.2.0" type="text/css">
 
 
 
-  <!-- Specific CSS goes HERE -->
-  {% block stylesheets %}{% endblock stylesheets %}
+    <!-- Specific CSS goes HERE -->
+    {% block stylesheets %}{% endblock stylesheets %}
 
 </head>
 
 <body class="">
+    {% include "includes/_loader.html" %}
+    {% include "includes/sidenav.html" %}
+    {% from 'includes/_messages.html' import render_messages %}
 
-  {% include "includes/sidenav.html" %}
-  {% from 'includes/_messages.html' import render_messages %}
+    <div class="main-content" id="panel">
+        {% include "includes/navigation.html" %}
+        {% block content %}{% endblock content %}
+    </div>
+    {{ render_messages() }}
 
-  <div class="main-content" id="panel">
-    {% include "includes/navigation.html" %}
-    {% block content %}{% endblock content %}
-  </div>
-  {{ render_messages() }}
+    {% include "includes/scripts.html" %}
 
-  {% include "includes/scripts.html" %}
-
-  <!-- Specific JS goes HERE --> 
-  {% block javascripts %}
+    <!-- Specific JS goes HERE -->
+    {% block javascripts %}
     <script>
-      // JavaScript to auto-hide alerts
-      $(document).ready(function() {
-          // Find all alerts with the 'fade show' classes that are currently visible
-          $('.alert.fade.show').each(function() {
-              var $alert = $(this);
-              // Set a timeout to fade out and remove the alert
-              setTimeout(function() {
-                  $alert.alert('close'); // Bootstrap's way to close an alert
-              }, 5000); // Adjust time here (in milliseconds)
-          });
-      });
+        // JavaScript to auto-hide alerts
+        $(document).ready(function () {
+            // Find all alerts with the 'fade show' classes that are currently visible
+            $('.alert.fade.show').each(function () {
+                var $alert = $(this);
+                // Set a timeout to fade out and remove the alert
+                setTimeout(function () {
+                    $alert.alert('close'); // Bootstrap's way to close an alert
+                }, 5000); // Adjust time here (in milliseconds)
+            });
+        });
     </script>
-  {% endblock javascripts %}
+    {% endblock javascripts %}
 
-  <script src="/static/assets/js/argon.js?v=1.2.0"></script>
+    <script src="/static/assets/js/argon.js?v=1.2.0"></script>
 
 </body>
 

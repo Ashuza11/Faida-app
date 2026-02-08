@@ -1,0 +1,92 @@
+<div id="top-loader" class="global-loader-container" style="display: none;">
+    <div class="progress">
+        <div class="progress-bar bg-warning" role="progressbar" style="width: 0%"></div>
+    </div>
+</div>
+
+<style>
+    .global-loader-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 3px;
+        z-index: 10000;
+    }
+
+    .global-loader-container .progress {
+        height: 100%;
+        border-radius: 0;
+        background-color: rgba(255, 255, 255, 0.1);
+        box-shadow: none;
+        margin-bottom: 0;
+    }
+
+    .global-loader-container .progress-bar {
+        box-shadow: 0 0 10px rgba(251, 191, 36, 0.8);
+        transition: width 0.4s ease-out;
+    }
+
+    .progress-bar-animated-slow {
+        animation: progress-bar-stripes 2s linear infinite;
+    }
+</style>
+
+<script>
+    (function () {
+        const initFaidaLoader = function ($) {
+            const FaidaLoader = {
+                start: function () {
+                    const $loader = $('#top-loader');
+                    const $bar = $loader.find('.progress-bar');
+                    $loader.show();
+                    $bar.css('width', '0%').animate({ width: '75%' }, 2000);
+                },
+                stop: function () {
+                    const $loader = $('#top-loader');
+                    const $bar = $loader.find('.progress-bar');
+                    $bar.stop().animate({ width: '100%' }, 200, function () {
+                        setTimeout(() => { $loader.fadeOut(300); }, 200);
+                    });
+                }
+            };
+
+            $(document).ready(function () {
+                $('form').on('submit', function () {
+                    const $form = $(this);
+                    const $btn = $form.find('button[type="submit"]');
+
+                    if (this.checkValidity()) {
+                        FaidaLoader.start();
+
+                        // Transformation du bouton Argon
+                        if (!$btn.hasClass('is-loading')) {
+                            $btn.addClass('disabled is-loading').attr('disabled', true);
+                            const originalText = $btn.html();
+                            $btn.data('original-text', originalText);
+                            $btn.html('<span class="spinner-border spinner-border-sm mr-2"></span> Patientez...');
+                        }
+                    }
+                });
+
+                $('.nav-link, .dropdown-item, .btn-loader').on('click', function (e) {
+                    const href = $(this).attr('href');
+                    if (href && href !== '#' && !href.startsWith('javascript') && !$(this).attr('target')) {
+                        FaidaLoader.start();
+                    }
+                });
+            });
+
+            $(window).on('load', function () {
+                FaidaLoader.stop();
+            });
+        };
+
+        const checkJQuery = setInterval(function () {
+            if (window.jQuery) {
+                initFaidaLoader(window.jQuery);
+                clearInterval(checkJQuery);
+            }
+        }, 50);
+    })();
+</script>

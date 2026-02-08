@@ -24,7 +24,7 @@
                   <h3 class="mb-0">{{ sub_page_title }}</h3>
                 </div>
                 <div class="col-4 text-right">
-                  <a href="{{ url_for('main_bp.sorties_cash') }}" class="btn btn-sm btn-outline-primary">Retour à l'aperçu</a>
+                  <a href="{{ url_for('main_bp.sorties_cash') }}" class="btn btn-sm btn-outline-primary btn-loader">Retour à l'aperçu</a>
                 </div>
               </div>
             </div>
@@ -56,8 +56,10 @@
 
                 <hr class="my-4" />
                 <div class="text-right">
-                  <a href="{{ url_for('main_bp.sorties_cash') }}" class="btn btn-secondary">Annuler</a>
-                  {{ form.submit(class="btn btn-primary") }} {# Generic submit, will use form.submit.label #}
+                  <a href="{{ url_for('main_bp.sorties_cash') }}" class="btn btn-secondary btn-loader">Annuler</a>
+                  {% with btn_text="Enregistrer l'entrée", btn_class="btn-success" %}
+                    {% include "includes/_button_loader.html" %}
+                  {% endwith %}
                 </div>
               </form>
             </div>

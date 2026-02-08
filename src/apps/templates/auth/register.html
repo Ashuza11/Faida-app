@@ -15,7 +15,7 @@
           <div class="card-header bg-transparent pb-4">
 
             <div class="text-muted text-center mt-2 mb-3">            
-              <a href="/">
+              <a href="/" class="btn-loader">
                 <img src="/static/assets/img/brand/faida-logo.png" class="mb-3" style="width: 150px; height: auto;">
               </a>
               <br />
@@ -134,7 +134,7 @@
                 </div>
 
                 <div class="text-center">
-                  <button type="submit" class="btn btn-primary my-4">Créer mon compte</button>
+                  {% include "includes/_button_loader.html" with btn_text="Créer mon compte", btn_class="btn-primary my-4" %}
                 </div>
               </form>
 
@@ -150,7 +150,7 @@
                 <p class="mb-3">
                   <strong>Contactez l'administrateur:</strong>
                 </p>
-                <a href="https://wa.me/243812345678" class="btn btn-success" target="_blank">
+                <a href="https://wa.me/243812345678" class="btn btn-success btn-loader" target="_blank">
                   <i class="fab fa-whatsapp mr-2"></i> WhatsApp
                 </a>
               </div>
@@ -160,7 +160,7 @@
         </div>
         <div class="row mt-3 text-center">
           <div class="col-12">
-            <a href="{{ url_for('auth_bp.login') }}" class="text-light">
+            <a href="{{ url_for('auth_bp.login') }}" class="text-light btn-loader">
               <small>Déjà un compte? Connectez-vous</small>
             </a>
           </div>

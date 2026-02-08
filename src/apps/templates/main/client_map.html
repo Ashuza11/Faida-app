@@ -212,8 +212,8 @@
                         <h6 class="h2 text-white d-inline-block mb-0">Carte des Clients</h6>
                         <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
                             <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
-                                <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}"><i class="fas fa-home"></i></a></li>
-                                <li class="breadcrumb-item"><a href="{{ url_for('main_bp.client_management') }}">Clients</a></li>
+                                <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}" class="btn-loader"><i class="fas fa-home"></i></a></li>
+                                <li class="breadcrumb-item"><a href="{{ url_for('main_bp.client_management') }}" class="btn-loader">Clients</a></li>
                                 <li class="breadcrumb-item active" aria-current="page">Terrain</li>
                             </ol>
                         </nav>
@@ -482,7 +482,7 @@
 
             // Add OpenStreetMap tile layer
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" class="btn-loader">OpenStreetMap</a> contributors',
                 maxZoom: 19
             }).addTo(map);
 

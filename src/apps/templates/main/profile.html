@@ -14,7 +14,7 @@
           Bonjour {{ current_user.username }} 
         </h1>
         <p class="text-white mt-0 mb-5">Ceci est votre page de profil. Vous pouvez gérer vos informations personnelles ici.</p> {# Translated #}
-        <a href="{{ url_for('main_bp.profile') }}" class="btn btn-neutral">Modifier le profil</a> {# Translated #}
+        <a href="{{ url_for('main_bp.profile') }}" class="btn btn-neutral btn-loader">Modifier le profil</a> {# Translated #}
       </div>
     </div>
   </div>
@@ -27,7 +27,7 @@
         <div class="row justify-content-center">
           <div class="col-lg-3 order-lg-2">
             <div class="card-profile-image">
-              <a href="#">
+              <a href="#" class="btn-loader">
                 <img src="{{ current_user.avatar(120) }}" class="rounded-circle img-fluid shadow-lg">
               </a>
             </div>
@@ -86,7 +86,7 @@
               <h3 class="mb-0">Modifier le profil utilisateur</h3> 
             </div>
             <div class="col-4 text-right">
-              <a href="{{ url_for('main_bp.profile') }}" class="btn btn-sm btn-outline-primary">Actualiser</a> {# Translated #}
+              <a href="{{ url_for('main_bp.profile') }}" class="btn btn-sm btn-outline-primary btn-loader">Actualiser</a> {# Translated #}
             </div>
           </div>
         </div>

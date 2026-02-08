@@ -12,8 +12,8 @@
               <h6 class="h2 text-white d-inline-block mb-0">Gestion Stock</h6>
               <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
                 <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
-                  <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}"><i class="fas fa-home"></i></a></li>
-                  <li class="breadcrumb-item"><a href="{{ url_for('main_bp.achat_stock') }}">Achats Stock</a></li>
+                  <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}" class=" btn-loader"><i class="fas fa-home"></i></a></li>
+                  <li class="breadcrumb-item"><a href="{{ url_for('main_bp.achat_stock') }}" class=" btn-loader">Achats Stock</a></li>
                   <li class="breadcrumb-item active" aria-current="page">{{ page_title }} #{{ purchase.id }}</li> {# Use purchase.id here #}
                 </ol>
               </nav>
@@ -33,7 +33,7 @@
                   <h3 class="mb-0">{{ page_title }} #{{ purchase.id }}</h3>
                 </div>
                 <div class="col-4 text-right">
-                  <a href="{{ url_for('main_bp.achat_stock') }}" class="btn btn-sm btn-outline-primary">Retour à l'historique</a>
+                  <a href="{{ url_for('main_bp.achat_stock') }}" class="btn btn-sm btn-outline-primary btn-loader">Retour à l'historique</a>
                 </div>
               </div>
             </div>
@@ -66,7 +66,7 @@
 
                 <hr class="my-4" />
                 <div class="text-right">
-                  <a href="{{ url_for('main_bp.achat_stock') }}" class="btn btn-secondary">Annuler</a>
+                  <a href="{{ url_for('main_bp.achat_stock') }}" class="btn btn-secondary  btn-loader">Annuler</a>
                   {{ form.submit(class="btn btn-primary") }}
                 </div>
               </form>

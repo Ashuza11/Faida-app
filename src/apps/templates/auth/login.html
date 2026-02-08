@@ -7,62 +7,63 @@
 
 {% block content %}
 
-    <!-- Page content -->
-    <div class="container mt--8 pb-5">
-      <div class="row justify-content-center">
-        <div class="col-lg-5 col-md-7">
-          <div class="card bg-secondary shadow border-0">
-            <div class="card-header bg-transparent pb-2">
+<!-- Page content -->
+<div class="container mt--8 pb-5">
+  <div class="row justify-content-center">
+    <div class="col-lg-5 col-md-7">
+      <div class="card bg-secondary shadow border-0">
+        <div class="card-header bg-transparent pb-2">
 
-              <div class="text-muted text-center mt-2 mb-3">              
-                <a href="/">
-                  <img src="/static/assets/img/brand/faida-logo-outligned.png" class="mb-3" style="width: 150px; height: auto;">
-                </a>
-                <br />
-                {% if msg %}
-                  <span class="text-danger">{{ msg | safe }}</span>
-                {% else %}
-                <span>
-                  Tiya numéro yako na mot de passe yako kwaku kuingiya. 
-                </span>
-                {% endif %}
-              </div>
-              
-            </div>
-            <div class="card-body px-lg-5 py-lg-5">
-
-              <form role="form" method="post" action="">
-
-                {{ form.hidden_tag() }}
-
-                <div class="form-group mb-3">
-                  <div class="input-group input-group-alternative">
-                    <div class="input-group-prepend">
-                      <span class="input-group-text"><i class="ni ni-mobile-button"></i></span>
-                    </div>
-                    {{ form.phone(class="form-control", placeholder="Ex: 0812345678") }}
-                  </div>
-                </div>
-                <div class="form-group">
-                  <div class="input-group input-group-alternative">
-                    <div class="input-group-prepend">
-                      <span class="input-group-text"><i class="ni ni-lock-circle-open"></i></span>
-                    </div>
-                    {{ form.password(placeholder="Mot de passe",class="form-control",type="password") }}
-                  </div>
-                </div>
-
-                <div class="text-center">
-                  <button type="submit" name="login" class="btn btn-primary my-4">Connexion</button>
-                </div>
-              </form>
-            </div>
+          <div class="text-muted text-center mt-2 mb-3">
+            <a href="/" class="btn-loader">
+              <img src="/static/assets/img/brand/faida-logo-outligned.png" class="mb-3"
+                style="width: 150px; height: auto;">
+            </a>
+            <br />
+            {% if msg %}
+            <span class="text-danger">{{ msg | safe }}</span>
+            {% else %}
+            <span>
+              Tiya numéro yako na mot de passe yako kwaku kuingiya.
+            </span>
+            {% endif %}
           </div>
+
+        </div>
+        <div class="card-body px-lg-5 py-lg-5">
+
+          <form role="form" method="post" action="">
+
+            {{ form.hidden_tag() }}
+
+            <div class="form-group mb-3">
+              <div class="input-group input-group-alternative">
+                <div class="input-group-prepend">
+                  <span class="input-group-text"><i class="ni ni-mobile-button"></i></span>
+                </div>
+                {{ form.phone(class="form-control", placeholder="Ex: 0812345678") }}
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="input-group input-group-alternative">
+                <div class="input-group-prepend">
+                  <span class="input-group-text"><i class="ni ni-lock-circle-open"></i></span>
+                </div>
+                {{ form.password(placeholder="Mot de passe",class="form-control",type="password") }}
+              </div>
+            </div>
+
+            <div class="text-center">
+              {% include "includes/_button_loader.html" with btn_text="Connexion", btn_class="btn-primary my-4" %}
+            </div>
+          </form>
         </div>
       </div>
     </div>
+  </div>
+</div>
 
 {% endblock content %}
 
-<!-- Specific JS goes HERE --> 
+<!-- Specific JS goes HERE -->
 {% block javascripts %}{% endblock javascripts %}

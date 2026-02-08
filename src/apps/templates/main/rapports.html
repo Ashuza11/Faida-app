@@ -14,7 +14,7 @@
                 <h6 class="h2 text-white d-inline-block mb-0">Rapports</h6>
                 <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
                     <ol class="breadcrumb breadcrumb-links breadcrumb-dark mb-0">
-                        <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}"><i class="fas fa-home"></i></a></li>
+                        <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}" class=" btn-loader"><i class="fas fa-home"></i></a></li>
                         <li class="breadcrumb-item active">{{ page_title }}</li>
                     </ol>
                 </nav>
@@ -35,7 +35,7 @@
 
                 {# PDF Download Button #}
                 <a href="{{ url_for('pdf_bp.download_report_pdf', date=selected_date) }}" 
-                  class="btn btn-success ml-2"
+                  class="btn btn-success ml-2 btn-loader"
                   title="Télécharger PDF"
                   style="height: 38px; display: flex; align-items: center;">
                     <i class="fas fa-file-pdf"></i>

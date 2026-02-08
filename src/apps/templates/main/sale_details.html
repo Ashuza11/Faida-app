@@ -12,8 +12,8 @@
               <h6 class="h2 text-white d-inline-block mb-0">Détails de la Vente</h6>
               <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
                 <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
-                  <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}"><i class="fas fa-home"></i></a></li>
-                  <li class="breadcrumb-item"><a href="{{ url_for('main_bp.vente_stock') }}">Vente Stock</a></li>
+                  <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}" class=" btn-loader"><i class="fas fa-home"></i></a></li>
+                  <li class="breadcrumb-item"><a href="{{ url_for('main_bp.vente_stock') }}" class=" btn-loader">Vente Stock</a></li>
                   <li class="breadcrumb-item active" aria-current="page">Détails Vente #{{ sale.id }}</li>
                 </ol>
               </nav>
@@ -33,8 +33,8 @@
                   <h3 class="mb-0">Détails de la Vente #{{ sale.id }}</h3>
                 </div>
                 <div class="col text-right">
-                    <a href="{{ url_for('main_bp.edit_sale', sale_id=sale.id) }}" class="btn btn-sm btn-warning">Modifier la Vente</a>
-                    <a href="{{ url_for('main_bp.vente_stock') }}" class="btn btn-sm btn-info">Retour aux Ventes</a>
+                    <a href="{{ url_for('main_bp.edit_sale', sale_id=sale.id) }}" class="btn btn-sm btn-warning btn-loader">Modifier la Vente</a>
+                    <a href="{{ url_for('main_bp.vente_stock') }}" class="btn btn-sm btn-info btn-loader">Retour aux Ventes</a>
                 </div>
               </div>
             </div>

@@ -1,0 +1,58 @@
+{#
+Composant de bouton avec Spinner Bootstrap intégré.
+Usage : {% include 'includes/_button_loader.html' with btn_text='Enregistrer', btn_class='btn-primary' %}
+#}
+
+<button type="submit" class="btn {{ btn_class|default('btn-primary') }} btn-submit-loader">
+    <span class="spinner-border spinner-border-sm d-none btn-spinner" role="status" aria-hidden="true">
+    </span>
+
+    <span class="btn-text ml-1">
+        {{ btn_text|default('Valider') }}
+    </span>
+</button>
+
+<style>
+    .btn-submit-loader {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 100px;
+        transition: all 0.2s ease;
+    }
+    
+    .dropdown-item.btn-submit-loader {
+        cursor: not-allowed;
+        opacity: 0.8;
+        min-width: auto;
+        justify-content: flex-start;
+        width: 100%;
+    }
+
+    .btn-submit-loader.disabled {
+        cursor: not-allowed;
+        opacity: 0.8;
+    }
+</style>
+
+<script>
+    if (typeof loaderScriptLoaded === 'undefined') {
+        var loaderScriptLoaded = true;
+
+        $(document).on('submit', 'form', function () {
+            const $form = $(this);
+            const $btn = $form.find('.btn-submit-loader');
+
+            if (this.checkValidity()) {
+                $btn.addClass('disabled').attr('disabled', true);
+
+                $btn.find('.btn-spinner').removeClass('d-none');
+                $btn.find('.btn-text').text('Traitement...');
+
+                if (typeof FaidaLoader !== 'undefined') {
+                    FaidaLoader.start();
+                }
+            }
+        });
+    }
+</script>
