@@ -12,13 +12,22 @@ health_bp = Blueprint('health', __name__)
 @health_bp.route('/health')
 def health_check():
     """
-    Basic health check endpoint.
+    Health check endpoint for Render and load balancers.
     Returns 200 if the application is running.
-    Used by Render for health checks.
     """
+    try:
+        from apps import db
+        # Quick database connectivity check
+        db.session.execute(db.text('SELECT 1'))
+        db_status = 'connected'
+    except Exception as e:
+        db_status = f'error: {str(e)}'
+
     return jsonify({
         'status': 'healthy',
-        'service': 'airtfast'
+        'database': db_status,
+        'app': 'Faida',
+        'version': '1.0.0'
     }), 200
 
 
