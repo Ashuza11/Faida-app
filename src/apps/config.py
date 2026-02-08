@@ -50,19 +50,25 @@ class Config:
     DBNAME = os.environ.get('DBNAME')
 
     @staticmethod
-    def _fix_postgres_url(url):
+    def _fix_postgres_url(url: str | None):
         """
         Fix PostgreSQL URL format issues.
         - Heroku/Render sometimes use 'postgres://' which SQLAlchemy 1.4+ doesn't accept
         - Ensures proper driver is specified
         """
-        if url:
-            # Fix scheme
-            if url.startswith('postgres://'):
-                url = url.replace('postgres://', 'postgresql://', 1)
-            # Ensure psycopg2 driver (more compatible than psycopg3 for now)
-            if url.startswith('postgresql://') and '+' not in url.split('://')[0]:
-                url = url.replace('postgresql://', 'postgresql+psycopg2://', 1)
+        if not url:
+            return None
+
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql://", 1)
+
+        if url.startswith("postgresql://") and "+psycopg2" not in url:
+            url = url.replace(
+                "postgresql://",
+                "postgresql+psycopg2://",
+                1,
+            )
+
         return url
 
     @classmethod
@@ -97,11 +103,11 @@ class Config:
 
     # Connection pool settings (optimized for Neon serverless)
     SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_pre_ping': True,      # Verify connection before use
-        'pool_recycle': 300,        # Recycle connections every 5 min
-        'pool_size': 5,             # Base pool size
-        'max_overflow': 10,         # Extra connections allowed
-        'pool_timeout': 30,         # Wait time for connection
+        'pool_pre_ping': True,
+        'pool_recycle': 300,
+        'pool_size': 5,
+        'max_overflow': 10,
+        'pool_timeout': 30,
     }
 
     # ===========================================
@@ -133,6 +139,11 @@ class ProductionConfig(Config):
     DEBUG = False
     TESTING = False
 
+    SECRET_KEY = os.environ.get("SECRET_KEY")
+
+    if not SECRET_KEY:
+        raise RuntimeError("SECRET_KEY must be set in production!")
+
     # Database with SSL required
     SQLALCHEMY_DATABASE_URI = Config.get_database_uri(require_ssl=True)
 
@@ -143,8 +154,8 @@ class ProductionConfig(Config):
         'max_overflow': 20,
         'pool_timeout': 60,
         'connect_args': {
-            'connect_timeout': 10,
             'sslmode': 'require',
+            'connect_timeout': 10,
         }
     }
 
@@ -156,13 +167,7 @@ class ProductionConfig(Config):
     # Render-specific
     PREFERRED_URL_SCHEME = 'https'
 
-    @property
-    def SECRET_KEY(self):
-        """Require SECRET_KEY in production."""
-        key = os.environ.get('SECRET_KEY')
-        if not key:
-            raise ValueError("SECRET_KEY must be set in production!")
-        return key
+    
 
 
 class DevelopmentConfig(Config):
