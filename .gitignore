@@ -1,55 +1,3 @@
-# byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-
-# tests and coverage
-*.pytest_cache
-.coverage
-
-# database & logs
-*.db
-*.sqlite3
-*.log
-
-# venv
-env/
-venv
-.env
-.env.development
-
-# other
-.DS_Store
-
-# sphinx docs 
-_build
-_static
-_templates
-
-# javascript
-package-lock.json
-.vscode/symbols.json
-.vscode/
-.vscode
-
-apps/static/assets/node_modules
-apps/static/assets/yarn.lock
-apps/static/assets/.temp
-
-.azure
-
-Deployment_guide.md 
-
-
-# ===========================================
-# Environment & Secrets (CRITICAL!)
-# ===========================================
-.env
-.env.*
-!.env.development
-*.pem
-*.key
-secrets/
-
 # ===========================================
 # Python
 # ===========================================
@@ -84,6 +32,33 @@ ENV/
 .venv/
 
 # ===========================================
+# Environment Variables / Secrets
+# ===========================================
+.env
+.env.*
+!.env.example
+.env.development
+
+# ===========================================
+# Testing & Coverage
+# ===========================================
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.tox/
+*.cover
+nosetests.xml
+
+# ===========================================
+# Database & Logs
+# ===========================================
+*.db
+*.sqlite3
+*.log
+logs/
+
+# ===========================================
 # IDE & Editors
 # ===========================================
 .vscode/
@@ -96,37 +71,16 @@ ENV/
 .settings/
 *.sublime-workspace
 *.sublime-project
-
-# ===========================================
-# Testing
-# ===========================================
-.coverage
-htmlcov/
-.pytest_cache/
-.tox/
-coverage.xml
-*.cover
-nosetests.xml
-
-# ===========================================
-# Flask & Database
-# ===========================================
-instance/
-*.db
-*.sqlite3
-
 # ===========================================
 # Docker
 # ===========================================
 .docker/
 
 # ===========================================
-# OS
+# OS Files
 # ===========================================
 .DS_Store
 Thumbs.db
-*.log
-logs/
 
 # ===========================================
 # Uploads & Generated Files
@@ -136,3 +90,11 @@ static/uploads/
 *.pdf
 *.xlsx
 !static/assets/**
+
+# ===========================================
+# Documentation & Build Artifacts
+# ===========================================
+_build/
+_static/
+_templates/
+Deployment_guide.md
