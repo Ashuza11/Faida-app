@@ -35,12 +35,7 @@
               <thead class="thead-light">
                 <tr>
                   <th scope="col">Nom</th>
-<<<<<<< HEAD
                   <th scope="col">Téléphone</th>
-=======
-                  <th scope="col">Email</th>
-                  <th scope="col">Telephone</th>
->>>>>>> main
                   <th scope="col">Role</th>
                   <th scope="col">Status</th>
                   <th scope="col" class="text-right">Actions</th>
@@ -50,10 +45,6 @@
                 {% for user in users %}
                   <tr>
                     <td>{{ user.username }}</td>
-<<<<<<< HEAD
-=======
-                    <td>{{ user.email }}</td>
->>>>>>> main
                     <td>{{ user.phone }}</td>
                     <td>{{ user.role.value | capitalize }}</td>
                     <td>
@@ -65,7 +56,6 @@
                       </span>
                     </td>
                     <td class="text-right">
-<<<<<<< HEAD
                       <div class="dropdown">
                         <a class="btn btn-sm btn-icon-only text-light" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                           <i class="fas fa-ellipsis-v"></i>
@@ -94,41 +84,6 @@
                                   {{ 'Deactiver' if user.is_active else 'Activer' }}
                                 </button>
                               </form>
-=======
-                        <div class="dropdown">
-                          <a class="btn btn-sm btn-icon-only text-light" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                            <i class="fas fa-ellipsis-v"></i>
-                          </a>
-                          <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
-                            {# Display actions ONLY if current_user is a superadmin #}
-                            {% if current_user.role.value == 'superadmin' %}
-                              {# Editer Link (opens modal) #}
-                              <a class="dropdown-item edit-user-btn" href="#"
-                                data-toggle="modal" data-target="#editUserModal"
-                                data-user-id="{{ user.id }}"
-                                data-username="{{ user.username }}"
-                                data-email="{{ user.email }}"
-                                data-phone="{{ user.phone }}"
-                                data-role="{{ user.role.value }}"
-                                data-is-active="{{ 'true' if user.is_active else 'false' }}">
-                                Editer
-                              </a>
-                              {# Deactivate/Activate Link (submit form) #}
-                              {# Add condition to prevent superadmin from deactivating self #}
-                              {% if user.id != current_user.id or user.role.value != 'superadmin' %} 
-                                <form action="{{ url_for('main_bp.user_toggle_active', user_id=user.id) }}" method="post" class="d-inline">
-                                  <button type="submit" class="dropdown-item">
-                                    {% if user.is_active %}
-                                      Deactiver
-                                    {% else %}
-                                      Activer
-                                    {% endif %}
-                                  </button>
-                                </form>
-                              {% endif %}
-                            {% else %}
-                              <span class="dropdown-item text-muted">Pas d'actions disponible</span> 
->>>>>>> main
                             {% endif %}
 
                           {% else %}
@@ -161,53 +116,16 @@
 {% endblock content %}
 
 
-
-
 {% block javascripts %}
-{{ super() }}
-<script>
-$(document).ready(function() {
-  // ⚡ Réouvrir le modal "Add Stocker" si le formulaire contient des erreurs
-  {% if stocker_form.errors %}
-    $('#addStockerModal').modal('show');
-  {% endif %}
+  {{ super() }}
+  {# Now for the JavaScript! Since we're not using the macro, put the JS directly here. #}
+  <script>
+    $(document).ready(function() {
+      // Show add stocker modal if there are form errors on initial load
+      {% if stocker_form.errors %}
+        $('#addStockerModal').modal('show');
+      {% endif %}
 
-  // ⚡ Réouvrir le modal "Edit User" si le formulaire contient des erreurs
-  {% if user_edit_form.errors %}
-    $('#editUserModal').modal('show');
-  {% endif %}
-
-  // ⚡ Remplir dynamiquement le modal "Edit User" quand on clique sur "Editer"
-  $('.edit-user-btn').on('click', function() {
-    var userId = $(this).data('user-id');
-    var username = $(this).data('username');
-    var email = $(this).data('email') || '';
-    var phone = $(this).data('phone') || '';
-    var role = $(this).attr('data-role');             // récupère la valeur du rôle
-    var isActive = $(this).attr('data-is-active') === 'true'; // récupère la valeur active
-
-    // ⚡ Sélection du formulaire à l'intérieur du modal
-    var $modalForm = $('#editUserModal form');
-
-    // ⚡ Mettre à jour dynamiquement l'action du formulaire avec l'ID utilisateur
-    $modalForm.attr('action', '{{ url_for("main_bp.user_edit", user_id=0) }}'.replace('0', userId));
-
-    // ⚡ Pré-remplir les champs du formulaire
-    $modalForm.find('#edit_username').val(username);
-    $modalForm.find('#edit_email').val(email);
-    $modalForm.find('#edit_phone').val(phone);
-
-    // ⚡ Sélectionner l'option du rôle correspondant (valeur par défaut)
-    $modalForm.find('#edit_role').val(role);
-
-    // ⚡ Mettre à jour le checkbox is_active
-    $modalForm.find('#edit_is_active').prop('checked', isActive);
-  });
-});
-</script>
-{% endblock javascripts %}
-
-<<<<<<< HEAD
       // JavaScript to populate the edit modal when 'Editer' is clicked
       $('.edit-user-btn').on('click', function() {
         var userId = $(this).data('user-id');
@@ -217,12 +135,14 @@ $(document).ready(function() {
         var role = $(this).data('role');
         // Convert 'true'/'false' string to boolean
         var isActive = $(this).data('is-active') === true; 
-=======
->>>>>>> main
 
+        // Target the specific modal form
+        var $modalForm = $('#editUserModal form');
 
+        // Dynamically set the form's action URL to the user_edit route
+        // We use .replace('0', userId) to insert the actual user ID into the URL
+        $modalForm.attr('action', '{{ url_for("main_bp.user_edit", user_id=0) }}'.replace('0', userId));
 
-<<<<<<< HEAD
         // Populate the form fields inside the modal
         $modalForm.find('#edit_username').val(username);
         $modalForm.find('#edit_phone').val(phone);
@@ -230,6 +150,12 @@ $(document).ready(function() {
         $modalForm.find('#edit_role').val(role); // Set the selected value for the dropdown
         $modalForm.find('#edit_is_active').prop('checked', isActive); // Set checkbox state
       });
-=======
->>>>>>> main
 
+      // Optional: If the edit form had errors on submission, re-open the modal
+      // This happens if you redirect back to this page after a failed edit form submission
+      {% if user_edit_form.errors %}
+        $('#editUserModal').modal('show');
+      {% endif %}
+    });
+  </script>
+{% endblock javascripts %}
