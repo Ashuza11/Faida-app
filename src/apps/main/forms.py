@@ -115,22 +115,16 @@ class UserEditForm(FlaskForm):
         render_kw={"placeholder": "Entrer le nom d'utilisateur"},
     )
     phone = StringField(
-        "Numéro",
+        "Téléphone",
         id="edit_phone",
-        validators=[Optional(), Length(min=9, max=20)],
+        validators=[DataRequired(message="Le téléphone est requis"), Length(min=9, max=20)],
         render_kw={"placeholder": "Ex: 0812345678"},
     )
     email = StringField(
-        "Email",
+        "Email (optionnel)",
         id="edit_email",
-        validators=[DataRequired(), Email()],
-        render_kw={"placeholder": "Entrer email"},
-    )
-    role = SelectField(
-        "Role",
-        id="edit_role",
-        choices=[(role.value, role.name.capitalize()) for role in RoleType],
-        validators=[DataRequired()],
+        validators=[Optional(), Email(message="Email invalide")],
+        render_kw={"placeholder": "Entrer email (optionnel)"},
     )
     is_active = BooleanField(
         "Actif",

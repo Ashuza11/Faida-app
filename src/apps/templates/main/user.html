@@ -126,30 +126,25 @@
         $('#addStockerModal').modal('show');
       {% endif %}
 
-      // JavaScript to populate the edit modal when 'Editer' is clicked
+
       $('.edit-user-btn').on('click', function() {
-        var userId = $(this).data('user-id');
-        var username = $(this).data('username');
-        var phone = $(this).data('phone');
-        var email = $(this).data('email');
-        var role = $(this).data('role');
-        // Convert 'true'/'false' string to boolean
-        var isActive = $(this).data('is-active') === true; 
+          var userId = $(this).data('user-id');
+          var username = $(this).data('username');
+          var phone = $(this).data('phone');
+          var email = $(this).data('email');
+          // var role = $(this).data('role');
+          var isActive = $(this).data('is-active') === true; 
 
-        // Target the specific modal form
-        var $modalForm = $('#editUserModal form');
+          var $modalForm = $('#editUserModal form');
+          $modalForm.attr('action', '{{ url_for("main_bp.user_edit", user_id=0) }}'.replace('0', userId));
 
-        // Dynamically set the form's action URL to the user_edit route
-        // We use .replace('0', userId) to insert the actual user ID into the URL
-        $modalForm.attr('action', '{{ url_for("main_bp.user_edit", user_id=0) }}'.replace('0', userId));
-
-        // Populate the form fields inside the modal
-        $modalForm.find('#edit_username').val(username);
-        $modalForm.find('#edit_phone').val(phone);
-        $modalForm.find('#edit_email').val(email);
-        $modalForm.find('#edit_role').val(role); // Set the selected value for the dropdown
-        $modalForm.find('#edit_is_active').prop('checked', isActive); // Set checkbox state
+          $modalForm.find('#edit_username').val(username);
+          $modalForm.find('#edit_phone').val(phone);
+          $modalForm.find('#edit_email').val(email);
+          // $modalForm.find('#edit_role').val(role);
+          $modalForm.find('#edit_is_active').prop('checked', isActive);
       });
+
 
       // Optional: If the edit form had errors on submission, re-open the modal
       // This happens if you redirect back to this page after a failed edit form submission

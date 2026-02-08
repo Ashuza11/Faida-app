@@ -372,87 +372,120 @@ def stocker_management():
     )
 
 
-@bp.route("/admin/user/edit/<int:user_id>", methods=["GET", "POST"])
+
+@bp.route("/admin/user/edit/<int:user_id>", methods=["POST"]) # On peut simplifier à POST ici
 @login_required
 @vendeur_required
 def user_edit(user_id):
-    """
-    Edit a stockeur's information.
-    Vendeurs can only edit their own stockeurs.
-    """
     user = db.session.get(User, user_id)
-
-    if not user:
-        flash("Utilisateur non trouvé.", "danger")
+    if not user or (user.id != current_user.id and user.vendeur_id != current_user.id):
+        flash("Action non autorisée.", "danger")
         return redirect(url_for("main_bp.stocker_management"))
-
-    # Security check: Can only edit own stockeurs (or self)
-    if user.id != current_user.id and user.vendeur_id != current_user.id:
-        flash("Vous n'êtes pas autorisé à modifier cet utilisateur.", "danger")
-        return redirect(url_for("main_bp.stocker_management"))
-
-    # Prevent vendeur from changing their own role
-    if user.id == current_user.id:
-        flash("Utilisez la page profil pour modifier vos informations.", "warning")
-        return redirect(url_for("main_bp.profile"))
 
     user_edit_form = UserEditForm()
-    stocker_form = StockeurForm()
 
     if user_edit_form.validate_on_submit():
-        # Check username uniqueness (excluding current user)
-        existing_by_username = User.query.filter(
-            User.username == user_edit_form.username.data,
-            User.id != user_id
-        ).first()
+        # 1. Normalisation du téléphone
+        phone = normalize_phone(user_edit_form.phone.data)
 
-        if existing_by_username:
-            flash("Ce nom d'utilisateur est déjà utilisé.", "danger")
-        else:
-            # Check email uniqueness if provided
-            if user_edit_form.email.data:
-                existing_by_email = User.query.filter(
-                    User.email == user_edit_form.email.data.lower(),
-                    User.id != user_id
-                ).first()
-                if existing_by_email:
-                    flash("Cette adresse email est déjà utilisée.", "danger")
-                    return redirect(url_for("main_bp.stocker_management"))
-
-            # Update user
-            user.username = user_edit_form.username.data
-            user.email = user_edit_form.email.data.lower() if user_edit_form.email.data else None
-            user.is_active = user_edit_form.is_active.data
-            # Note: Don't allow changing role - stockeurs stay stockeurs
-
-            db.session.commit()
-            flash("Utilisateur mis à jour avec succès!", "success")
+        # 2. Vérification unicité Téléphone (si changé)
+        existing_phone = User.query.filter(User.phone == phone, User.id != user_id).first()
+        if existing_phone:
+            flash("Ce numéro de téléphone est déjà utilisé.", "danger")
             return redirect(url_for("main_bp.stocker_management"))
 
-    elif request.method == "GET":
-        # Pre-populate form
-        user_edit_form.username.data = user.username
-        user_edit_form.email.data = user.email
-        user_edit_form.is_active.data = user.is_active
+        # 3. Vérification unicité Username (si changé)
+        existing_user = User.query.filter(User.username == user_edit_form.username.data, User.id != user_id).first()
+        if existing_user:
+            flash("Ce nom d'utilisateur est déjà utilisé.", "danger")
+            return redirect(url_for("main_bp.stocker_management"))
 
-    # Re-fetch users for the page
-    vendeur_id = current_user.id
-    users = User.query.filter(
-        db.or_(
-            User.id == vendeur_id,
-            User.vendeur_id == vendeur_id
-        )
-    ).order_by(User.role.asc(), User.created_at.desc()).all()
+        # 4. Mise à jour
+        user.username = user_edit_form.username.data
+        user.phone = phone
+        user.email = user_edit_form.email.data.lower() if user_edit_form.email.data else None
+        user.is_active = user_edit_form.is_active.data
+        
+        db.session.commit()
+        flash("Informations mises à jour !", "success")
+        
+    return redirect(url_for("main_bp.stocker_management"))
 
-    return render_template(
-        "main/user.html",
-        users=users,
-        stocker_form=stocker_form,
-        user_edit_form=user_edit_form,
-        editing_user=user,  # Pass the user being edited
-        segment="admin",
-        sub_segment="stocker",
-    )
+
+
+# @bp.route("/admin/user/edit/<int:user_id>", methods=["GET", "POST"])
+# @login_required
+# @vendeur_required
+# def user_edit(user_id):
+#     """
+#     Edit a stockeur's information.
+#     Vendeurs can only edit their own stockeurs.
+#     """
+#     user = db.session.get(User, user_id)
+
+#     if not user:
+#         flash("Utilisateur non trouvé.", "danger")
+#         return redirect(url_for("main_bp.stocker_management"))
+
+#     if user.id != current_user.id and user.vendeur_id != current_user.id:
+#         flash("Vous n'êtes pas autorisé à modifier cet utilisateur.", "danger")
+#         return redirect(url_for("main_bp.stocker_management"))
+
+#     if user.id == current_user.id:
+#         flash("Utilisez la page profil pour modifier vos informations.", "warning")
+#         return redirect(url_for("main_bp.profile"))
+
+#     user_edit_form = UserEditForm()
+#     stocker_form = StockeurForm()
+
+#     if user_edit_form.validate_on_submit():
+#         existing_by_username = User.query.filter(
+#             User.username == user_edit_form.username.data,
+#             User.id != user_id
+#         ).first()
+
+#         if existing_by_username:
+#             flash("Ce nom d'utilisateur est déjà utilisé.", "danger")
+#         else:
+#             if user_edit_form.email.data:
+#                 existing_by_email = User.query.filter(
+#                     User.email == user_edit_form.email.data.lower(),
+#                     User.id != user_id
+#                 ).first()
+#                 if existing_by_email:
+#                     flash("Cette adresse email est déjà utilisée.", "danger")
+#                     return redirect(url_for("main_bp.stocker_management"))
+
+#             user.username = user_edit_form.username.data
+#             user.email = user_edit_form.email.data.lower() if user_edit_form.email.data else None
+#             user.is_active = user_edit_form.is_active.data
+
+#             db.session.commit()
+#             flash("Utilisateur mis à jour avec succès!", "success")
+#             return redirect(url_for("main_bp.stocker_management"))
+
+#     elif request.method == "GET":
+#         user_edit_form.username.data = user.username
+#         user_edit_form.email.data = user.email
+#         user_edit_form.is_active.data = user.is_active
+
+#     vendeur_id = current_user.id
+#     users = User.query.filter(
+#         db.or_(
+#             User.id == vendeur_id,
+#             User.vendeur_id == vendeur_id
+#         )
+#     ).order_by(User.role.asc(), User.created_at.desc()).all()
+
+#     return render_template(
+#         "main/user.html",
+#         users=users,
+#         stocker_form=stocker_form,
+#         user_edit_form=user_edit_form,
+#         editing_user=user,
+#         segment="admin",
+#         sub_segment="stocker",
+#     )
 
 
 @bp.route("/admin/user/toggle_active/<int:user_id>", methods=["POST"])
