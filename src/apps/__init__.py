@@ -1,6 +1,6 @@
 from .config import DebugConfig
 import logging
-from flask import Flask, app
+from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_login import LoginManager
@@ -57,17 +57,12 @@ def create_app(config_object=DebugConfig):
 
         app.register_blueprint(errors_bp)
 
-        # IMPORTANT: Remove this blueprint registration.
-        # The CLI commands are registered directly onto the 'app' object, not as a blueprint.
-        # REMOVE THIS LINE: from .cli import cli_bp
-        # REMOVE THIS LINE: app.register_blueprint(cli_bp)
-
         app_logger.info("Blueprints registered.")
 
     # --- Register CLI Commands (AFTER everything else is initialized) ---
     # Import it here, inside the function
     from apps.cli import register_cli_commands
 
-    register_cli_commands(app)  # Call the registration function
+    register_cli_commands(app)
 
     return app

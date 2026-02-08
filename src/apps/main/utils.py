@@ -467,40 +467,32 @@ def get_daily_report_data(
     )
 
 
-# Change this and user a button to register daily reports
 def update_daily_reports(app, report_date_to_update=None, vendeur_id=None):
     """
     Calculates and updates DailyStockReport and DailyOverallReport for a given date.
-    This should be run daily, ideally after all transactions for the day are recorded.
-    This function will be called by APScheduler or CLI.
     """
     with app.app_context():
         if report_date_to_update is None:
-            # When called by scheduler or without specific date, default to yesterday
-            # so that it processes a full day's data from the previous day.
-            # If you want it to always calculate for "today", set this to date.today()
-            # but then ensure your scheduler runs after all transactions for "today" are complete.
             report_date_to_update = date.today() - timedelta(days=1)
 
         app.logger.info(
-            f"Generating/Updating daily reports for {report_date_to_update}"
+            f"Generating/Updating daily reports for {report_date_to_update}, vendeur_id={vendeur_id}"
         )
 
         try:
-            # 1. Calculate the necessary UTC date range for the target report date
+            # 1. Calculate the necessary UTC date range
             start_utc, end_utc = get_utc_range_for_date(report_date_to_update)
 
-            # 2. Pass the full set of required arguments to the calculator function
+            # 2. Get report data - PASS vendeur_id for filtering
             report_data, total_sales_from_transactions, total_debts_overall = (
                 get_daily_report_data(
                     app,
                     report_date_to_update,
                     start_utc,
-                    end_utc
+                    end_utc,
+                    vendeur_id=vendeur_id  # ← ADD THIS if your function supports it
                 )
             )
-
-            total_initial_stock_day_overall = Decimal("0.00")
 
             total_initial_stock_day_overall = Decimal("0.00")
             total_purchased_stock_day_overall = Decimal("0.00")
@@ -511,13 +503,19 @@ def update_daily_reports(app, report_date_to_update=None, vendeur_id=None):
             for network_name, data in report_data.items():
                 network = data["network"]
 
+                # ✅ FIX: Include vendeur_id in query
                 daily_report = DailyStockReport.query.filter_by(
-                    network=network, report_date=report_date_to_update
+                    network=network,
+                    report_date=report_date_to_update,
+                    vendeur_id=vendeur_id  # ← ADD THIS
                 ).first()
 
                 if not daily_report:
+                    # ✅ FIX: Include vendeur_id when creating
                     daily_report = DailyStockReport(
-                        network=network, report_date=report_date_to_update
+                        network=network,
+                        report_date=report_date_to_update,
+                        vendeur_id=vendeur_id  # ← ADD THIS
                     )
                     db.session.add(daily_report)
                     app.logger.debug(
@@ -541,7 +539,7 @@ def update_daily_reports(app, report_date_to_update=None, vendeur_id=None):
                 total_final_stock_day_overall += data["final_stock"]
                 total_virtual_value_day_overall += data["virtual_value"]
 
-            # --- Update/Create DailyOverallReport for the target_date ---
+            # --- Update/Create DailyOverallReport ---
             overall_report = DailyOverallReport.query.filter_by(
                 report_date=report_date_to_update,
                 vendeur_id=vendeur_id,
@@ -575,7 +573,7 @@ def update_daily_reports(app, report_date_to_update=None, vendeur_id=None):
                 f"Daily reports for {report_date_to_update} updated successfully."
             )
 
-            # --- Perform Sales Verification ---
+            # --- Sales Verification ---
             calculated_total_sold_stock = Decimal("0.00")
             for network_name, data in report_data.items():
                 calculated_total_sold_stock += (
@@ -587,9 +585,8 @@ def update_daily_reports(app, report_date_to_update=None, vendeur_id=None):
             if calculated_total_sold_stock != total_sold_stock_day_overall:
                 app.logger.warning(
                     f"Sales verification discrepancy for {report_date_to_update}: "
-                    f"Calculated Sold Stock ({calculated_total_sold_stock:,.2f}) "
-                    f"does NOT match Actual Sold Stock from Transactions ({total_sold_stock_day_overall:,.2f}). "
-                    "Possible forgotten sale registration."
+                    f"Calculated ({calculated_total_sold_stock:,.2f}) vs "
+                    f"Actual ({total_sold_stock_day_overall:,.2f})"
                 )
             else:
                 app.logger.info(
