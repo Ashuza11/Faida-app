@@ -79,7 +79,11 @@ def login():
         next_page = request.args.get('next')
         if next_page:
             return redirect(next_page)
-        return redirect(url_for("main_bp.index"))
+        # Role-based redirect
+        if user.is_platform_admin:
+            return redirect(url_for('admin_bp.dashboard'))
+        else:
+            return redirect(url_for('main_bp.index'))
 
     return render_template("auth/login.html", form=form)
 
