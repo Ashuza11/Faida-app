@@ -327,9 +327,9 @@
                     </div>
                     <div class="card-body p-0">
                         <div id="map-canvas"
-                             data-lat="{{ default_center_lat }}"
-                             data-lng="{{ default_center_lng }}"
-                             style="height: 550px;"></div>
+                            data-lat="{{ default_center_lat }}"
+                            data-lng="{{ default_center_lng }}"
+                            style="height: 550px;"></div>
                     </div>
                 </div>
             </div>
@@ -494,7 +494,6 @@
 
             if (clientLocations && clientLocations.length > 0) {
                 clientLocations.forEach(function(client) {
-                    // Get appropriate icon based on value tier
                     var icon = getIconForTier(client.value_tier);
                     
                     var marker = L.marker([client.lat, client.lng], {
@@ -502,13 +501,11 @@
                         title: client.name
                     }).addTo(map);
 
-                    // Bind rich popup
                     marker.bindPopup(createPopupContent(client), {
                         maxWidth: 320,
                         className: 'custom-popup'
                     });
                     
-                    // Add tooltip for hover (shows name and total)
                     var tooltipText = client.name + ' - ' + formatCurrency(client.total_purchases);
                     marker.bindTooltip(tooltipText, {
                         permanent: false,
@@ -568,8 +565,99 @@
                 map.invalidateSize();
             });
 
+            locateUser(map);
+
             console.log("initLeafletMap completed successfully.");
         }
+
+        let userMarker = null;
+
+        function showLocationStatus(message, type = "info") {
+            let box = document.getElementById("geo-status");
+
+            if (!box) {
+                box = document.createElement("div");
+                box.id = "geo-status";
+                box.className = "geo-status";
+                document.body.appendChild(box);
+            }
+
+            box.textContent = message;
+            box.className = "geo-status " + type;
+
+            setTimeout(() => box.classList.add("visible"), 10);
+        }
+
+
+        function hideLocationStatus() {
+            const box = document.getElementById("geo-status");
+            if (box) box.classList.remove("visible");
+        }
+
+        function locateUser(map) {
+
+            if (!navigator.geolocation) {
+                showLocationStatus(
+                    "Votre navigateur ne supporte pas la géolocalisation.",
+                    "error"
+                );
+                return;
+            }
+
+            showLocationStatus("Localisation en cours…", "loading");
+
+            navigator.geolocation.getCurrentPosition(
+                function (position) {
+
+                    hideLocationStatus();
+
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+
+                    console.log("User position:", lat, lng);
+
+                    if (userMarker) {
+                        map.removeLayer(userMarker);
+                    }
+
+                    userMarker = L.marker([lat, lng]).addTo(map)
+                        .bindPopup("📍 Votre position actuelle")
+                        .openPopup();
+
+                    map.setView([lat, lng], 15);
+
+                    saveUserLocation(lat, lng);
+                },
+
+                function (error) {
+
+                    console.error("Geolocation error:", error);
+
+                    let msg = "Impossible de récupérer votre position.";
+
+                    switch (error.code) {
+                        case error.PERMISSION_DENIED:
+                            msg = "Permission de localisation refusée.";
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            msg = "Position indisponible.";
+                            break;
+                        case error.TIMEOUT:
+                            msg = "Délai dépassé lors de la localisation.";
+                            break;
+                    }
+
+                    showLocationStatus(msg, "error");
+                },
+
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
+        }
+
         
         // Helper function to escape HTML (prevent XSS)
         function escapeHtml(text) {
@@ -580,3 +668,4 @@
         }
     </script>
 {% endblock javascripts %}
+
