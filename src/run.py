@@ -13,7 +13,6 @@ Usage:
     flask run
     
     # Production with Gunicorn
-    gunicorn -c gunicorn-cfg.py run:app
 """
 
 import os
