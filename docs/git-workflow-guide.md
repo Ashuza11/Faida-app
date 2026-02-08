@@ -2,7 +2,7 @@
 
 ## 🌳 Branch Strategy
 
-```
+````Cortana shifting mobile.
 main (production)
   │
   └── develop (staging/integration)
@@ -12,7 +12,6 @@ main (production)
         ├── bugfix/issue-10-toast-notifications
         └── ...
 ```
-
 ### Branch Types
 
 | Branch      | Purpose                 | Deploys To          |
@@ -27,21 +26,23 @@ main (production)
 
 ## 🔄 Workflow Overview
 
-```
+````
+
 ┌─────────────────────────────────────────────────────────────────┐
-│                                                                 │
-│   1. Create Branch    2. Make Changes    3. Push & PR           │
-│   ───────────────     ──────────────     ──────────             │
-│   feature/issue-4  →  Code + Commit   →  Push to GitHub         │
-│                                          Create PR → develop    │
-│                                                                 │
-│   4. Review & Merge   5. Test on Develop  6. Deploy to Prod     │
-│   ─────────────────   ──────────────────  ─────────────────     │
-│   Approve PR       →  Merge to develop →  Merge develop → main  │
-│   Run CI tests        Test integration    Auto-deploy Render    │
-│                                                                 │
+│ │
+│ 1. Create Branch 2. Make Changes 3. Push & PR │
+│ ─────────────── ────────────── ────────── │
+│ feature/issue-4 → Code + Commit → Push to GitHub │
+│ Create PR → develop │
+│ │
+│ 4. Review & Merge 5. Test on Develop 6. Deploy to Prod │
+│ ───────────────── ────────────────── ───────────────── │
+│ Approve PR → Merge to develop → Merge develop → main │
+│ Run CI tests Test integration Auto-deploy Render │
+│ │
 └─────────────────────────────────────────────────────────────────┘
-```
+
+````
 
 ---
 
@@ -64,7 +65,7 @@ git push -u origin develop
 
 # Return to develop for daily work
 git checkout develop
-```
+````
 
 ### Working on an Issue
 
