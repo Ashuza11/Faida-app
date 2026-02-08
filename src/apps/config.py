@@ -133,6 +133,9 @@ class ProductionConfig(Config):
     DEBUG = False
     TESTING = False
 
+    # SECRET_KEY - Required in production (set in Render environment variables)
+    SECRET_KEY = os.environ.get('SECRET_KEY')
+
     # Database with SSL required
     SQLALCHEMY_DATABASE_URI = Config.get_database_uri(require_ssl=True)
 
@@ -155,14 +158,6 @@ class ProductionConfig(Config):
 
     # Render-specific
     PREFERRED_URL_SCHEME = 'https'
-
-    @property
-    def SECRET_KEY(self):
-        """Require SECRET_KEY in production."""
-        key = os.environ.get('SECRET_KEY')
-        if not key:
-            raise ValueError("SECRET_KEY must be set in production!")
-        return key
 
 
 class DevelopmentConfig(Config):
