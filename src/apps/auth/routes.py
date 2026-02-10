@@ -10,6 +10,8 @@ Flows:
 from flask import render_template, redirect, request, url_for, flash, current_app
 from flask_login import current_user, login_user, logout_user, login_required
 from datetime import datetime, timezone
+from urllib.parse import urlparse
+
 
 from apps.auth import bp
 from apps.auth.forms import LoginForm, VendeurRegistrationForm, CreateAccountForm
@@ -75,15 +77,17 @@ def login():
         # Welcome message
         flash(f"Bienvenue, {user.username}!", "success")
 
-        # Redirect to next page or dashboard
-        next_page = request.args.get('next')
-        if next_page:
-            return redirect(next_page)
-        # Role-based redirect
+        # Redirect priority: ROLE FIRST
         if user.is_platform_admin:
             return redirect(url_for('admin_bp.dashboard'))
-        else:
-            return redirect(url_for('main_bp.index'))
+
+        # Then handle next (only if useful)
+        next_page = request.args.get('next')
+        if next_page and urlparse(next_page).netloc == '' and next_page != '/':
+            return redirect(next_page)
+
+        # Default fallback
+        return redirect(url_for('main_bp.index'))
 
     return render_template("auth/login.html", form=form)
 

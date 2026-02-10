@@ -135,7 +135,7 @@
                     </code>
                     {% if not code.is_used %}
                     <button class="btn btn-sm btn-link text-default copy-btn ml-2" 
-                            data-clipboard-text="{{ code.code }}" 
+                            data-clipboard-text="{{ request.url_root }}auth/register?code={{ code.code }}" 
                             title="Copier">
                       <i class="fas fa-copy"></i>
                     </button>
