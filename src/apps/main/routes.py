@@ -31,7 +31,7 @@ from apps.decorators import (
 
 from apps import db
 from decimal import Decimal, InvalidOperation
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pytz
 from apps.models import (
     User,
@@ -1962,198 +1962,113 @@ def profile():
 
 
 # Client Map route
+from sqlalchemy import func
+from datetime import datetime, timedelta
+
+from sqlalchemy import func, case
+from collections import defaultdict
+
 @bp.route("/client-map", methods=["GET"])
 @login_required
 @business_member_required
 def client_map():
-    """
-    Renders a map displaying clients based on their GPS coordinates.
-    Clients are color-coded based on their total purchases (high-value = green, medium = orange, low = blue).
-    """
 
-    # Enhanced client data with purchase history
-    # In production, this would come from your database
-    hardcoded_client_locations = [
-        {
-            "id": 1,
-            "name": "Boutique Mama Zawadi",
-            "address": "Avenue Patrice Lumumba 45, Panzi",
-            "lat": -2.5380,
-            "lng": 28.8580,
-            "phone_airtel": "0991234567",
-            "phone_orange": "0841234567",
-            "purchases_last_week": {
-                "airtel": 150000,
-                "orange": 120000,
-                "vodacom": 80000,
-                "africel": 50000
-            },
-            "total_purchases": 400000,  # High value client
-            "last_purchase_date": "2024-01-25"
-        },
-        {
-            "id": 2,
-            "name": "Kiosk Bénédiction",
-            "address": "Rue de l'Église 12, Panzi",
-            "lat": -2.5420,
-            "lng": 28.8620,
-            "phone_airtel": "0997654321",
-            "phone_orange": "0847654321",
-            "purchases_last_week": {
-                "airtel": 200000,
-                "orange": 180000,
-                "vodacom": 150000,
-                "africel": 70000
-            },
-            "total_purchases": 600000,  # High value client
-            "last_purchase_date": "2024-01-26"
-        },
-        {
-            "id": 3,
-            "name": "Phone House Ibanda",
-            "address": "Avenue du Commerce 78, Ibanda",
-            "lat": -2.5350,
-            "lng": 28.8550,
-            "phone_airtel": "0991122334",
-            "phone_orange": "0841122334",
-            "purchases_last_week": {
-                "airtel": 50000,
-                "orange": 40000,
-                "vodacom": 30000,
-                "africel": 20000
-            },
-            "total_purchases": 140000,  # Medium value client
-            "last_purchase_date": "2024-01-24"
-        },
-        {
-            "id": 4,
-            "name": "Ets. Mumbere Telecom",
-            "address": "Boulevard du Lac 156, Panzi",
-            "lat": -2.5450,
-            "lng": 28.8600,
-            "phone_airtel": "0994455667",
-            "phone_orange": "0844455667",
-            "purchases_last_week": {
-                "airtel": 300000,
-                "orange": 250000,
-                "vodacom": 200000,
-                "africel": 100000
-            },
-            "total_purchases": 850000,  # Very high value client
-            "last_purchase_date": "2024-01-26"
-        },
-        {
-            "id": 5,
-            "name": "Cyber Café Espoir",
-            "address": "Rue des Écoles 34, Ibanda",
-            "lat": -2.5320,
-            "lng": 28.8530,
-            "phone_airtel": "0998877665",
-            "phone_orange": "0848877665",
-            "purchases_last_week": {
-                "airtel": 25000,
-                "orange": 20000,
-                "vodacom": 15000,
-                "africel": 10000
-            },
-            "total_purchases": 70000,  # Low value client
-            "last_purchase_date": "2024-01-23"
-        },
-        {
-            "id": 6,
-            "name": "Alimentation La Grâce",
-            "address": "Avenue Industrielle 89, Panzi",
-            "lat": -2.5400,
-            "lng": 28.8650,
-            "phone_airtel": "0993344556",
-            "phone_orange": "0843344556",
-            "purchases_last_week": {
-                "airtel": 80000,
-                "orange": 60000,
-                "vodacom": 50000,
-                "africel": 30000
-            },
-            "total_purchases": 220000,  # Medium value client
-            "last_purchase_date": "2024-01-25"
-        },
-        {
-            "id": 7,
-            "name": "Pharmacie du Peuple",
-            "address": "Rue de la Santé 23, Ibanda",
-            "lat": -2.5370,
-            "lng": 28.8510,
-            "phone_airtel": "0996677889",
-            "phone_orange": "0846677889",
-            "purchases_last_week": {
-                "airtel": 15000,
-                "orange": 10000,
-                "vodacom": 8000,
-                "africel": 5000
-            },
-            "total_purchases": 38000,  # Low value client
-            "last_purchase_date": "2024-01-22"
-        },
-        {
-            "id": 8,
-            "name": "Grand Marché Mobile",
-            "address": "Place du Marché Central, Panzi",
-            "lat": -2.5410,
-            "lng": 28.8570,
-            "phone_airtel": "0992233445",
-            "phone_orange": "0842233445",
-            "purchases_last_week": {
-                "airtel": 180000,
-                "orange": 150000,
-                "vodacom": 120000,
-                "africel": 80000
-            },
-            "total_purchases": 530000,  # High value client
-            "last_purchase_date": "2024-01-26"
-        },
-    ]
+    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
 
-    # Calculate value tier for each client (for marker coloring)
-    # Thresholds: High >= 400,000 FC, Medium >= 100,000 FC, Low < 100,000 FC
-    HIGH_VALUE_THRESHOLD = 400000
-    MEDIUM_VALUE_THRESHOLD = 100000
+    # -------------------------
+    # Clients de base
+    # -------------------------
+    query = Client.query.filter(
+        Client.gps_lat.isnot(None),
+        Client.gps_long.isnot(None)
+    )
 
-    for client in hardcoded_client_locations:
-        total = client["total_purchases"]
-        if total >= HIGH_VALUE_THRESHOLD:
-            client["value_tier"] = "high"
-        elif total >= MEDIUM_VALUE_THRESHOLD:
-            client["value_tier"] = "medium"
+    if current_user.role.value != "superadmin":
+        query = query.filter_by(vendeur_id=current_user.id)
+
+    clients = query.all()
+    client_map = {c.id: c for c in clients}
+
+    # -------------------------
+    # Agrégation ventes semaine
+    # -------------------------
+    sales_data = (
+        db.session.query(
+            Sale.client_id,
+            SaleItem.network,
+            func.sum(SaleItem.subtotal).label("total")
+        )
+        .join(SaleItem.sale)
+        .filter(
+            Sale.client_id.in_(client_map.keys()),
+            Sale.created_at >= seven_days_ago,
+        )
+        .group_by(Sale.client_id, SaleItem.network)
+        .all()
+    )
+
+    # -------------------------
+    # Reformatage
+    # -------------------------
+    client_totals = defaultdict(lambda: defaultdict(float))
+
+    for row in sales_data:
+        client_totals[row.client_id][row.network.value] += float(row.total)
+
+    # -------------------------
+    # Construction réponse
+    # -------------------------
+    client_locations = []
+
+    for client in clients:
+
+        network_data = {
+            nw: client_totals[client.id].get(nw, 0)
+            for nw in ["airtel", "orange", "vodacom", "africel"]
+        }
+
+        total_week = sum(network_data.values())
+
+        if total_week >= 400000:
+            tier = "high"
+        elif total_week >= 100000:
+            tier = "medium"
         else:
-            client["value_tier"] = "low"
+            tier = "low"
 
-    client_locations = hardcoded_client_locations
+        client_locations.append({
+            "id": client.id,
+            "name": client.name,
+            "address": client.address or "No address",
+            "lat": client.gps_lat,
+            "lng": client.gps_long,
+            "phone_airtel": client.phone_airtel or "N/A",
+            "phone_orange": client.phone_orange or "N/A",
+            "purchases_last_week": network_data,
+            "total_purchases": total_week,
+            "value_tier": tier,
+            "last_purchase_date": "Récent"
+        })
 
-    # Calculate summary statistics for the page
+    # -------------------------
+    # Stats globales
+    # -------------------------
     total_clients = len(client_locations)
     total_weekly_sales = sum(c["total_purchases"] for c in client_locations)
-    high_value_count = sum(
-        1 for c in client_locations if c["value_tier"] == "high")
 
-    # Network breakdown
+    high_value_count = sum(
+        1 for c in client_locations if c["value_tier"] == "high"
+    )
+
     network_totals = {
-        "airtel": sum(c["purchases_last_week"]["airtel"] for c in client_locations),
-        "orange": sum(c["purchases_last_week"]["orange"] for c in client_locations),
-        "vodacom": sum(c["purchases_last_week"]["vodacom"] for c in client_locations),
-        "africel": sum(c["purchases_last_week"]["africel"] for c in client_locations),
+        nw: sum(c["purchases_last_week"][nw] for c in client_locations)
+        for nw in ["airtel", "orange", "vodacom", "africel"]
     }
 
-    # Set default center for Panzi/Ibanda area
-    default_center_lat = -2.5395
-    default_center_lng = 28.8575
-
-    # If clients exist, center on their average location
+    default_center_lat, default_center_lng = -2.5395, 28.8575
     if client_locations:
-        avg_lat = sum(loc["lat"]
-                      for loc in client_locations) / len(client_locations)
-        avg_lng = sum(loc["lng"]
-                      for loc in client_locations) / len(client_locations)
-        default_center_lat = avg_lat
-        default_center_lng = avg_lng
+        default_center_lat = client_locations[0]["lat"]
+        default_center_lng = client_locations[0]["lng"]
 
     return render_template(
         "main/client_map.html",
@@ -2166,3 +2081,7 @@ def client_map():
         network_totals=network_totals,
         segment="client_map",
     )
+
+
+
+
