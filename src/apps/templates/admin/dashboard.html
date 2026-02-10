@@ -1,0 +1,256 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} Admin Dashboard {% endblock %}
+
+{% block content %}
+<div class="header bg-primary pb-6">
+  <div class="container-fluid">
+    <div class="header-body">
+      <div class="row align-items-center py-4">
+        <div class="col-lg-6 col-7">
+          <h6 class="h2 text-white d-inline-block mb-0">Administration</h6>
+          <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
+            <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
+              <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}"><i class="fas fa-home"></i></a></li>
+              <li class="breadcrumb-item active">Dashboard Admin</li>
+            </ol>
+          </nav>
+        </div>
+      </div>
+
+      <!-- Stats Cards -->
+      <div class="row">
+        <!-- Vendeurs Card -->
+        <div class="col-xl-3 col-md-6">
+          <div class="card card-stats">
+            <div class="card-body">
+              <div class="row">
+                <div class="col">
+                  <h5 class="card-title text-uppercase text-muted mb-0">Vendeurs</h5>
+                  <span class="h2 font-weight-bold mb-0">{{ total_vendeurs }}</span>
+                </div>
+                <div class="col-auto">
+                  <div class="icon icon-shape bg-gradient-primary text-white rounded-circle shadow">
+                    <i class="fas fa-store"></i>
+                  </div>
+                </div>
+              </div>
+              <p class="mt-3 mb-0 text-sm">
+                <span class="text-success mr-2"><i class="fa fa-arrow-up"></i> {{ new_vendeurs_week }}</span>
+                <span class="text-nowrap">cette semaine</span>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stockeurs Card -->
+        <div class="col-xl-3 col-md-6">
+          <div class="card card-stats">
+            <div class="card-body">
+              <div class="row">
+                <div class="col">
+                  <h5 class="card-title text-uppercase text-muted mb-0">Stockeurs</h5>
+                  <span class="h2 font-weight-bold mb-0">{{ total_stockeurs }}</span>
+                </div>
+                <div class="col-auto">
+                  <div class="icon icon-shape bg-gradient-info text-white rounded-circle shadow">
+                    <i class="fas fa-user-tie"></i>
+                  </div>
+                </div>
+              </div>
+              <p class="mt-3 mb-0 text-sm">
+                <span class="text-muted">Employés actifs</span>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ventes du jour Card -->
+        <div class="col-xl-3 col-md-6">
+          <div class="card card-stats">
+            <div class="card-body">
+              <div class="row">
+                <div class="col">
+                  <h5 class="card-title text-uppercase text-muted mb-0">Ventes Aujourd'hui</h5>
+                  <span class="h2 font-weight-bold mb-0">{{ "{:,.0f}".format(total_sales_today) }} FC</span>
+                </div>
+                <div class="col-auto">
+                  <div class="icon icon-shape bg-gradient-success text-white rounded-circle shadow">
+                    <i class="fas fa-chart-line"></i>
+                  </div>
+                </div>
+              </div>
+              <p class="mt-3 mb-0 text-sm">
+                <span class="text-info mr-2">{{ "{:,.0f}".format(total_cash_today) }} FC</span>
+                <span class="text-nowrap">en cash</span>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Codes d'invitation Card -->
+        <div class="col-xl-3 col-md-6">
+          <div class="card card-stats">
+            <div class="card-body">
+              <div class="row">
+                <div class="col">
+                  <h5 class="card-title text-uppercase text-muted mb-0">Codes Actifs</h5>
+                  <span class="h2 font-weight-bold mb-0">{{ active_invite_codes }}</span>
+                </div>
+                <div class="col-auto">
+                  <div class="icon icon-shape bg-gradient-warning text-white rounded-circle shadow">
+                    <i class="fas fa-key"></i>
+                  </div>
+                </div>
+              </div>
+              <p class="mt-3 mb-0 text-sm">
+                <span class="text-muted mr-2">{{ used_invite_codes }} utilisés</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Main Content -->
+<div class="container-fluid mt--6">
+  <div class="row">
+    
+    <!-- Recent Vendeurs -->
+    <div class="col-xl-8">
+      <div class="card">
+        <div class="card-header border-0">
+          <div class="row align-items-center">
+            <div class="col">
+              <h3 class="mb-0">Vendeurs Récents</h3>
+            </div>
+            <div class="col text-right">
+              <a href="{{ url_for('admin_bp.vendeurs_list') }}" class="btn btn-sm btn-primary">
+                Voir tous
+              </a>
+            </div>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table align-items-center table-flush">
+            <thead class="thead-light">
+              <tr>
+                <th scope="col">Vendeur</th>
+                <th scope="col">Téléphone</th>
+                <th scope="col">Statut</th>
+                <th scope="col">Inscrit le</th>
+                <th scope="col"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for vendeur in recent_vendeurs %}
+              <tr>
+                <td>
+                  <div class="d-flex align-items-center">
+                    <div class="avatar avatar-sm bg-gradient-primary text-white rounded-circle mr-3 d-flex align-items-center justify-content-center" style="width: 36px; height: 36px;">
+                      <span>{{ vendeur.username[:1].upper() }}</span>
+                    </div>
+                    <div>
+                      <span class="font-weight-bold">{{ vendeur.username }}</span>
+                      {% if vendeur.email %}
+                      <br><small class="text-muted">{{ vendeur.email }}</small>
+                      {% endif %}
+                    </div>
+                  </div>
+                </td>
+                <td>{{ vendeur.phone }}</td>
+                <td>
+                  {% if vendeur.is_active %}
+                    <span class="badge badge-success">Actif</span>
+                  {% else %}
+                    <span class="badge badge-danger">Inactif</span>
+                  {% endif %}
+                </td>
+                <td>{{ vendeur.created_at.strftime('%d/%m/%Y') }}</td>
+                <td class="text-right">
+                  <a href="{{ url_for('admin_bp.vendeur_detail', vendeur_id=vendeur.id) }}" 
+                     class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-eye"></i>
+                  </a>
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="5" class="text-center text-muted py-4">
+                  Aucun vendeur enregistré
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Actions & Recent Codes -->
+    <div class="col-xl-4">
+      
+      <!-- Quick Actions -->
+      <div class="card">
+        <div class="card-header">
+          <h5 class="h3 mb-0">Actions Rapides</h5>
+        </div>
+        <div class="card-body">
+          <form action="{{ url_for('admin_bp.create_invite_code') }}" method="POST">
+            <button type="submit" class="btn btn-primary btn-block">
+              <i class="fas fa-plus mr-2"></i>Générer Code d'Invitation
+            </button>
+          </form>
+          <hr>
+          <a href="{{ url_for('admin_bp.vendeurs_list') }}" class="btn btn-outline-primary btn-block">
+            <i class="fas fa-store mr-2"></i>Gérer les Vendeurs
+          </a>
+          <a href="{{ url_for('admin_bp.invite_codes_list') }}" class="btn btn-outline-warning btn-block">
+            <i class="fas fa-key mr-2"></i>Voir les Codes
+          </a>
+        </div>
+      </div>
+
+      <!-- Recent Codes -->
+      <div class="card">
+        <div class="card-header border-0">
+          <h5 class="h3 mb-0">Codes Récents</h5>
+        </div>
+        <div class="card-body p-0">
+          <ul class="list-group list-group-flush">
+            {% for code in recent_codes %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+              <div>
+                <code class="font-weight-bold {% if code.used_by_id %}text-muted{% else %}text-primary{% endif %}">
+                  {{ code.code }}
+                </code>
+                <br>
+                <small class="text-muted">{{ code.created_at.strftime('%d/%m/%Y') }}</small>
+              </div>
+              <div>
+                {% if code.used_by_id %}
+                  <span class="badge badge-secondary">Utilisé</span>
+                {% elif not code.is_active %}
+                  <span class="badge badge-warning">Inactif</span>
+                {% else %}
+                  <span class="badge badge-success">Actif</span>
+                {% endif %}
+              </div>
+            </li>
+            {% else %}
+            <li class="list-group-item text-center text-muted">
+              Aucun code créé
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  {% include "includes/footer.html" %}
+</div>
+{% endblock content %}

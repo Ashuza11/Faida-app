@@ -1,37 +1,100 @@
-# byte-compiled / optimized / DLL files
+# ===========================================
+# Python
+# ===========================================
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# tests and coverage
-*.pytest_cache
+# ===========================================
+# Virtual Environments
+# ===========================================
+env/
+venv/
+ENV/
+.venv/
+
+# ===========================================
+# Environment Variables / Secrets
+# ===========================================
+.env
+.env.*
+!.env.example
+.env.development
+
+# ===========================================
+# Testing & Coverage
+# ===========================================
 .coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.tox/
+*.cover
+nosetests.xml
 
-# database & logs
+# ===========================================
+# Database & Logs
+# ===========================================
 *.db
 *.sqlite3
 *.log
+logs/
 
-# venv
-env/
-venv
-.env
-
-# other
-.DS_Store
-
-# sphinx docs 
-_build
-_static
-_templates
-
-# javascript
-package-lock.json
-.vscode/symbols.json
+# ===========================================
+# IDE & Editors
+# ===========================================
 .vscode/
-.vscode
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-workspace
+*.sublime-project
+# ===========================================
+# Docker
+# ===========================================
+.docker/
 
-apps/static/assets/node_modules
-apps/static/assets/yarn.lock
-apps/static/assets/.temp
+# ===========================================
+# OS Files
+# ===========================================
+.DS_Store
+Thumbs.db
 
-.azure
+# ===========================================
+# Uploads & Generated Files
+# ===========================================
+uploads/
+static/uploads/
+*.pdf
+*.xlsx
+!static/assets/**
+
+# ===========================================
+# Documentation & Build Artifacts
+# ===========================================
+_build/
+_static/
+_templates/
+Deployment_guide.md

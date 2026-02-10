@@ -1,0 +1,320 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} Détails Vendeur - {{ vendeur.username }} {% endblock %}
+
+{% block content %}
+<div class="header bg-primary pb-6">
+  <div class="container-fluid">
+    <div class="header-body">
+      <div class="row align-items-center py-4">
+        <div class="col-lg-6 col-7">
+          <h6 class="h2 text-white d-inline-block mb-0">{{ vendeur.username }}</h6>
+          <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
+            <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
+              <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}"><i class="fas fa-home"></i></a></li>
+              <li class="breadcrumb-item"><a href="{{ url_for('admin_bp.dashboard') }}">Admin</a></li>
+              <li class="breadcrumb-item"><a href="{{ url_for('admin_bp.vendeurs_list') }}">Vendeurs</a></li>
+              <li class="breadcrumb-item active">{{ vendeur.username }}</li>
+            </ol>
+          </nav>
+        </div>
+        <div class="col-lg-6 col-5 text-right">
+          <form action="{{ url_for('admin_bp.toggle_vendeur_status', vendeur_id=vendeur.id) }}" 
+                method="POST" class="d-inline">
+            {% if vendeur.is_active %}
+              <button type="submit" class="btn btn-sm btn-danger"
+                      onclick="return confirm('Désactiver ce vendeur ?');">
+                <i class="fas fa-ban mr-2"></i>Désactiver
+              </button>
+            {% else %}
+              <button type="submit" class="btn btn-sm btn-success">
+                <i class="fas fa-check mr-2"></i>Activer
+              </button>
+            {% endif %}
+          </form>
+        </div>
+      </div>
+
+      <!-- Stats Cards -->
+      <div class="row">
+        <div class="col-xl-3 col-md-6">
+          <div class="card card-stats">
+            <div class="card-body">
+              <div class="row">
+                <div class="col">
+                  <h5 class="card-title text-uppercase text-muted mb-0">Ventes Totales</h5>
+                  <span class="h2 font-weight-bold mb-0">{{ "{:,.0f}".format(total_sales) }} FC</span>
+                </div>
+                <div class="col-auto">
+                  <div class="icon icon-shape bg-gradient-success text-white rounded-circle shadow">
+                    <i class="fas fa-chart-line"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+          <div class="card card-stats">
+            <div class="card-body">
+              <div class="row">
+                <div class="col">
+                  <h5 class="card-title text-uppercase text-muted mb-0">Dettes Clients</h5>
+                  <span class="h2 font-weight-bold mb-0 {% if total_debt > 0 %}text-warning{% endif %}">
+                    {{ "{:,.0f}".format(total_debt) }} FC
+                  </span>
+                </div>
+                <div class="col-auto">
+                  <div class="icon icon-shape bg-gradient-warning text-white rounded-circle shadow">
+                    <i class="fas fa-hand-holding-usd"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+          <div class="card card-stats">
+            <div class="card-body">
+              <div class="row">
+                <div class="col">
+                  <h5 class="card-title text-uppercase text-muted mb-0">Valeur Stock</h5>
+                  <span class="h2 font-weight-bold mb-0">{{ "{:,.0f}".format(total_stock_value) }} FC</span>
+                </div>
+                <div class="col-auto">
+                  <div class="icon icon-shape bg-gradient-info text-white rounded-circle shadow">
+                    <i class="fas fa-boxes"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+          <div class="card card-stats">
+            <div class="card-body">
+              <div class="row">
+                <div class="col">
+                  <h5 class="card-title text-uppercase text-muted mb-0">Stockeurs</h5>
+                  <span class="h2 font-weight-bold mb-0">{{ stockeurs|length }}</span>
+                </div>
+                <div class="col-auto">
+                  <div class="icon icon-shape bg-gradient-primary text-white rounded-circle shadow">
+                    <i class="fas fa-user-tie"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="container-fluid mt--6">
+  <div class="row">
+    
+    <!-- Vendeur Info Card -->
+    <div class="col-xl-4">
+      <div class="card card-profile">
+        <div class="card-header text-center border-0 pt-4">
+          <div class="d-flex justify-content-center">
+            <div class="avatar avatar-xl bg-gradient-primary text-white rounded-circle d-flex align-items-center justify-content-center"
+                 style="width: 80px; height: 80px; font-size: 2rem;">
+              {{ vendeur.username[:1].upper() }}
+            </div>
+          </div>
+        </div>
+        <div class="card-body pt-0 text-center">
+          <h5 class="h3 mb-0">{{ vendeur.username }}</h5>
+          <div class="h5 font-weight-300 text-muted">
+            <i class="fas fa-phone mr-2"></i>{{ vendeur.phone }}
+          </div>
+          {% if vendeur.email %}
+          <div class="h5 font-weight-300 text-muted">
+            <i class="fas fa-envelope mr-2"></i>{{ vendeur.email }}
+          </div>
+          {% endif %}
+          <hr class="my-4">
+          <div class="row">
+            <div class="col">
+              <span class="text-muted">Statut</span>
+              <div class="h5 mt-2">
+                {% if vendeur.is_active %}
+                  <span class="badge badge-lg badge-success">Actif</span>
+                {% else %}
+                  <span class="badge badge-lg badge-danger">Inactif</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="col">
+              <span class="text-muted">Inscrit le</span>
+              <div class="h5 mt-2">{{ vendeur.created_at.strftime('%d/%m/%Y') }}</div>
+            </div>
+          </div>
+          {% if vendeur.last_login %}
+          <div class="mt-3">
+            <small class="text-muted">
+              Dernière connexion: {{ vendeur.last_login.strftime('%d/%m/%Y %H:%M') }}
+            </small>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Stockeurs List -->
+      <div class="card">
+        <div class="card-header">
+          <h5 class="h3 mb-0">Stockeurs ({{ stockeurs|length }})</h5>
+        </div>
+        <div class="card-body p-0">
+          <ul class="list-group list-group-flush">
+            {% for stockeur in stockeurs %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+              <div>
+                <i class="fas fa-user-tie mr-2 text-primary"></i>
+                <span class="font-weight-bold">{{ stockeur.username }}</span>
+                <br>
+                <small class="text-muted">{{ stockeur.phone }}</small>
+              </div>
+              <span class="badge badge-{% if stockeur.is_active %}success{% else %}danger{% endif %}">
+                {{ 'Actif' if stockeur.is_active else 'Inactif' }}
+              </span>
+            </li>
+            {% else %}
+            <li class="list-group-item text-center text-muted py-4">
+              Aucun stockeur
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="col-xl-8">
+      
+      <!-- Stock Levels -->
+      <div class="card">
+        <div class="card-header border-0">
+          <h5 class="h3 mb-0">Niveaux de Stock</h5>
+        </div>
+        <div class="table-responsive">
+          <table class="table align-items-center table-flush">
+            <thead class="thead-light">
+              <tr>
+                <th scope="col">Réseau</th>
+                <th scope="col">Stock Actuel</th>
+                <th scope="col">Prix Unitaire</th>
+                <th scope="col">Valeur</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for stock in stocks %}
+              <tr>
+                <td>
+                  <span class="font-weight-bold">{{ stock.network.value|upper }}</span>
+                </td>
+                <td>
+                  <span class="{% if stock.balance < 100 %}text-danger{% endif %}">
+                    {{ "{:,.0f}".format(stock.balance or 0) }}
+                  </span>
+                </td>
+                <td>{{ "{:,.0f}".format(stock.selling_price_per_unit or 0) }} FC</td>
+                <td>{{ "{:,.0f}".format((stock.balance or 0) * (stock.selling_price_per_unit or 0)) }} FC</td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="4" class="text-center text-muted py-4">Aucun stock configuré</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Recent Sales -->
+      <div class="card">
+        <div class="card-header border-0">
+          <h5 class="h3 mb-0">Ventes Récentes</h5>
+        </div>
+        <div class="table-responsive">
+          <table class="table align-items-center table-flush">
+            <thead class="thead-light">
+              <tr>
+                <th scope="col">ID</th>
+                <th scope="col">Client</th>
+                <th scope="col">Total</th>
+                <th scope="col">Payé</th>
+                <th scope="col">Dette</th>
+                <th scope="col">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for sale in recent_sales %}
+              <tr>
+                <td>#{{ sale.id }}</td>
+                <td>{{ sale.client.name if sale.client else (sale.client_name_adhoc or 'N/A') }}</td>
+                <td>{{ "{:,.0f}".format(sale.total_amount_due) }} FC</td>
+                <td>{{ "{:,.0f}".format(sale.cash_paid) }} FC</td>
+                <td>
+                  {% if sale.debt_amount > 0 %}
+                    <span class="text-warning">{{ "{:,.0f}".format(sale.debt_amount) }} FC</span>
+                  {% else %}
+                    <span class="text-success">0</span>
+                  {% endif %}
+                </td>
+                <td>{{ sale.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="6" class="text-center text-muted py-4">Aucune vente enregistrée</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Clients Preview -->
+      <div class="card">
+        <div class="card-header border-0">
+          <div class="row align-items-center">
+            <div class="col">
+              <h5 class="h3 mb-0">Clients ({{ clients|length }}{% if clients|length >= 10 %}+{% endif %})</h5>
+            </div>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table align-items-center table-flush">
+            <thead class="thead-light">
+              <tr>
+                <th scope="col">Nom</th>
+                <th scope="col">Téléphone</th>
+                <th scope="col">Adresse</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for client in clients %}
+              <tr>
+                <td>{{ client.name }}</td>
+                <td>{{ client.phone or '-' }}</td>
+                <td>{{ client.address or '-' }}</td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="3" class="text-center text-muted py-4">Aucun client enregistré</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  {% include "includes/footer.html" %}
+</div>
+{% endblock content %}

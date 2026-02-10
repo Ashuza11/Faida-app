@@ -1,6 +1,6 @@
 from .config import DebugConfig
 import logging
-from flask import Flask
+from flask import Flask, app
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_login import LoginManager
@@ -48,6 +48,9 @@ def create_app(config_object=DebugConfig):
         # Register PDF blueprint
         from apps.main.pdf_routes import pdf_bp
         app.register_blueprint(pdf_bp)
+
+        from apps.admin import admin_bp
+        app.register_blueprint(admin_bp)
 
         from .auth import bp as auth_bp
 
