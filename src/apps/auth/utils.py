@@ -15,7 +15,8 @@ def create_superadmin():
 
     admin_data = full_seed_data.get("superadmin_user")
     if not admin_data:
-        current_app.logger.error("Superadmin data not found in seed_data.json.")
+        current_app.logger.error(
+            "Superadmin data not found in seed_data.json.")
         return False
 
     try:
@@ -23,7 +24,9 @@ def create_superadmin():
         if not User.query.filter_by(role=RoleType.SUPERADMIN).first():
             superadmin = User(
                 username=admin_data["username"],
-                email=admin_data["email"],
+                phone=admin_data["phone"],
+                # email=admin_data["email"],
+                email=admin_data.get("email"),
                 role=RoleType.SUPERADMIN,
                 is_active=True,
             )

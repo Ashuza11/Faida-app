@@ -1,5 +1,5 @@
 # ============================================================
-# Raida App Buisiness Logic
+# Faida App Buisiness Logic
 # ============================================================
 from apps.main import pdf_routes
 from apps.main import bp

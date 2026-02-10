@@ -1,0 +1,199 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} Gestion Vendeurs {% endblock %}
+
+{% block content %}
+<div class="header bg-primary pb-6">
+  <div class="container-fluid">
+    <div class="header-body">
+      <div class="row align-items-center py-4">
+        <div class="col-lg-6 col-7">
+          <h6 class="h2 text-white d-inline-block mb-0">Vendeurs</h6>
+          <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
+            <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
+              <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}"><i class="fas fa-home"></i></a></li>
+              <li class="breadcrumb-item"><a href="{{ url_for('admin_bp.dashboard') }}">Admin</a></li>
+              <li class="breadcrumb-item active">Vendeurs</li>
+            </ol>
+          </nav>
+        </div>
+        <div class="col-lg-6 col-5 text-right">
+          <a href="{{ url_for('admin_bp.invite_codes_list') }}" class="btn btn-sm btn-neutral">
+            <i class="fas fa-key mr-2"></i>Codes d'invitation
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="container-fluid mt--6">
+  <div class="row">
+    <div class="col">
+      <div class="card">
+        <!-- Card header with search -->
+        <div class="card-header border-0">
+          <div class="row align-items-center">
+            <div class="col-md-6">
+              <h3 class="mb-0">Liste des Vendeurs</h3>
+            </div>
+            <div class="col-md-6">
+              <form method="GET" class="d-flex justify-content-end">
+                <div class="input-group input-group-merge" style="max-width: 300px;">
+                  <div class="input-group-prepend">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                  </div>
+                  <input type="text" name="search" class="form-control" 
+                         placeholder="Rechercher..." value="{{ search }}">
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div class="table-responsive">
+          <table class="table align-items-center table-flush">
+            <thead class="thead-light">
+              <tr>
+                <th scope="col">Vendeur</th>
+                <th scope="col">Contact</th>
+                <th scope="col">Stockeurs</th>
+                <th scope="col">Clients</th>
+                <th scope="col">Ventes Totales</th>
+                <th scope="col">Statut</th>
+                <th scope="col">Inscrit le</th>
+                <th scope="col"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for vendeur in vendeurs.items %}
+              {% set stats = vendeur_stats[vendeur.id] %}
+              <tr>
+                <td>
+                  <div class="d-flex align-items-center">
+                    <div class="avatar avatar-sm bg-gradient-primary text-white rounded-circle mr-3 d-flex align-items-center justify-content-center" style="width: 36px; height: 36px;">
+                      <span class="font-weight-bold">{{ vendeur.username[:1].upper() }}</span>
+                    </div>
+                    <div>
+                      <span class="font-weight-bold">{{ vendeur.username }}</span>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span class="d-block">{{ vendeur.phone }}</span>
+                  {% if vendeur.email %}
+                  <small class="text-muted">{{ vendeur.email }}</small>
+                  {% endif %}
+                </td>
+                <td>
+                  <span class="badge badge-info">{{ stats.stockeurs }}</span>
+                </td>
+                <td>
+                  <span class="badge badge-default">{{ stats.clients }}</span>
+                </td>
+                <td>
+                  <span class="font-weight-bold">{{ "{:,.0f}".format(stats.total_sales) }} FC</span>
+                </td>
+                <td>
+                  {% if vendeur.is_active %}
+                    <span class="badge badge-dot mr-4">
+                      <i class="bg-success"></i>
+                      <span class="status">Actif</span>
+                    </span>
+                  {% else %}
+                    <span class="badge badge-dot mr-4">
+                      <i class="bg-danger"></i>
+                      <span class="status">Inactif</span>
+                    </span>
+                  {% endif %}
+                </td>
+                <td>{{ vendeur.created_at.strftime('%d/%m/%Y') }}</td>
+                <td class="text-right">
+                  <div class="dropdown">
+                    <a class="btn btn-sm btn-icon-only text-light" href="#" role="button" 
+                       data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                      <i class="fas fa-ellipsis-v"></i>
+                    </a>
+                    <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
+                      <a class="dropdown-item" href="{{ url_for('admin_bp.vendeur_detail', vendeur_id=vendeur.id) }}">
+                        <i class="fas fa-eye mr-2"></i>Voir détails
+                      </a>
+                      <form action="{{ url_for('admin_bp.toggle_vendeur_status', vendeur_id=vendeur.id) }}" 
+                            method="POST" class="d-inline">
+                        <button type="submit" class="dropdown-item">
+                          {% if vendeur.is_active %}
+                            <i class="fas fa-ban mr-2 text-danger"></i>Désactiver
+                          {% else %}
+                            <i class="fas fa-check mr-2 text-success"></i>Activer
+                          {% endif %}
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="8" class="text-center py-5">
+                  <i class="fas fa-store fa-3x text-muted mb-3"></i>
+                  <p class="text-muted">
+                    {% if search %}
+                      Aucun vendeur trouvé pour "{{ search }}"
+                    {% else %}
+                      Aucun vendeur enregistré
+                    {% endif %}
+                  </p>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if vendeurs.pages > 1 %}
+        <div class="card-footer py-4">
+          <nav aria-label="Pagination">
+            <ul class="pagination justify-content-end mb-0">
+              {% if vendeurs.has_prev %}
+              <li class="page-item">
+                <a class="page-link" href="{{ url_for('admin_bp.vendeurs_list', page=vendeurs.prev_num, search=search) }}">
+                  <i class="fas fa-angle-left"></i>
+                  <span class="sr-only">Précédent</span>
+                </a>
+              </li>
+              {% endif %}
+              
+              {% for page_num in vendeurs.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+                {% if page_num %}
+                  <li class="page-item {% if page_num == vendeurs.page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin_bp.vendeurs_list', page=page_num, search=search) }}">
+                      {{ page_num }}
+                    </a>
+                  </li>
+                {% else %}
+                  <li class="page-item disabled"><span class="page-link">...</span></li>
+                {% endif %}
+              {% endfor %}
+              
+              {% if vendeurs.has_next %}
+              <li class="page-item">
+                <a class="page-link" href="{{ url_for('admin_bp.vendeurs_list', page=vendeurs.next_num, search=search) }}">
+                  <i class="fas fa-angle-right"></i>
+                  <span class="sr-only">Suivant</span>
+                </a>
+              </li>
+              {% endif %}
+            </ul>
+          </nav>
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+  </div>
+
+  {% include "includes/footer.html" %}
+</div>
+{% endblock content %}

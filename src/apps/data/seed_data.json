@@ -11,6 +11,7 @@
   },
   "superadmin_user": {
     "username": "superadmin",
+    "phone": "+243810000000",
     "email": "superadmin@airtfast.com",
     "password": "Admin@123"
   }

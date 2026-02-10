@@ -1,74 +1,36 @@
-# render.yaml - Render Blueprint for Faida App
-# https://render.com/docs/blueprint-spec
-#
-# This uses Neon PostgreSQL (external) instead of Render's database
-# for better free tier and serverless support.
+# render.yaml - Render Blueprint Configuration
+# This file tells Render how to deploy your application
+# Place this in your repository root
 
 services:
   - type: web
-    name: Faida App
-    runtime: docker
-
+    name: faida-app
+    env: docker
+    region: frankfurt  # or your preferred region
+    plan: free  # or starter, standard, etc.
+    
     # Docker configuration
     dockerfilePath: ./src/Dockerfile
     dockerContext: ./src
-
-    # Plan (free tier available)
-    plan: free
-
-    # Region - closest to Central Africa
-    region: frankfurt
-
-    # Auto-deploy from main branch
-    branch: main
-    autoDeploy: true
-
-    # Health check endpoint
+    
+    # Health check
     healthCheckPath: /health
-
-    # Environment variables
+    
+    # Environment variables (set these in Render Dashboard)
     envVars:
-      # Flask configuration
-      - key: FLASK_APP
-        value: run.py
       - key: FLASK_ENV
         value: production
-
-      # Security - auto-generate secure key
-      - key: SECRET_KEY
-        generateValue: true
-
-      # Database - Neon PostgreSQL (set manually in dashboard)
-      # Copy your Neon production connection string here
       - key: DATABASE_URL
-        sync: false # Must be set manually in Render dashboard
-
-      # Python settings
-      - key: PYTHON_VERSION
-        value: "3.11"
-
-      # Gunicorn workers
-      - key: WEB_CONCURRENCY
-        value: "2"
-
-    # Build command (runs during build phase)
-    buildCommand: |
-      pip install --upgrade pip
-      pip install -r requirements.txt
-
-    # Start command (runs when starting the service)
-    # The entrypoint.sh handles migrations and initialization
-    startCommand: ./entrypoint.sh
-
-# ===========================================
-# IMPORTANT: After deploying, you must:
-# ===========================================
-# 1. Go to Render Dashboard → Faida App service → Environment
-# 2. Add DATABASE_URL with your Neon production connection string
-# 3. Trigger a manual deploy or push a new commit
-#
-# Neon connection string format:
-# postgresql://user:password@ep-xxx-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require
-#
-# Make sure to use the POOLED connection string (-pooler in hostname)
-# ===========================================
+        sync: false  # Set manually in dashboard (Neon Production URL)
+      - key: SECRET_KEY
+        generateValue: true  # Render generates a secure random value
+      - key: APP_TIMEZONE
+        value: Africa/Lubumbashi
+      - key: PYTHONUNBUFFERED
+        value: "1"
+    
+    # Build configuration
+    buildCommand: ""  # Docker handles this
+    
+    # Start command (overrides Dockerfile CMD)
+    startCommand: "gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 run:app"

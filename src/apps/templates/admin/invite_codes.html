@@ -1,0 +1,314 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} Codes d'Invitation {% endblock %}
+
+{% block content %}
+<div class="header bg-primary pb-6">
+  <div class="container-fluid">
+    <div class="header-body">
+      <div class="row align-items-center py-4">
+        <div class="col-lg-6 col-7">
+          <h6 class="h2 text-white d-inline-block mb-0">Codes d'Invitation</h6>
+          <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
+            <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
+              <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}"><i class="fas fa-home"></i></a></li>
+              <li class="breadcrumb-item"><a href="{{ url_for('admin_bp.dashboard') }}">Admin</a></li>
+              <li class="breadcrumb-item active">Codes</li>
+            </ol>
+          </nav>
+        </div>
+        <div class="col-lg-6 col-5 text-right">
+          <button type="button" class="btn btn-sm btn-neutral" data-toggle="modal" data-target="#createCodeModal">
+            <i class="fas fa-plus mr-2"></i>Nouveau Code
+          </button>
+        </div>
+      </div>
+
+      <!-- Stats Cards -->
+      <div class="row">
+        <div class="col-xl-4 col-md-4">
+          <div class="card card-stats">
+            <div class="card-body">
+              <div class="row">
+                <div class="col">
+                  <h5 class="card-title text-uppercase text-muted mb-0">Total Codes</h5>
+                  <span class="h2 font-weight-bold mb-0">{{ total_codes }}</span>
+                </div>
+                <div class="col-auto">
+                  <div class="icon icon-shape bg-gradient-info text-white rounded-circle shadow">
+                    <i class="fas fa-key"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-xl-4 col-md-4">
+          <div class="card card-stats">
+            <div class="card-body">
+              <div class="row">
+                <div class="col">
+                  <h5 class="card-title text-uppercase text-muted mb-0">Codes Actifs</h5>
+                  <span class="h2 font-weight-bold mb-0 text-success">{{ active_codes }}</span>
+                </div>
+                <div class="col-auto">
+                  <div class="icon icon-shape bg-gradient-success text-white rounded-circle shadow">
+                    <i class="fas fa-check"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-xl-4 col-md-4">
+          <div class="card card-stats">
+            <div class="card-body">
+              <div class="row">
+                <div class="col">
+                  <h5 class="card-title text-uppercase text-muted mb-0">Codes Utilisés</h5>
+                  <span class="h2 font-weight-bold mb-0 text-muted">{{ used_codes }}</span>
+                </div>
+                <div class="col-auto">
+                  <div class="icon icon-shape bg-gradient-warning text-white rounded-circle shadow">
+                    <i class="fas fa-user-check"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="container-fluid mt--6">
+  <div class="row">
+    <div class="col">
+      <div class="card">
+        <!-- Card header with filters -->
+        <div class="card-header border-0">
+          <div class="row align-items-center">
+            <div class="col-md-6">
+              <h3 class="mb-0">Liste des Codes</h3>
+            </div>
+            <div class="col-md-6 text-right">
+              <div class="btn-group" role="group">
+                <a href="{{ url_for('admin_bp.invite_codes_list', status='all') }}" 
+                   class="btn btn-sm {% if status_filter == 'all' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                  Tous
+                </a>
+                <a href="{{ url_for('admin_bp.invite_codes_list', status='active') }}" 
+                   class="btn btn-sm {% if status_filter == 'active' %}btn-success{% else %}btn-outline-success{% endif %}">
+                  Actifs
+                </a>
+                <a href="{{ url_for('admin_bp.invite_codes_list', status='used') }}" 
+                   class="btn btn-sm {% if status_filter == 'used' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+                  Utilisés
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div class="table-responsive">
+          <table class="table align-items-center table-flush">
+            <thead class="thead-light">
+              <tr>
+                <th scope="col">Code</th>
+                <th scope="col">Note</th>
+                <th scope="col">Statut</th>
+                <th scope="col">Utilisé par</th>
+                <th scope="col">Créé le</th>
+                <th scope="col">Utilisé le</th>
+                <th scope="col"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for code in codes.items %}
+              <tr>
+                <td>
+                  <div class="d-flex align-items-center">
+                    <code class="font-weight-bold h4 mb-0 {% if code.is_used %}text-muted{% else %}text-primary{% endif %}">
+                      {{ code.code }}
+                    </code>
+                    {% if not code.is_used %}
+                    <button class="btn btn-sm btn-link text-default copy-btn ml-2" 
+                            data-clipboard-text="{{ code.code }}" 
+                            title="Copier">
+                      <i class="fas fa-copy"></i>
+                    </button>
+                    {% endif %}
+                  </div>
+                </td>
+                <td>
+                  {% if code.note %}
+                    <span class="text-muted">{{ code.note }}</span>
+                  {% else %}
+                    <span class="text-muted">-</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if code.is_used %}
+                    <span class="badge badge-secondary">
+                      <i class="fas fa-check mr-1"></i>Utilisé
+                    </span>
+                  {% else %}
+                    <span class="badge badge-success">
+                      <i class="fas fa-clock mr-1"></i>Actif
+                    </span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if code.used_by %}
+                    <a href="{{ url_for('admin_bp.vendeur_detail', vendeur_id=code.used_by) }}" 
+                       class="text-primary">
+                      {% set user = code.used_by_user %}
+                      {% if user %}
+                        {{ user.username }}
+                      {% else %}
+                        Utilisateur #{{ code.used_by }}
+                      {% endif %}
+                    </a>
+                  {% else %}
+                    <span class="text-muted">-</span>
+                  {% endif %}
+                </td>
+                <td>{{ code.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
+                <td>
+                  {% if code.used_at %}
+                    {{ code.used_at.strftime('%d/%m/%Y %H:%M') }}
+                  {% else %}
+                    <span class="text-muted">-</span>
+                  {% endif %}
+                </td>
+                <td class="text-right">
+                  {% if not code.is_used %}
+                  <form action="{{ url_for('admin_bp.delete_invite_code', code_id=code.id) }}" 
+                        method="POST" class="d-inline"
+                        onsubmit="return confirm('Supprimer ce code ?');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="7" class="text-center py-5">
+                  <i class="fas fa-key fa-3x text-muted mb-3"></i>
+                  <p class="text-muted">
+                    {% if status_filter == 'active' %}
+                      Aucun code actif
+                    {% elif status_filter == 'used' %}
+                      Aucun code utilisé
+                    {% else %}
+                      Aucun code créé
+                    {% endif %}
+                  </p>
+                  <button type="button" class="btn btn-primary btn-sm" data-toggle="modal" data-target="#createCodeModal">
+                    <i class="fas fa-plus mr-2"></i>Créer un code
+                  </button>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if codes.pages > 1 %}
+        <div class="card-footer py-4">
+          <nav aria-label="Pagination">
+            <ul class="pagination justify-content-end mb-0">
+              {% if codes.has_prev %}
+              <li class="page-item">
+                <a class="page-link" href="{{ url_for('admin_bp.invite_codes_list', page=codes.prev_num, status=status_filter) }}">
+                  <i class="fas fa-angle-left"></i>
+                </a>
+              </li>
+              {% endif %}
+              
+              {% for page_num in codes.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+                {% if page_num %}
+                  <li class="page-item {% if page_num == codes.page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin_bp.invite_codes_list', page=page_num, status=status_filter) }}">
+                      {{ page_num }}
+                    </a>
+                  </li>
+                {% else %}
+                  <li class="page-item disabled"><span class="page-link">...</span></li>
+                {% endif %}
+              {% endfor %}
+              
+              {% if codes.has_next %}
+              <li class="page-item">
+                <a class="page-link" href="{{ url_for('admin_bp.invite_codes_list', page=codes.next_num, status=status_filter) }}">
+                  <i class="fas fa-angle-right"></i>
+                </a>
+              </li>
+              {% endif %}
+            </ul>
+          </nav>
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+  </div>
+
+  {% include "includes/footer.html" %}
+</div>
+
+<!-- Create Code Modal -->
+<div class="modal fade" id="createCodeModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Nouveau Code d'Invitation</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Fermer">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <form action="{{ url_for('admin_bp.create_invite_code') }}" method="POST">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-control-label">Note (optionnel)</label>
+            <input type="text" name="note" class="form-control" 
+                   placeholder="Ex: Pour Ets. Mumbere, Goma">
+            <small class="text-muted">Une note pour vous rappeler pour qui ce code est destiné</small>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Annuler</button>
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-key mr-2"></i>Générer le Code
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock content %}
+
+{% block javascripts %}
+{{ super() }}
+<script>
+// Copy to clipboard functionality
+document.querySelectorAll('.copy-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        var code = this.getAttribute('data-clipboard-text');
+        navigator.clipboard.writeText(code).then(function() {
+            // Show feedback
+            var icon = btn.querySelector('i');
+            icon.className = 'fas fa-check text-success';
+            setTimeout(function() {
+                icon.className = 'fas fa-copy';
+            }, 2000);
+        });
+    });
+});
+</script>
+{% endblock javascripts %}
