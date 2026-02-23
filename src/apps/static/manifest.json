@@ -1,0 +1,39 @@
+{
+  "name": "Faida — Gestion Ventes",
+  "short_name": "Faida",
+  "description": "Application de gestion de ventes et de stock pour vendeurs en RDC",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8f9fe",
+  "theme_color": "#5e72e4",
+  "orientation": "portrait-primary",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "/static/assets/img/brand/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/static/assets/img/brand/favicon.ico",
+      "sizes": "192x192",
+      "type": "image/x-icon",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "finance"],
+  "shortcuts": [
+    {
+      "name": "Nouvelle Vente",
+      "short_name": "Vente",
+      "url": "/vente_stock",
+      "description": "Enregistrer une nouvelle vente"
+    },
+    {
+      "name": "Achat Stock",
+      "short_name": "Stock",
+      "url": "/achat_stock",
+      "description": "Enregistrer un achat de stock"
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <title>Faida — Hors ligne</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f8f9fe;
+      color: #32325d;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .offline-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 40px 32px;
+      max-width: 440px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(0,0,0,.08);
+    }
+    .offline-icon {
+      font-size: 64px;
+      margin-bottom: 20px;
+      display: block;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: #32325d;
+      margin-bottom: 12px;
+    }
+    p {
+      font-size: 15px;
+      color: #8898aa;
+      line-height: 1.6;
+      margin-bottom: 12px;
+    }
+    .hint {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-top: 20px;
+      font-size: 13px;
+      color: #856404;
+      text-align: left;
+    }
+    .hint strong { display: block; margin-bottom: 4px; }
+    .btn-retry {
+      display: inline-block;
+      margin-top: 24px;
+      background: #5e72e4;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 12px 28px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .btn-retry:hover { background: #4a5fcf; }
+  </style>
+</head>
+<body>
+  <div class="offline-card">
+    <span class="offline-icon">📡</span>
+    <h1>Vous êtes hors ligne</h1>
+    <p>Impossible de charger cette page sans connexion internet.</p>
+    <p>Pour enregistrer des ventes et achats hors ligne, ouvrez d'abord ces pages lorsque vous êtes connecté afin qu'elles soient mises en cache.</p>
+    <div class="hint">
+      <strong>Comment ça marche ?</strong>
+      Les ventes, achats de stock et sorties cash sont automatiquement sauvegardés localement lorsque vous êtes hors ligne, puis synchronisés dès la reconnexion.
+    </div>
+    <a href="/" class="btn-retry" onclick="window.location.reload(); return false;">
+      Réessayer la connexion
+    </a>
+  </div>
+</body>
+</html>

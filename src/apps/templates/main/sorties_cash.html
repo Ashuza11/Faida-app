@@ -21,9 +21,16 @@
           <div class="card">
             <div class="card-header border-0">
               <h3 class="mb-0">Actions Cash</h3>
-              <div class="mr-2 mt-2">
-                {{ filters.render_date_filter(url_for('main_bp.sorties_cash'), selected_date, show_label=False) }}
-              </div>
+              <div class="mb-2 mt-2">
+                  <form method="GET" action="{{ url_for('main_bp.vente_stock') }}" class="d-flex align-items-center m-0">
+                    <input type="date" 
+                        name="date" 
+                        value="{{ selected_date }}" 
+                        class="form-control form-control-sm bg-white"
+                        style="width: 150px; height: 38px;"
+                        onchange="this.form.submit()">
+                  </form>
+                </div>
             </div>
             <div class="card-body">
               <div class="row"> 

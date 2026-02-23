@@ -404,16 +404,22 @@ class SaleForm(FlaskForm):
         return True
 
 
-def get_sales_with_debt():
-    sales = Sale.query.filter(Sale.debt_amount > Decimal("0.00")).all()
-    choices = [
+def get_sales_with_debt(vendeur_id=None):
+    """Return (id, label) choices for sales that still have outstanding debt.
+    Always pass vendeur_id so only that business's sales are shown.
+    """
+    query = Sale.query.filter(Sale.debt_amount > Decimal("0.00"))
+    if vendeur_id is not None:
+        query = query.filter(Sale.vendeur_id == vendeur_id)
+    sales = query.order_by(Sale.created_at.desc()).all()
+    return [
         (
             s.id,
-            f"Vente ID: {s.id} - Client: {s.client.name if s.client else s.client_name_adhoc} (Dette: {s.debt_amount:,.2f} FC)",
+            f"Vente #{s.id} — {s.client.name if s.client else (s.client_name_adhoc or 'Inconnu')} "
+            f"(Dette: {s.debt_amount:,.2f} FC)",
         )
         for s in sales
     ]
-    return choices
 
 
 class CashOutflowForm(FlaskForm):
@@ -450,9 +456,9 @@ class DebtCollectionForm(FlaskForm):
 
     def __init__(self, *args, **kwargs):
         super(DebtCollectionForm, self).__init__(*args, **kwargs)
-        self.sale_id.choices = [
-            (str(sale[0]), sale[1]) for sale in get_sales_with_debt()
-        ]
+        # Choices are set by the route after instantiation using get_sales_with_debt(vendeur_id=...)
+        if not self.sale_id.choices:
+            self.sale_id.choices = []
 
 
 # User Profile Form

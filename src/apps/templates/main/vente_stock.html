@@ -140,17 +140,40 @@
             <div class="col-xl-12">
                 <div class="card">
                     <div class="card-header border-0">
-                        <h3 class="mb-0">Historique des Ventes</h3>
-                    </div>
-                    <div class="card-body">
-                        {# Render the filter component #}
-                        {{ filters.render_date_filter(url_for('main_bp.vente_stock'), selected_date) }}
+                        <div class="d-flex align-items-center justify-content-between flex-wrap" style="gap:10px;">
+                            <h3 class="mb-0">Historique des Ventes</h3>
+                            <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                                <!-- Date filter -->
+                                <form method="GET" action="{{ url_for('main_bp.vente_stock') }}" class="m-0">
+                                    <input type="date"
+                                           name="date"
+                                           value="{{ selected_date }}"
+                                           class="form-control form-control-sm bg-white"
+                                           style="height:36px;"
+                                           onchange="this.form.submit()">
+                                </form>
+                                <!-- Live client search (filters rows on this page) -->
+                                <div class="input-group input-group-sm" style="width:200px;">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text bg-white border-right-0">
+                                            <i class="fas fa-search text-muted" style="font-size:12px;"></i>
+                                        </span>
+                                    </div>
+                                    <input id="vente-client-search"
+                                           type="text"
+                                           class="form-control border-left-0"
+                                           placeholder="Chercher client…"
+                                           autocomplete="off"
+                                           style="height:36px;">
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div class="table-responsive">
                         <table class="table align-items-center table-flush">
                             <thead class="thead-light">
                                 <tr>
-                                    <th scope="col">ID Vente</th>
+                                    <th scope="col">#</th>
                                     <th scope="col">Client</th>
                                     <th scope="col">Vendeur</th>
                                     <th scope="col">Détails des Articles</th>
@@ -161,7 +184,7 @@
                                     <th scope="col">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="sales-history-tbody">
                             {% for sale in sales_pagination.items %} 
                                     <tr>
                                         <td>{{ sale.id }}</td>
@@ -369,12 +392,49 @@
                 $('#editCashModal').modal('show');
             });
 
-            // You might already have this for general form submission
-            // But ensure it handles success/error messages appropriately
-            $('#editCashForm').on('submit', function(e) {
-                // You can add AJAX submission here if you don't want a full page reload
-                // For now, let's assume it submits normally and Flask flashes messages.
-            });
+            // Edit cash form submits normally
+            $('#editCashForm').on('submit', function(e) {});
         });
+    </script>
+
+    <!-- Live client search for the sales history table -->
+    <script>
+    (function () {
+      var input = document.getElementById('vente-client-search');
+      if (!input) return;
+
+      // The sales table tbody (second table on the page)
+      var tbody = document.querySelector('#sales-history-tbody');
+
+      input.addEventListener('input', function () {
+        var q = this.value.trim().toLowerCase();
+        var rows = tbody ? tbody.querySelectorAll('tr:not(.faida-no-result)') : [];
+        var visible = 0;
+
+        rows.forEach(function (row) {
+          // Client name is in the 2nd <td>
+          var clientCell = row.querySelector('td:nth-child(2)');
+          var text = clientCell ? clientCell.textContent.toLowerCase() : row.textContent.toLowerCase();
+          var match = !q || text.includes(q);
+          row.style.display = match ? '' : 'none';
+          if (match) visible++;
+        });
+
+        // No-results feedback
+        var nr = tbody ? tbody.querySelector('.faida-no-result') : null;
+        if (!q || visible > 0) {
+          if (nr) nr.remove();
+        } else {
+          if (!nr && tbody) {
+            nr = document.createElement('tr');
+            nr.className = 'faida-no-result';
+            nr.innerHTML = '<td colspan="9" class="text-center text-muted py-3">' +
+              '<i class="fas fa-search mr-2"></i>Aucun client "<strong>' +
+              q.replace(/</g, '&lt;') + '</strong>" trouvé sur cette page</td>';
+            tbody.appendChild(nr);
+          }
+        }
+      });
+    })();
     </script>
 {% endblock javascripts %}

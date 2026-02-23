@@ -18,7 +18,8 @@ from reportlab.platypus import (
     Paragraph,
     Spacer,
     Image,
-    HRFlowable
+    HRFlowable,
+    KeepTogether,
 )
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 
@@ -94,9 +95,9 @@ def generate_daily_report_pdf(
     section_style = ParagraphStyle(
         'SectionHeader',
         parent=styles['Heading2'],
-        fontSize=14,
-        spaceBefore=20,
-        spaceAfter=10,
+        fontSize=13,
+        spaceBefore=8,
+        spaceAfter=6,
         textColor=colors.HexColor('#32325d')
     )
 
@@ -229,11 +230,7 @@ def generate_daily_report_pdf(
     table.setStyle(table_style)
     story.append(table)
 
-    # === SUMMARY SECTION ===
-    story.append(Spacer(1, 30))
-    story.append(Paragraph("Résumé", section_style))
-
-    # Summary data as a simple 2-column table
+    # === SUMMARY + FOOTER — kept together so footer never orphans on page 2 ===
     summary_data = [
         ['Stock Vendu Calculé:', format_number(grand_totals.get(
             'total_calculated_sold_stock', 0)) + ' unités'],
@@ -248,30 +245,33 @@ def generate_daily_report_pdf(
     summary_table.setStyle(TableStyle([
         ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
         ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
         ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
         ('ALIGN', (1, 0), (1, -1), 'LEFT'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
     ]))
 
-    story.append(summary_table)
-
-    # === FOOTER ===
-    story.append(Spacer(1, 40))
-    story.append(HRFlowable(
-        width="100%",
-        thickness=0.5,
-        color=colors.HexColor('#e9ecef'),
-        spaceBefore=10,
-        spaceAfter=10
-    ))
-
     generated_at = datetime.now().strftime("%d/%m/%Y à %H:%M")
-    story.append(Paragraph(
-        f"Rapport généré le {generated_at} • Faida App",
-        footer_style
-    ))
+
+    closing_block = KeepTogether([
+        Spacer(1, 10),
+        Paragraph("Résumé", section_style),
+        summary_table,
+        Spacer(1, 12),
+        HRFlowable(
+            width="100%",
+            thickness=0.5,
+            color=colors.HexColor('#e9ecef'),
+            spaceBefore=4,
+            spaceAfter=6,
+        ),
+        Paragraph(
+            f"Rapport généré le {generated_at} • Faida App",
+            footer_style,
+        ),
+    ])
+    story.append(closing_block)
 
     # Build PDF
     doc.build(story)
