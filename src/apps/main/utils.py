@@ -29,32 +29,14 @@ getcontext().prec = 10
 
 def initialize_stock_items(app):
     """
-    Initializes default stock entries for each network type if they don't exist.
+    DEPRECATED — single-tenant legacy function. Do not use.
+    Stock is now created per-vendeur via create_stock_for_vendeur() in models.py,
+    called automatically when a vendeur registers.
     """
-    with app.app_context():
-        # Only initialize if no stock items exist at all,
-        # otherwise, seed_initial_stock_balances handles specific initial values.
-        if not Stock.query.first():
-            for network_type in NetworkType:
-                if not Stock.query.filter_by(network=network_type).first():
-                    initial_stock_item = Stock(
-                        network=network_type,
-                        balance=0,
-                        buying_price_per_unit=Decimal("26.79"),
-                        selling_price_per_unit=Decimal(
-                            "27.00"
-                        ),  # Ensure a selling price is set
-                    )
-                    db.session.add(initial_stock_item)
-                    current_app.logger.info(
-                        f"Initialized Stock for {network_type.value}"
-                    )
-            db.session.commit()
-            current_app.logger.info("Stock initialization complete.")
-        else:
-            current_app.logger.info(
-                "Stock items already exist, skipping default initialization."
-            )
+    raise RuntimeError(
+        "initialize_stock_items() is deprecated. "
+        "Use create_stock_for_vendeur(vendeur_id) from models.py instead."
+    )
 
 
 def custom_round_up(amount: Decimal) -> Decimal:
@@ -231,7 +213,7 @@ def get_paginated_results(base_query, endpoint_name, per_page_config_key, **extr
 
     # 2. Determine items per page from application config
     # Default to 5 if config not set
-    per_page = current_app.config.get(per_page_config_key, 5)
+    per_page = current_app.config.get(per_page_config_key, 30)
 
     # 3. Perform pagination
     pagination = db.paginate(
@@ -259,6 +241,7 @@ def get_stock_purchase_history_query(date_filter=True, date_arg_key='date'):
     """
     Builds the base SQLAlchemy query for 'Historique des Achats Stock',
     optionally filtering by date from the request arguments.
+    Automatically scopes results to the current user's vendeur via Stock join.
 
     Args:
         date_filter (bool): If True, applies the date filter based on request.args.
@@ -268,8 +251,17 @@ def get_stock_purchase_history_query(date_filter=True, date_arg_key='date'):
         SQLAlchemy Query object: The base query, ordered by creation date (desc).
     """
 
-    # Start with the base query for the StockPurchase model
-    query = StockPurchase.query.order_by(StockPurchase.created_at.desc())
+    # Join Stock to allow filtering by vendeur_id (StockPurchase has no direct vendeur_id)
+    query = (
+        StockPurchase.query
+        .join(Stock, StockPurchase.stock_item_id == Stock.id)
+        .order_by(StockPurchase.created_at.desc())
+    )
+
+    # Apply vendeur filter — platform admin sees all
+    vendeur_id = get_current_vendeur_id()
+    if vendeur_id is not None:
+        query = query.filter(Stock.vendeur_id == vendeur_id)
 
     # Apply date filter if requested
     if date_filter:
@@ -332,6 +324,7 @@ def get_daily_report_data(
     """
     Calculates comprehensive report data for a single target date based on live transactions.
     It includes the critical fix for the 'Initial Stock' calculation when no prior report exists.
+    vendeur_id must be provided to scope all queries to a single business.
     """
 
     # Use the passed UTC ranges directly as they are correctly calculated by the caller (rapports)
@@ -348,27 +341,33 @@ def get_daily_report_data(
     report_results = {}
     total_sales_value_all = Decimal("0.00")
 
-    # 2. Pre-fetch Live Data (Current State and Pricing)
-    live_stock_items = Stock.query.all()
+    # 2. Pre-fetch Live Data (Current State and Pricing) — scoped to this vendeur
+    stock_query = Stock.query
+    if vendeur_id is not None:
+        stock_query = stock_query.filter_by(vendeur_id=vendeur_id)
+    live_stock_items = stock_query.all()
     live_stock_map = {s.network: s for s in live_stock_items}
 
     # 3. Calculate Today's Movements (Purchases and Sales)
 
-    # A. Purchases
-    daily_purchases = (
+    # A. Purchases — filter through Stock.vendeur_id join
+    purchases_query = (
         db.session.query(
             StockPurchase.network,
             func.sum(StockPurchase.amount_purchased).label("total")
         )
+        .join(Stock, StockPurchase.stock_item_id == Stock.id)
         .filter(StockPurchase.created_at >= filter_start_dt, StockPurchase.created_at < filter_end_dt)
-        .group_by(StockPurchase.network)
-        .all()
     )
+    if vendeur_id is not None:
+        purchases_query = purchases_query.filter(
+            Stock.vendeur_id == vendeur_id)
+    daily_purchases = purchases_query.group_by(StockPurchase.network).all()
     purchases_map = {p.network: Decimal(
         str(p.total or 0)) for p in daily_purchases}
 
-    # B. Sales (Quantity & Value)
-    daily_sales = (
+    # B. Sales (Quantity & Value) — filter by Sale.vendeur_id
+    sales_query = (
         db.session.query(
             SaleItem.network,
             func.sum(SaleItem.quantity).label("qty"),
@@ -376,34 +375,41 @@ def get_daily_report_data(
         )
         .join(Sale)
         .filter(Sale.created_at >= filter_start_dt, Sale.created_at < filter_end_dt)
-        .group_by(SaleItem.network)
-        .all()
     )
+    if vendeur_id is not None:
+        sales_query = sales_query.filter(Sale.vendeur_id == vendeur_id)
+    daily_sales = sales_query.group_by(SaleItem.network).all()
     sales_qty_map = {s.network: Decimal(str(s.qty or 0)) for s in daily_sales}
     sales_val_map = {s.network: Decimal(str(s.val or 0)) for s in daily_sales}
 
-    # 4. Determine Previous Final Stock (Initial Stock Basis)
+    # 4. Determine Previous Final Stock (Initial Stock Basis) — scoped to this vendeur
     previous_day = target_date - timedelta(days=1)
-    previous_day_reports = DailyStockReport.query.filter_by(
-        report_date=previous_day).all()
+    prev_reports_query = DailyStockReport.query.filter_by(
+        report_date=previous_day)
+    if vendeur_id is not None:
+        prev_reports_query = prev_reports_query.filter_by(
+            vendeur_id=vendeur_id)
+    previous_day_reports = prev_reports_query.all()
     previous_stock_map = {
         r.network: r.final_stock_balance for r in previous_day_reports}
 
-    # 5. Calculate Debts (Cumulative up to end of period)
-    network_debts_map = {}
-    for network in networks:
-        debt_query = (
-            db.session.query(func.sum(Sale.debt_amount))
-            .join(SaleItem)
-            .filter(
-                SaleItem.network == network,
-                Sale.debt_amount > 0,
-                Sale.created_at <= filter_end_dt,
-            )
+    # 5. Calculate Debts (Cumulative up to end of period) — scoped to this vendeur
+    # We query total outstanding debt at the Sale level (not per-network) to avoid
+    # double-counting sales that span multiple networks.
+    debt_query = (
+        db.session.query(func.sum(Sale.debt_amount))
+        .filter(
+            Sale.debt_amount > 0,
+            Sale.created_at <= filter_end_dt,
         )
-        network_debts_map[network] = debt_query.scalar() or Decimal("0.00")
+    )
+    if vendeur_id is not None:
+        debt_query = debt_query.filter(Sale.vendeur_id == vendeur_id)
+    total_debts_overall = debt_query.scalar() or Decimal("0.00")
 
-    total_debts_overall = sum(network_debts_map.values(), Decimal("0.00"))
+    # Per-network debt map is kept as empty for display compatibility
+    # (debt is shown as total, not broken down per network)
+    network_debts_map = {network: Decimal("0.00") for network in networks}
 
     # 6. Build Final Report Data
     for network in networks:
@@ -618,11 +624,19 @@ def load_seed_data():
         return None
 
 
-def seed_initial_stock_balances(app, seed_report_date: date):
+def seed_initial_stock_balances(app, seed_report_date: date, vendeur_id: int):
     """
     Seeds initial DailyStockReport entries and updates the live Stock table
-    using data loaded from the external JSON configuration file.
+    for a specific vendeur using data loaded from the external JSON config file.
+
+    Args:
+        app: Flask application instance
+        seed_report_date: The date to use as the baseline report date
+        vendeur_id: The vendeur whose stock to seed (required — no global seeding)
     """
+    if vendeur_id is None:
+        raise ValueError(
+            "vendeur_id is required for seed_initial_stock_balances")
 
     # 1. Load Data
     full_seed_data = load_seed_data()
@@ -639,188 +653,126 @@ def seed_initial_stock_balances(app, seed_report_date: date):
         for network_name, balance in json_balances.items()
     }
 
-    buying_price_str = str(
-        Decimal(str(json_prices.get("buying_price_per_unit", "0.95")))
-    )
-    selling_price_str = str(
-        Decimal(str(json_prices.get("selling_price_per_unit", "1.00")))
-    )
+    buying_price = Decimal(
+        str(json_prices.get("buying_price_per_unit", "0.95")))
+    selling_price = Decimal(
+        str(json_prices.get("selling_price_per_unit", "1.00")))
 
     with app.app_context():
         app.logger.info(
-            f"Seeding initial DailyStockReport for {seed_report_date} and Stock table using JSON data."
+            f"Seeding initial data for vendeur_id={vendeur_id} "
+            f"on {seed_report_date} using JSON data."
         )
 
         try:
             with db.session.no_autoflush:
-                # --- Phase 1: Ensure the live Stock table has corresponding initial balances ---
+                # --- Phase 1: Update the live Stock table for this vendeur ---
                 for network, balance_decimal in mapped_initial_balances.items():
-                    stock_item = Stock.query.filter_by(network=network).first()
-
-                    # Values are already Decimal in Python, convert to string ONLY for DB assignment
-                    balance_str = str(balance_decimal)
+                    stock_item = Stock.query.filter_by(
+                        vendeur_id=vendeur_id, network=network
+                    ).first()
 
                     if stock_item:
-                        stock_item.balance = balance_str
+                        stock_item.balance = balance_decimal
+                        stock_item.buying_price_per_unit = buying_price
+                        stock_item.selling_price_per_unit = selling_price
                         app.logger.debug(
-                            f"Updated live Stock balance for {network.name} to {balance_str} (from JSON)."
+                            f"Updated Stock {network.name} for vendeur {vendeur_id}: "
+                            f"balance={balance_decimal}"
                         )
                     else:
                         new_stock_item = Stock(
+                            vendeur_id=vendeur_id,
                             network=network,
-                            balance=balance_str,
-                            buying_price_per_unit=buying_price_str,
-                            selling_price_per_unit=selling_price_str,
+                            balance=balance_decimal,
+                            buying_price_per_unit=buying_price,
+                            selling_price_per_unit=selling_price,
                         )
                         db.session.add(new_stock_item)
                         app.logger.debug(
-                            f"Created live Stock item for {network.name} with balance {balance_str} (from JSON)."
+                            f"Created Stock {network.name} for vendeur {vendeur_id}: "
+                            f"balance={balance_decimal}"
                         )
 
-                # --- Phase 2 & 3 (DailyStockReport and DailyOverallReport creation) ---
-                # NOTE: The rest of the logic remains unchanged, as it now correctly loops
-                # through the properly mapped `mapped_initial_balances` dictionary (which is aliased here).
-
-                # Use mapped_initial_balances for the rest of the seeding logic
-                initial_balances_for_seed = mapped_initial_balances
-
-                # ... (Rest of the original Phase 2 & 3 logic is correct and omitted here for brevity) ...
-
-                # --- Phase 2: Create/Update the DailyStockReport for the seed_report_date ---
-                for (
-                    network,
-                    initial_balance_decimal,
-                ) in mapped_initial_balances.items():  # Use the mapped dictionary
-                    # ... (Existing Report Logic)
-                    # NOTE: Ensure you complete the rest of the original function logic here.
+                # --- Phase 2: Create/Update DailyStockReport for the seed date ---
+                for network, initial_balance_decimal in mapped_initial_balances.items():
+                    # Virtual value uses SELLING price (consistent with live report calculation)
+                    virtual_value = initial_balance_decimal * selling_price
 
                     report = DailyStockReport.query.filter_by(
-                        report_date=seed_report_date, network=network
+                        report_date=seed_report_date,
+                        network=network,
+                        vendeur_id=vendeur_id,
                     ).first()
-
-                    current_stock_item_for_price = Stock.query.filter_by(
-                        network=network
-                    ).first()
-
-                    # Ensure price conversion is safe (from string in DB back to Decimal)
-                    buying_price_for_virtual_decimal = Decimal("0.00")
-                    if (
-                        current_stock_item_for_price
-                        and current_stock_item_for_price.buying_price_per_unit
-                        is not None
-                    ):
-                        try:
-                            buying_price_for_virtual_decimal = Decimal(
-                                str(current_stock_item_for_price.buying_price_per_unit)
-                            )
-                        except Exception:
-                            buying_price_for_virtual_decimal = Decimal("0.00")
-
-                    virtual_value_calculated_decimal = (
-                        initial_balance_decimal * buying_price_for_virtual_decimal
-                    )
-
-                    # Convert all relevant Decimal values to string before assigning/adding
-                    initial_stock_str = str(initial_balance_decimal)
-                    purchased_stock_str = str(Decimal("0.00"))
-                    sold_stock_str = str(Decimal("0.00"))
-                    final_stock_str = str(initial_balance_decimal)
-                    virtual_value_str = str(virtual_value_calculated_decimal)
-                    debt_amount_str = str(Decimal("0.00"))
 
                     if report:
                         app.logger.debug(
-                            f"Updating seed report for {network.name} on {seed_report_date}."
+                            f"Updating seed DailyStockReport {network.name} "
+                            f"vendeur={vendeur_id} date={seed_report_date}"
                         )
-                        report.initial_stock_balance = initial_stock_str
-                        report.final_stock_balance = final_stock_str
-                        report.purchased_stock_amount = purchased_stock_str
-                        report.sold_stock_amount = sold_stock_str
-                        report.virtual_value = virtual_value_str
-                        report.debt_amount = debt_amount_str
                     else:
-                        app.logger.debug(
-                            f"Creating seed report for {network.name} on {seed_report_date}."
-                        )
-                        new_report = DailyStockReport(
+                        report = DailyStockReport(
                             report_date=seed_report_date,
                             network=network,
-                            initial_stock_balance=initial_stock_str,
-                            purchased_stock_amount=purchased_stock_str,
-                            sold_stock_amount=sold_stock_str,
-                            final_stock_balance=final_stock_str,
-                            virtual_value=virtual_value_str,
-                            debt_amount=debt_amount_str,
+                            vendeur_id=vendeur_id,
                         )
-                        db.session.add(new_report)
+                        db.session.add(report)
+                        app.logger.debug(
+                            f"Creating seed DailyStockReport {network.name} "
+                            f"vendeur={vendeur_id} date={seed_report_date}"
+                        )
 
-                # --- Phase 3: Manual creation/update for DailyOverallReport for the seed date ---
-                all_seeded_daily_reports = DailyStockReport.query.filter_by(
-                    report_date=seed_report_date
+                    report.initial_stock_balance = initial_balance_decimal
+                    report.purchased_stock_amount = Decimal("0.00")
+                    report.sold_stock_amount = Decimal("0.00")
+                    report.final_stock_balance = initial_balance_decimal
+                    report.virtual_value = virtual_value
+                    report.debt_amount = Decimal("0.00")
+
+                # --- Phase 3: Create/Update DailyOverallReport for the seed date ---
+                # Re-fetch only THIS vendeur's reports for the seed date
+                all_seeded_reports = DailyStockReport.query.filter_by(
+                    report_date=seed_report_date,
+                    vendeur_id=vendeur_id,
                 ).all()
 
-                # Recalculate sums using Decimal conversion from DB value
                 total_initial = sum(
-                    Decimal(str(r.initial_stock_balance))
-                    for r in all_seeded_daily_reports
+                    Decimal(str(r.initial_stock_balance)) for r in all_seeded_reports
                 )
                 total_final = sum(
-                    Decimal(str(r.final_stock_balance))
-                    for r in all_seeded_daily_reports
+                    Decimal(str(r.final_stock_balance)) for r in all_seeded_reports
                 )
                 total_virtual = sum(
-                    Decimal(str(r.virtual_value)) for r in all_seeded_daily_reports
+                    Decimal(str(r.virtual_value)) for r in all_seeded_reports
                 )
-                total_debts_overall = Decimal(
-                    "0.00"
-                )  # Hardcoded to 0.00 for initial seed
 
-                overall_seed_report = DailyOverallReport.query.filter_by(
-                    report_date=seed_report_date
+                overall_report = DailyOverallReport.query.filter_by(
+                    report_date=seed_report_date,
+                    vendeur_id=vendeur_id,
                 ).first()
 
-                # Convert all relevant Decimal values to string before assigning/adding
-                total_initial_str = str(total_initial)
-                total_purchased_str = str(Decimal("0.00"))
-                total_sold_str = str(Decimal("0.00"))
-                total_final_str = str(total_final)
-                total_virtual_str = str(total_virtual)
-                total_debts_overall_str = str(total_debts_overall)
-                total_capital_circulant_str = str(total_virtual)
-                total_sales_from_transactions_str = str(Decimal("0.00"))
-
-                if overall_seed_report:
-                    overall_seed_report.total_initial_stock = total_initial_str
-                    overall_seed_report.total_final_stock = total_final_str
-                    overall_seed_report.total_virtual_value = total_virtual_str
-                    overall_seed_report.total_purchased_stock = total_purchased_str
-                    overall_seed_report.total_sold_stock = total_sold_str
-                    overall_seed_report.total_debts = total_debts_overall_str
-                    overall_seed_report.total_capital_circulant = (
-                        total_capital_circulant_str
-                    )
-                    overall_seed_report.total_sales_from_transactions = (
-                        total_sales_from_transactions_str
-                    )
-                else:
-                    overall_seed_report = DailyOverallReport(
+                if not overall_report:
+                    overall_report = DailyOverallReport(
                         report_date=seed_report_date,
-                        total_initial_stock=total_initial_str,
-                        total_purchased_stock=total_purchased_str,
-                        total_sold_stock=total_sold_str,
-                        total_final_stock=total_final_str,
-                        total_virtual_value=total_virtual_str,
-                        total_debts=total_debts_overall_str,
+                        vendeur_id=vendeur_id,
                     )
-                    db.session.add(overall_seed_report)
+                    db.session.add(overall_report)
+
+                overall_report.total_initial_stock = total_initial
+                overall_report.total_purchased_stock = Decimal("0.00")
+                overall_report.total_sold_stock = Decimal("0.00")
+                overall_report.total_final_stock = total_final
+                overall_report.total_virtual_value = total_virtual
+                overall_report.total_debts = Decimal("0.00")
 
             db.session.commit()
             app.logger.info(
-                f"Initial stock report and live stock for {seed_report_date} seeded successfully."
+                f"Seed complete for vendeur_id={vendeur_id} on {seed_report_date}."
             )
 
         except Exception as e:
             app.logger.error(
-                f"Error seeding initial report data: {e}", exc_info=True)
+                f"Error seeding data for vendeur_id={vendeur_id}: {e}", exc_info=True
+            )
             db.session.rollback()
-            raise  # Re-raise the exception to fail the setup command
+            raise

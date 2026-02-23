@@ -64,6 +64,7 @@ from apps.main.forms import (
     DebtCollectionForm,
     EditProfileForm,
     DeleteConfirmForm,
+    get_sales_with_debt,
 )
 
 
@@ -463,6 +464,10 @@ def user_toggle_active(user_id):
     if not user:
         flash("Utilisateur non trouvé.", "danger")
     else:
+        # Ownership check: vendeur can only toggle their own stockeurs (or themselves)
+        if user.id != current_user.id and user.vendeur_id != current_user.id:
+            flash("Vous n'êtes pas autorisé à modifier cet utilisateur.", "danger")
+            return redirect(url_for("main_bp.stocker_management"))
         # Prevent deactivating the superadmin who is currently logged in
         if user.id == current_user.id and user.role == RoleType.PLATFORM_ADMIN:
             flash("Impossible de désactiver votre compte", "warning")
@@ -726,6 +731,9 @@ def achat_stock():
 @business_member_required
 def edit_stock_purchase(purchase_id):
     purchase = StockPurchase.query.get_or_404(purchase_id)
+    # Ownership check: verify this purchase belongs to the current business
+    if not current_user.can_access_vendeur_data(purchase.stock_item.vendeur_id):
+        abort(403)
     form = StockPurchaseForm(obj=purchase)
 
     # --- Pre-fill form based on existing purchase data ---
@@ -876,6 +884,9 @@ def edit_stock_purchase(purchase_id):
 @business_member_required
 def delete_stock_purchase(purchase_id):
     purchase = StockPurchase.query.get_or_404(purchase_id)
+    # Ownership check: verify this purchase belongs to the current business
+    if not current_user.can_access_vendeur_data(purchase.stock_item.vendeur_id):
+        abort(403)
 
     if request.method == "POST":
         try:
@@ -1112,6 +1123,7 @@ def vente_stock():
 @business_member_required
 def update_sale_cash(sale_id):
     sale = Sale.query.get_or_404(sale_id)
+    ensure_access(sale)
     try:
         # new_cash is directly from the input named 'new_cash'
         new_cash = Decimal(request.form.get("new_cash", "0.00"))
@@ -1150,6 +1162,7 @@ def update_sale_cash(sale_id):
 @business_member_required
 def edit_sale(sale_id):
     sale = Sale.query.get_or_404(sale_id)
+    ensure_access(sale)
     form = SaleForm()
 
     # Populate client choices
@@ -1416,6 +1429,7 @@ def edit_sale(sale_id):
 @business_member_required
 def delete_sale(sale_id):
     sale = Sale.query.get_or_404(sale_id)
+    ensure_access(sale)
     confirm_form = DeleteConfirmForm()
 
     if request.method == "POST":
@@ -1476,6 +1490,7 @@ def delete_sale(sale_id):
 @business_member_required
 def view_sale_details(sale_id):
     sale = Sale.query.get_or_404(sale_id)
+    ensure_access(sale)
     return render_template(
         "main/sale_details.html",
         sale=sale,
@@ -1627,6 +1642,8 @@ def enregistrer_sortie():
 @business_member_required
 def encaisser_dette():
     form = DebtCollectionForm()
+    # Populate choices scoped to the current vendeur — never show other businesses' debts
+    form.sale_id.choices = get_sales_with_debt(vendeur_id=get_current_vendeur_id())
 
     if form.validate_on_submit():
         try:
@@ -1638,6 +1655,9 @@ def encaisser_dette():
 
             if not sale_to_update:
                 raise ValueError("Vente sélectionnée introuvable.")
+
+            if not current_user.can_access_vendeur_data(sale_to_update.vendeur_id):
+                raise ValueError("Vous n'êtes pas autorisé à accéder à cette vente.")
 
             if amount_paid <= Decimal("0.00"):
                 raise ValueError("Le montant payé doit être positif.")
@@ -1757,6 +1777,7 @@ def rapports():
             ctx['selected_date'],
             start_of_utc_range=ctx['start_utc'],
             end_of_utc_range=ctx['end_utc'],
+            vendeur_id=get_current_vendeur_id(),
         )
 
         # Map live calculations to view structure
@@ -1784,9 +1805,15 @@ def rapports():
         current_app.logger.info(
             f"Fetching HISTORICAL report for {ctx['selected_date']}.")
 
-        # Fetch the single overall summary for that day
-        overall_report = DailyOverallReport.query.filter_by(
-            report_date=ctx['selected_date']).first()
+        current_vendeur_id = get_current_vendeur_id()
+
+        # Fetch the single overall summary for that day — scoped to this vendeur
+        overall_report_query = DailyOverallReport.query.filter_by(
+            report_date=ctx['selected_date'])
+        if current_vendeur_id:
+            overall_report_query = overall_report_query.filter_by(
+                vendeur_id=current_vendeur_id)
+        overall_report = overall_report_query.first()
 
         if overall_report:
             # Populate Grand Totals directly from the saved report
@@ -1797,9 +1824,13 @@ def rapports():
             grand_totals["virtual_value"] = overall_report.total_virtual_value
             grand_totals["total_debts"] = overall_report.total_debts
 
-            # Fetch detailed breakdown per network
-            daily_network_reports = DailyStockReport.query.filter_by(
-                report_date=ctx['selected_date']).all()
+            # Fetch detailed breakdown per network — scoped to this vendeur
+            network_reports_query = DailyStockReport.query.filter_by(
+                report_date=ctx['selected_date'])
+            if current_vendeur_id:
+                network_reports_query = network_reports_query.filter_by(
+                    vendeur_id=current_vendeur_id)
+            daily_network_reports = network_reports_query.all()
 
             for r in daily_network_reports:
                 if r.network.name in report_data:
@@ -1898,16 +1929,16 @@ def profile():
                     "Veuillez entrer votre mot de passe actuel pour changer le mot de passe.",
                     "danger",
                 )
-                return redirect(url_for("auth_bpe.profile"))
+                return redirect(url_for("main_bp.profile"))
             if not current_user.check_password(form.current_password.data):
                 flash("Mot de passe actuel incorrect.", "danger")
-                return redirect(url_for("auth_bpe.profile"))
+                return redirect(url_for("main_bp.profile"))
             if not form.new_password.data:
                 flash("Veuillez entrer un nouveau mot de passe.", "danger")
-                return redirect(url_for("auth_bpe.profile"))
+                return redirect(url_for("main_bp.profile"))
             if form.new_password.data != form.confirm_new_password.data:
                 flash("Les nouveaux mots de passe ne correspondent pas.", "danger")
-                return redirect(url_for("auth_bpe.profile"))
+                return redirect(url_for("main_bp.profile"))
 
             current_user.set_password(form.new_password.data)
             flash("Votre mot de passe a été mis à jour !", "success")

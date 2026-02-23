@@ -1,8 +1,8 @@
-"""Initial multi-tenant schema
+"""Initial schema
 
-Revision ID: 6c619848ed23
+Revision ID: afbde717c976
 Revises: 
-Create Date: 2026-02-09 00:13:25.177034
+Create Date: 2026-02-22 23:07:42.055037
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '6c619848ed23'
+revision = 'afbde717c976'
 down_revision = None
 branch_labels = None
 depends_on = None
