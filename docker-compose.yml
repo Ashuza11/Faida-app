@@ -16,9 +16,7 @@ services:
     environment:
       - FLASK_ENV=development
       - FLASK_DEBUG=1
-    command: >
-      sh -c "flask db upgrade && 
-            gunicorn --bind 0.0.0.0:5000 --reload --workers 1 --timeout 120 run:app"
+    command: sh /code/entrypoint.sh
 
 # ===========================================
 # ALTERNATIVE: Local PostgreSQL (uncomment if needed)

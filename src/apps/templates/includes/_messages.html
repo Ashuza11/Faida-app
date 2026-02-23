@@ -2,7 +2,7 @@
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
 <div id="faida-toasts"
-     style="position:fixed;bottom:1rem;right:1rem;z-index:9050;
+     style="position:fixed;top:5rem;right:1rem;z-index:9050;
             width:min(320px,calc(100vw - 1.5rem));
             display:flex;flex-direction:column;gap:6px;pointer-events:none;">
   {% for category, message in messages %}

@@ -54,7 +54,13 @@
                     <div class="input-group-prepend">
                       <span class="input-group-text"><i class="ni ni-lock-circle-open"></i></span>
                     </div>
-                    {{ form.password(placeholder="Mot de passe",class="form-control",type="password") }}
+                    {{ form.password(placeholder="Mot de passe", class="form-control", type="password", id="login-password") }}
+                    <div class="input-group-append">
+                      <button type="button" class="btn input-group-text bg-white border-0"
+                              onclick="togglePwd('login-password', this)" tabindex="-1" style="cursor:pointer;">
+                        <i class="fas fa-eye" style="font-size:14px;color:#8898aa;"></i>
+                      </button>
+                    </div>
                   </div>
                   {% if form.password.errors %}
                     {% for error in form.password.errors %}
@@ -84,5 +90,19 @@
 
 {% endblock content %}
 
-<!-- Specific JS goes HERE --> 
-{% block javascripts %}{% endblock javascripts %}
+<!-- Specific JS goes HERE -->
+{% block javascripts %}
+<script>
+function togglePwd(inputId, btn) {
+  var input = document.getElementById(inputId);
+  var icon = btn.querySelector('i');
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.className = 'fas fa-eye-slash';
+  } else {
+    input.type = 'password';
+    icon.className = 'fas fa-eye';
+  }
+}
+</script>
+{% endblock javascripts %}
