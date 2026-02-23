@@ -1594,7 +1594,7 @@ def sorties_cash():
 def enregistrer_sortie():
     form = CashOutflowForm(request.form)
     page_title = "Gestion Cash"
-    sub_page_title = "Enregistrer une Nouvelle Sortie"
+    sub_page_title = "Enregistrer Sortie"
 
     if "submit" in request.form:
         if form.validate_on_submit():
@@ -1643,7 +1643,8 @@ def enregistrer_sortie():
 def encaisser_dette():
     form = DebtCollectionForm()
     # Populate choices scoped to the current vendeur — never show other businesses' debts
-    form.sale_id.choices = get_sales_with_debt(vendeur_id=get_current_vendeur_id())
+    form.sale_id.choices = get_sales_with_debt(
+        vendeur_id=get_current_vendeur_id())
 
     if form.validate_on_submit():
         try:
@@ -1657,7 +1658,8 @@ def encaisser_dette():
                 raise ValueError("Vente sélectionnée introuvable.")
 
             if not current_user.can_access_vendeur_data(sale_to_update.vendeur_id):
-                raise ValueError("Vous n'êtes pas autorisé à accéder à cette vente.")
+                raise ValueError(
+                    "Vous n'êtes pas autorisé à accéder à cette vente.")
 
             if amount_paid <= Decimal("0.00"):
                 raise ValueError("Le montant payé doit être positif.")
