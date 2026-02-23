@@ -1661,9 +1661,6 @@ def encaisser_dette():
                 raise ValueError(
                     "Vous n'êtes pas autorisé à accéder à cette vente.")
 
-            if amount_paid <= Decimal("0.00"):
-                raise ValueError("Le montant payé doit être positif.")
-
             if amount_paid > sale_to_update.debt_amount:
                 flash(
                     f"Le montant payé ({amount_paid:,.2f} FC) est supérieur à la dette restante ({sale_to_update.debt_amount:,.2f} FC). Ajustement à la dette.",
