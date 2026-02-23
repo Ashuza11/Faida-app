@@ -1660,6 +1660,12 @@ def encaisser_dette():
             if not current_user.can_access_vendeur_data(sale_to_update.vendeur_id):
                 raise ValueError(
                     "Vous n'êtes pas autorisé à accéder à cette vente.")
+<<<<<<< HEAD
+=======
+
+            if amount_paid <= Decimal("0.00"):
+                raise ValueError("Le montant payé doit être positif.")
+>>>>>>> 0d8c996b6021e2abbb23b7439941f09aaff85640
 
             if amount_paid > sale_to_update.debt_amount:
                 flash(
