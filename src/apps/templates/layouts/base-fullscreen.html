@@ -3,11 +3,9 @@
 * Argon Dashboard - v1.2.0
 =========================================================
 * Product Page: https://www.creative-tim.com/product/argon-dashboard
-
 * Copyright  Creative Tim (http://www.creative-tim.com)
 * Coded by www.creative-tim.com
 =========================================================
-* The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 -->
 <!DOCTYPE html>
 <html lang="fr">
@@ -16,10 +14,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
   <link rel="canonical" href="https://appseed.us/admin-dashboards/flask-boilerplate-dashboard-argon">
-  
+
   <title>
     Faida- {% block title %} Open-Source Admin Panel {% endblock %}
   </title>
+
+  <!-- PWA / Offline -->
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#5e72e4">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Faida">
 
   <link rel="icon" href="/static/assets/img/brand/favicon.ico" type="image/ico">
   <!-- Fonts -->
@@ -30,6 +35,17 @@
   <!-- Argon CSS -->
   <link rel="stylesheet" href="/static/assets/css/argon.css?v=1.2.0" type="text/css">
 
+  <!-- NProgress — thin navigation bar (orange Faida color) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.css">
+  <style>
+    #nprogress .bar { background: #fbb140; height: 3px; }
+    #nprogress .peg  { box-shadow: 0 0 10px #fbb140, 0 0 5px #fbb140; }
+    #nprogress .spinner-icon {
+      border-top-color:  #fbb140;
+      border-left-color: #fbb140;
+    }
+  </style>
+
   <!-- Specific CSS goes HERE -->
   {% block stylesheets %}{% endblock stylesheets %}
 
@@ -37,8 +53,85 @@
 
 <body class="bg-default">
 
-  <div class="main-content">
+  <!-- NProgress loaded early so it's available for link-click handlers -->
+  <script src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js"></script>
+  <script>
+    NProgress.configure({ showSpinner: false, speed: 300, minimum: 0.15 });
+    // NProgress.start() NOT called on page load — splash handles first-load feedback.
+  </script>
 
+  <!-- ── Splash Screen — first session load only ───────────────────────────── -->
+  <style>
+    #faida-splash {
+      position: fixed; inset: 0; z-index: 99999;
+      background: #fff;
+      display: none;               /* hidden by default; JS shows on first load */
+      flex-direction: column;
+      align-items: center; justify-content: center;
+      transition: opacity 0.38s ease;
+    }
+    #faida-splash img { width: 120px; height: auto; margin-bottom: 32px; }
+    .faida-splash-dots { display: flex; gap: 10px; }
+    .faida-splash-dots span {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: #5e72e4;
+      animation: _splash-bounce 1.2s ease-in-out infinite;
+    }
+    .faida-splash-dots span:nth-child(2) { animation-delay: .22s; }
+    .faida-splash-dots span:nth-child(3) { animation-delay: .44s; }
+    @keyframes _splash-bounce {
+      0%, 80%, 100% { transform: scale(0.4); opacity: .25; }
+      40%            { transform: scale(1);   opacity: 1;   }
+    }
+  </style>
+  <div id="faida-splash" role="status" aria-label="Chargement…">
+    <img src="/static/assets/img/brand/faida-logo.png" alt="Faida">
+    <div class="faida-splash-dots" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </div>
+  </div>
+  <script>
+    (function () {
+      if (!sessionStorage.getItem('faida-launched')) {
+        sessionStorage.setItem('faida-launched', '1');
+        var s = document.getElementById('faida-splash');
+        if (s) s.style.display = 'flex';
+        window.addEventListener('load', function () {
+          if (!s) return;
+          setTimeout(function () {
+            s.style.opacity = '0';
+            setTimeout(function () { s.style.display = 'none'; }, 400);
+          }, 250);
+        });
+      }
+    })();
+  </script>
+
+  {% from 'includes/_messages.html' import render_messages %}
+  {{ render_messages() }}
+
+  <!-- ── Offline Status Banner (minimal — login page) ─────────────────────── -->
+  <style>
+    .faida-banner {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      padding: 10px 20px; font-size: 14px; font-weight: 600;
+      display: flex; align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,.15);
+    }
+    .faida-banner--offline { background: #f5365c; color: #fff; }
+    .faida-banner--syncing { background: #2dce89; color: #fff; }
+    .faida-banner--synced  { background: #2dce89; color: #fff; }
+    .faida-banner--error   { background: #fb6340; color: #fff; }
+    .faida-banner .faida-pending-count { font-size: 12px; opacity: .85; margin-left: 8px; }
+  </style>
+  <div id="faida-offline-banner" class="faida-banner faida-banner--offline" style="display:none;" role="alert">
+    <span>
+      📡 <span class="faida-banner-text">Hors ligne — Connexion internet requise pour se connecter.</span>
+      <span class="faida-pending-count"></span>
+    </span>
+  </div>
+
+  <div class="main-content">
 
     <!-- Header -->
     <div class="header bg-gradient-primary py-7 py-lg-8">
@@ -48,17 +141,44 @@
         </svg>
       </div>
     </div>
-    
+
     {% block content %}{% endblock content %}
 
   </div>
-    
+
   {% include "includes/scripts.html" %}
 
-  <!-- Specific JS goes HERE --> 
+  <!-- NProgress: fires on user-initiated navigations only -->
+  <script>
+    window.addEventListener('load', function () { NProgress.done(); });
+
+    document.addEventListener('click', function (e) {
+      var link = e.target.closest('a[href]');
+      if (!link) return;
+      var href = link.getAttribute('href') || '';
+      if (href.startsWith('#') || href.startsWith('javascript') || href.startsWith('mailto')) return;
+      if (link.target && link.target !== '_self') return;
+      NProgress.start();
+    });
+
+    document.addEventListener('submit', function (e) {
+      NProgress.start();
+      var btn = e.target.querySelector('button[type="submit"]:not([data-no-spinner]), input[type="submit"]:not([data-no-spinner])');
+      if (!btn) return;
+      btn.disabled = true;
+      var orig = btn.innerHTML;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm mr-1" role="status" aria-hidden="true"></span> En cours…';
+      setTimeout(function () { btn.disabled = false; btn.innerHTML = orig; }, 15000);
+    });
+  </script>
+
+  <!-- Specific JS goes HERE -->
   {% block javascripts %}{% endblock javascripts %}
-  
+
   <script src="/static/assets/js/argon.js?v=1.2.0"></script>
+
+  <!-- Faida Offline Engine (SW registration + offline detection) -->
+  <script src="/static/js/faida-offline.js"></script>
 
 </body>
 

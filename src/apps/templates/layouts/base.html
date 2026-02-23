@@ -14,10 +14,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
   <link rel="canonical" href="https://appseed.us/admin-dashboards/flask-boilerplate-dashboard-argon">
-  
+
   <title>
     Faida - {% block title %} Dashboard {% endblock %}
   </title>
+
+  <!-- PWA / Offline -->
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#5e72e4">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Faida">
 
   <!-- Favicon - loaded as static -->
   <link rel="icon" href="/static/assets/img/brand/favicon.ico" type="image/ico">
@@ -26,11 +33,19 @@
   <!-- Icons -->
   <link rel="stylesheet" href="/static/assets/vendor/nucleo/css/nucleo.css" type="text/css">
   <link rel="stylesheet" href="/static/assets/vendor/@fortawesome/fontawesome-free/css/all.min.css" type="text/css">
-  <!-- Page plugins -->
   <!-- Argon CSS -->
   <link rel="stylesheet" href="/static/assets/css/argon.css?v=1.2.0" type="text/css">
 
-
+  <!-- NProgress — thin navigation bar (orange Faida color) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.css">
+  <style>
+    #nprogress .bar { background: #fbb140; height: 3px; }
+    #nprogress .peg  { box-shadow: 0 0 10px #fbb140, 0 0 5px #fbb140; }
+    #nprogress .spinner-icon {
+      border-top-color:  #fbb140;
+      border-left-color: #fbb140;
+    }
+  </style>
 
   <!-- Specific CSS goes HERE -->
   {% block stylesheets %}{% endblock stylesheets %}
@@ -38,6 +53,84 @@
 </head>
 
 <body class="">
+
+  <!-- NProgress loaded early so it's available for link-click handlers -->
+  <script src="https://cdn.jsdelivr.net/npm/nprogress@0.2.0/nprogress.min.js"></script>
+  <script>
+    NProgress.configure({ showSpinner: false, speed: 300, minimum: 0.15 });
+    // NOTE: NProgress.start() is NOT called here — the bar only starts on user-initiated
+    // link clicks / form submits (below). The splash handles first-load feedback.
+  </script>
+
+  <!-- ── Splash Screen — first session load only ───────────────────────────── -->
+  <style>
+    #faida-splash {
+      position: fixed; inset: 0; z-index: 99999;
+      background: #fff;
+      display: none;               /* hidden by default; JS shows it on first load */
+      flex-direction: column;
+      align-items: center; justify-content: center;
+      transition: opacity 0.38s ease;
+    }
+    #faida-splash img { width: 120px; height: auto; margin-bottom: 32px; }
+    .faida-splash-dots { display: flex; gap: 10px; }
+    .faida-splash-dots span {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: #5e72e4;
+      animation: _splash-bounce 1.2s ease-in-out infinite;
+    }
+    .faida-splash-dots span:nth-child(2) { animation-delay: .22s; }
+    .faida-splash-dots span:nth-child(3) { animation-delay: .44s; }
+    @keyframes _splash-bounce {
+      0%, 80%, 100% { transform: scale(0.4); opacity: .25; }
+      40%            { transform: scale(1);   opacity: 1;   }
+    }
+  </style>
+  <div id="faida-splash" role="status" aria-label="Chargement…">
+    <img src="/static/assets/img/brand/faida-logo.png" alt="Faida">
+    <div class="faida-splash-dots" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </div>
+  </div>
+  <script>
+    // Show splash only on the very first page of a browser session.
+    // On subsequent navigations the thin NProgress bar handles feedback instead.
+    (function () {
+      if (!sessionStorage.getItem('faida-launched')) {
+        sessionStorage.setItem('faida-launched', '1');
+        var s = document.getElementById('faida-splash');
+        if (s) s.style.display = 'flex';
+        window.addEventListener('load', function () {
+          if (!s) return;
+          setTimeout(function () {
+            s.style.opacity = '0';
+            setTimeout(function () { s.style.display = 'none'; }, 400);
+          }, 250); // brief pause so logo is visible even on fast loads
+        });
+      }
+    })();
+  </script>
+
+  <!-- ── Offline / Sync Status Banner ───────────────────────────────────── -->
+  <style>
+    .faida-banner {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      padding: 10px 20px; font-size: 14px; font-weight: 600;
+      display: flex; align-items: center; justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(0,0,0,.15);
+    }
+    .faida-banner--offline  { background: #f5365c; color: #fff; }
+    .faida-banner--syncing  { background: #2dce89; color: #fff; }
+    .faida-banner--synced   { background: #2dce89; color: #fff; }
+    .faida-banner--error    { background: #fb6340; color: #fff; }
+    .faida-banner .faida-pending-count { font-size: 12px; opacity: .85; margin-left: 8px; }
+  </style>
+  <div id="faida-offline-banner" class="faida-banner faida-banner--offline" style="display:none;" role="alert">
+    <span>
+      📡 <span class="faida-banner-text">Hors ligne — Les ventes et achats seront sauvegardés localement et synchronisés automatiquement dès la reconnexion.</span>
+      <span class="faida-pending-count"></span>
+    </span>
+  </div>
 
   {% include "includes/sidenav.html" %}
   {% from 'includes/_messages.html' import render_messages %}
@@ -50,24 +143,38 @@
 
   {% include "includes/scripts.html" %}
 
-  <!-- Specific JS goes HERE --> 
-  {% block javascripts %}
-    <script>
-      // JavaScript to auto-hide alerts
-      $(document).ready(function() {
-          // Find all alerts with the 'fade show' classes that are currently visible
-          $('.alert.fade.show').each(function() {
-              var $alert = $(this);
-              // Set a timeout to fade out and remove the alert
-              setTimeout(function() {
-                  $alert.alert('close'); // Bootstrap's way to close an alert
-              }, 5000); // Adjust time here (in milliseconds)
-          });
-      });
-    </script>
-  {% endblock javascripts %}
+  <!-- NProgress: fires on user-initiated navigations only (link clicks + form submits) -->
+  <script>
+    // Complete any bar that was started before this page loaded (from previous link click)
+    window.addEventListener('load', function () { NProgress.done(); });
+
+    document.addEventListener('click', function (e) {
+      var link = e.target.closest('a[href]');
+      if (!link) return;
+      var href = link.getAttribute('href') || '';
+      if (href.startsWith('#') || href.startsWith('javascript') || href.startsWith('mailto')) return;
+      if (link.target && link.target !== '_self') return;
+      NProgress.start();
+    });
+
+    document.addEventListener('submit', function (e) {
+      NProgress.start();
+      var btn = e.target.querySelector('button[type="submit"]:not([data-no-spinner]), input[type="submit"]:not([data-no-spinner])');
+      if (!btn) return;
+      btn.disabled = true;
+      var orig = btn.innerHTML;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm mr-1" role="status" aria-hidden="true"></span> En cours…';
+      setTimeout(function () { btn.disabled = false; btn.innerHTML = orig; }, 15000);
+    });
+  </script>
+
+  <!-- Specific JS goes HERE -->
+  {% block javascripts %}{% endblock javascripts %}
 
   <script src="/static/assets/js/argon.js?v=1.2.0"></script>
+
+  <!-- Faida Offline Engine -->
+  <script src="/static/js/faida-offline.js"></script>
 
 </body>
 

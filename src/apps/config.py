@@ -107,7 +107,7 @@ class Config:
     # ===========================================
     # Application Settings
     # ===========================================
-    SALES_PER_PAGE = 10
+    SALES_PER_PAGE = 30
     PURCHASES_PER_PAGE = 10
     CLIENTS_PER_PAGE = 20
 

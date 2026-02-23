@@ -1,34 +1,56 @@
 {% macro render_messages() %}
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <div class="messages-container" style="position: fixed; bottom: 20px; right: 20px; z-index: 1050; width: 350px;">
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                        <span class="alert-inner--icon">
-                            {# Updated icons for Font Awesome 5 Free #}
-                            {% if category == 'success' %}
-                                <i class="fas fa-check-circle"></i> {# Checkmark in a circle #}
-                            {% elif category == 'danger' %}
-                                <i class="fas fa-exclamation-triangle"></i> {# Warning triangle for errors #}
-                            {% elif category == 'warning' %}
-                                <i class="fas fa-exclamation-circle"></i> {# Circle with exclamation for warning #}
-                            {% elif category == 'info' %}
-                                <i class="fas fa-info-circle"></i> {# Circle with 'i' for info #}
-                            {% elif category == 'primary' %}
-                                <i class="fas fa-star"></i> {# A generic star, or fa-lightbulb #}
-                            {% elif category == 'secondary' %}
-                                <i class="fas fa-ellipsis-h"></i> {# Horizontal ellipsis for generic secondary #}
-                            {% else %} 
-                                <i class="fas fa-bell"></i> {# A generic bell #}
-                            {% endif %}
-                        </span>
-                        <span class="alert-inner--text"><strong>{{ category | capitalize }}!</strong> {{ message }}</span>
-                        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-                            <span aria-hidden="true">&times;</span>
-                        </button>
-                    </div>
-                {% endfor %}
-            </div>
-        {% endif %}
-    {% endwith %}
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<div id="faida-toasts"
+     style="position:fixed;bottom:1rem;right:1rem;z-index:9050;
+            width:min(320px,calc(100vw - 1.5rem));
+            display:flex;flex-direction:column;gap:6px;pointer-events:none;">
+  {% for category, message in messages %}
+  <div class="faida-toast alert alert-{{ category }} alert-dismissible fade show mb-0"
+       role="alert"
+       style="pointer-events:auto;border-radius:10px;padding:10px 12px;font-size:13px;
+              line-height:1.4;box-shadow:0 4px 20px rgba(0,0,0,.15);border:none;">
+    <div style="display:flex;align-items:flex-start;gap:8px;">
+      <span style="font-size:15px;flex-shrink:0;margin-top:1px;">
+        {%- if category == 'success' -%}✅
+        {%- elif category == 'danger' -%}❌
+        {%- elif category == 'warning' -%}⚠️
+        {%- else -%}ℹ️
+        {%- endif -%}
+      </span>
+      <span class="faida-toast-text" style="flex:1;min-width:0;overflow-wrap:break-word;">{{ message }}</span>
+      <button type="button" class="close p-0" data-dismiss="alert" aria-label="Fermer"
+              style="font-size:18px;line-height:1;opacity:.6;flex-shrink:0;margin-top:-1px;">
+        <span aria-hidden="true">&times;</span>
+      </button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+(function () {
+  var container = document.getElementById('faida-toasts');
+  if (!container) return;
+
+  // Deduplicate by message text (collapse repeated flashes from session pile-up)
+  var seen = new Set();
+  container.querySelectorAll('.faida-toast').forEach(function (toast) {
+    var txt = (toast.querySelector('.faida-toast-text') || {}).textContent || '';
+    txt = txt.trim();
+    if (seen.has(txt)) { toast.remove(); return; }
+    seen.add(txt);
+  });
+
+  // Auto-dismiss: 4 s for first, +0.6 s stagger per additional toast
+  container.querySelectorAll('.faida-toast').forEach(function (toast, i) {
+    setTimeout(function () {
+      toast.classList.remove('show');
+      setTimeout(function () { if (toast.parentNode) toast.remove(); }, 350);
+    }, 4000 + i * 600);
+  });
+})();
+</script>
+{% endif %}
+{% endwith %}
 {% endmacro %}

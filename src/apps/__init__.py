@@ -1,6 +1,7 @@
 from .config import DebugConfig
 import logging
-from flask import Flask, app
+import os
+from flask import Flask, app, send_file, make_response
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_login import LoginManager
@@ -35,7 +36,14 @@ def create_app(config_object=DebugConfig):
 
     @login_manager.user_loader
     def load_user(user_id):
-        return db.session.get(User, int(user_id))
+        # If the database is unreachable (e.g. network down), returning None
+        # makes Flask-Login treat the request as anonymous instead of crashing.
+        # The @login_required decorator then redirects to the login page cleanly.
+        try:
+            return db.session.get(User, int(user_id))
+        except Exception:
+            db.session.remove()
+            return None
 
     # --- Register Blueprints ---
     with app.app_context():
@@ -60,7 +68,22 @@ def create_app(config_object=DebugConfig):
 
         app.register_blueprint(errors_bp)
 
+        from apps.api import api_bp
+
+        app.register_blueprint(api_bp)
+
         app_logger.info("Blueprints registered.")
+
+    # ── Service Worker: serve /sw.js at root with full-scope header ──────────
+    # The SW file lives at /static/sw.js but must be served from the root
+    # path so it can control all app URLs (scope = '/').
+    @app.route("/sw.js")
+    def service_worker():
+        sw_path = os.path.join(app.static_folder, "sw.js")
+        response = make_response(send_file(sw_path, mimetype="application/javascript"))
+        response.headers["Service-Worker-Allowed"] = "/"
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return response
 
     # --- Register CLI Commands (AFTER everything else is initialized) ---
     # Import it here, inside the function

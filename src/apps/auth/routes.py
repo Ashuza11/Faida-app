@@ -174,7 +174,7 @@ def register():
             )
 
             flash(
-                f"Compte créé avec succès! Vous pouvez maintenant vous connecter.",
+                "Compte créé! Connectez-vous.",
                 "success"
             )
             return redirect(url_for("auth_bp.login"))

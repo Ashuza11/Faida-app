@@ -1,0 +1,51 @@
+{% extends 'layouts/base-fullscreen.html' %}
+
+{% block title %} Erreur 503 - Service Indisponible {% endblock title %}
+
+{% block content %}
+
+    <div class="container mt--8 pb-5">
+      <div class="row justify-content-center">
+        <div class="col-lg-5 col-md-7">
+          <div class="card bg-secondary shadow border-0">
+            <div class="card-body px-lg-5 py-lg-5 text-center">
+              <div class="text-muted text-center mt-2 mb-3">
+                <img src="{{ url_for('static', filename='assets/img/errors/500.svg') }}"
+                     alt="Service indisponible"
+                     class="img-fluid mb-4"
+                     style="max-width: 260px;">
+                <p class="lead text-darker">Base de données temporairement indisponible</p>
+              </div>
+
+              <div class="text-center mb-4">
+                <p>Le serveur ne peut pas atteindre la base de données en ce moment.</p>
+                <p>Cela se produit généralement lors d'une interruption réseau temporaire.</p>
+
+                <div class="alert alert-warning text-left mt-3" style="font-size:13px;">
+                  <strong>📡 Vous êtes en mode hors ligne ?</strong><br>
+                  Vos ventes, achats et sorties cash peuvent être enregistrés localement
+                  et seront synchronisés automatiquement dès la reconnexion — à condition
+                  d'avoir installé l'application (Ajouter à l'écran d'accueil).
+                </div>
+
+                <a href="javascript:window.location.reload()"
+                   class="btn btn-primary my-3">
+                  Réessayer
+                </a>
+              </div>
+
+            </div>
+          </div>
+          <div class="row mt-3">
+            <div class="col-6">
+              <a href="{{ url_for('main_bp.index') }}" class="text-light"><small>Retour à l'accueil</small></a>
+            </div>
+            <div class="col-6 text-right">
+              <a href="{{ url_for('auth_bp.login') }}" class="text-light"><small>Se connecter</small></a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+{% endblock content %}
