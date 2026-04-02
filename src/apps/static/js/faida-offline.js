@@ -13,13 +13,13 @@
   'use strict';
 
   // ── Constants ─────────────────────────────────────────────────────────────
-  const DB_NAME    = 'faida_offline';
+  const DB_NAME = 'faida_offline';
   const DB_VERSION = 1;
   const STORE_NAME = 'faida_queue';
-  const ENDPOINTS  = {
-    sale:           '/api/v1/sales',
+  const ENDPOINTS = {
+    sale: '/api/v1/sales',
     stock_purchase: '/api/v1/stock-purchases',
-    cash_outflow:   '/api/v1/cash-outflows',
+    cash_outflow: '/api/v1/cash-outflows',
   };
 
   // ── State ─────────────────────────────────────────────────────────────────
@@ -43,12 +43,12 @@
         const d = e.target.result;
         if (!d.objectStoreNames.contains(STORE_NAME)) {
           const s = d.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
-          s.createIndex('status',   'status',   { unique: false });
-          s.createIndex('local_id', 'local_id', { unique: true  });
+          s.createIndex('status', 'status', { unique: false });
+          s.createIndex('local_id', 'local_id', { unique: true });
         }
       };
       req.onsuccess = function (e) { db = e.target.result; resolve(db); };
-      req.onerror   = function (e) { reject(e.target.error); };
+      req.onerror = function (e) { reject(e.target.error); };
     });
   }
 
@@ -56,15 +56,15 @@
     return initDB().then(function (d) {
       return new Promise(function (resolve, reject) {
         const rec = {
-          local_id:  data.local_id || generateUUID(),
+          local_id: data.local_id || generateUUID(),
           type,
-          status:    'pending',
+          status: 'pending',
           data,
           queued_at: new Date().toISOString(),
         };
         const req = d.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).add(rec);
         req.onsuccess = function () { resolve(req.result); };
-        req.onerror   = function (e) { reject(e.target.error); };
+        req.onerror = function (e) { reject(e.target.error); };
       });
     });
   }
@@ -73,11 +73,11 @@
     return initDB().then(function (d) {
       return new Promise(function (resolve, reject) {
         const req = d.transaction(STORE_NAME, 'readonly')
-                     .objectStore(STORE_NAME)
-                     .index('status')
-                     .getAll('pending');
+          .objectStore(STORE_NAME)
+          .index('status')
+          .getAll('pending');
         req.onsuccess = function (e) { resolve(e.target.result); };
-        req.onerror   = function (e) { reject(e.target.error); };
+        req.onerror = function (e) { reject(e.target.error); };
       });
     });
   }
@@ -89,7 +89,7 @@
     return initDB().then(function (d) {
       return new Promise(function (resolve, reject) {
         const store = d.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME);
-        const req   = store.get(id);
+        const req = store.get(id);
         req.onsuccess = function (e) {
           const rec = e.target.result;
           if (rec) { rec.status = status; store.put(rec); }
@@ -106,7 +106,7 @@
 
   // ── 3. Toast UI — non-blocking, auto-dismissing ───────────────────────────
   // Replaces the old full-width top banner that was blocking navigation.
-  var _toast    = null;
+  var _toast = null;
   var _toastTmr = null;
 
   function getToast() {
@@ -128,9 +128,9 @@
     var t = getToast();
     clearTimeout(_toastTmr);
     t.style.background = bg;
-    t.style.opacity    = '1';
-    t.style.display    = 'flex';
-    t.innerHTML        = html;
+    t.style.opacity = '1';
+    t.style.display = 'flex';
+    t.innerHTML = html;
     if (autoDismissMs) {
       _toastTmr = setTimeout(function () {
         t.style.opacity = '0';
@@ -194,21 +194,21 @@
       var synced = 0, failed = 0;
       var promises = ops.map(function (op) {
         return fetch(ENDPOINTS[op.type], {
-          method:      'POST',
-          headers:     { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-          body:        JSON.stringify(op.data),
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+          body: JSON.stringify(op.data),
           credentials: 'same-origin',
         })
-        .then(function (r) {
-          if (r.ok || r.status === 409) return markOpSynced(op.id).then(function () { synced++; });
-          return markOpFailed(op.id).then(function () { failed++; });
-        })
-        .catch(function () { failed++; });
+          .then(function (r) {
+            if (r.ok || r.status === 409) return markOpSynced(op.id).then(function () { synced++; });
+            return markOpFailed(op.id).then(function () { failed++; });
+          })
+          .catch(function () { failed++; });
       });
       Promise.all(promises).then(function () {
-        if (failed > 0)       showSyncErrorToast(failed);
-        else if (synced > 0)  showSyncedToast(synced);
-        else                  hideToast();
+        if (failed > 0) showSyncErrorToast(failed);
+        else if (synced > 0) showSyncedToast(synced);
+        else hideToast();
       });
     });
   }
@@ -218,8 +218,8 @@
     var iv = setInterval(function () {
       attempts++;
       countPending().then(function (n) {
-        if (n === 0)          { clearInterval(iv); showSyncedToast(1); }
-        if (attempts >= 15)   { clearInterval(iv); manualSync(); }
+        if (n === 0) { clearInterval(iv); showSyncedToast(1); }
+        if (attempts >= 15) { clearInterval(iv); manualSync(); }
       });
     }, 2000);
   }
@@ -289,16 +289,16 @@
   }
 
   function collectSaleFormData(form) {
-    var fd    = new FormData(form);
+    var fd = new FormData(form);
     var items = [];
-    var i     = 0;
+    var i = 0;
     while (fd.get('sale_items-' + i + '-network') !== null) {
-      var qty   = parseInt(fd.get('sale_items-' + i + '-quantity'));
+      var qty = parseInt(fd.get('sale_items-' + i + '-quantity'));
       var price = parseFloat(fd.get('sale_items-' + i + '-price_per_unit_applied'));
       if (!isNaN(qty) && qty > 0) {
         items.push({
-          network:               fd.get('sale_items-' + i + '-network'),
-          quantity:              qty,
+          network: fd.get('sale_items-' + i + '-network'),
+          quantity: qty,
           price_per_unit_applied: isNaN(price) ? null : price,
         });
       }
@@ -308,7 +308,7 @@
 
     // Resolve client display name at submit time
     var clientChoice = fd.get('client_choice');
-    var clientName   = 'Client';
+    var clientName = 'Client';
     if (clientChoice === 'new') {
       clientName = fd.get('new_client_name') || 'Nouveau client';
     } else {
@@ -319,12 +319,12 @@
     }
 
     return {
-      client_choice:      clientChoice,
+      client_choice: clientChoice,
       existing_client_id: fd.get('existing_client_id') || null,
-      new_client_name:    fd.get('new_client_name') || null,
-      _display_client:    clientName,          // local display only
-      cash_paid:          parseFloat(fd.get('cash_paid')) || 0,
-      sale_items:         items,
+      new_client_name: fd.get('new_client_name') || null,
+      _display_client: clientName,          // local display only
+      cash_paid: parseFloat(fd.get('cash_paid')) || 0,
+      sale_items: items,
     };
   }
 
@@ -333,8 +333,8 @@
     var tbody = document.getElementById('sales-history-tbody');
     if (!tbody) return;
 
-    var now    = new Date();
-    var ts     = now.toLocaleDateString('fr-CD') + ' ' + now.toLocaleTimeString('fr-CD', { hour: '2-digit', minute: '2-digit' });
+    var now = new Date();
+    var ts = now.toLocaleDateString('fr-CD') + ' ' + now.toLocaleTimeString('fr-CD', { hour: '2-digit', minute: '2-digit' });
     var seller = currentUserName();
 
     var itemsSummary = (data.sale_items || []).map(function (it) {
@@ -370,7 +370,7 @@
   function loadPendingSales() {
     getPendingOps().then(function (ops) {
       ops.filter(function (op) { return op.type === 'sale'; })
-         .forEach(function (op) { renderPendingSaleRow(op.data); });
+        .forEach(function (op) { renderPendingSaleRow(op.data); });
     });
   }
 
@@ -383,13 +383,13 @@
       if (navigator.onLine) return;
       e.preventDefault();
 
-      var fd   = new FormData(form);
+      var fd = new FormData(form);
       var data = {
-        local_id:                      generateUUID(),
-        network:                       fd.get('network'),
-        amount_purchased:              parseInt(fd.get('amount_purchased')),
-        buying_price_choice:           fd.get('buying_price_choice'),
-        custom_buying_price:           fd.get('custom_buying_price') || null,
+        local_id: generateUUID(),
+        network: fd.get('network'),
+        amount_purchased: parseInt(fd.get('amount_purchased')),
+        buying_price_choice: fd.get('buying_price_choice'),
+        custom_buying_price: fd.get('custom_buying_price') || null,
         intended_selling_price_choice: fd.get('intended_selling_price_choice'),
         custom_intended_selling_price: fd.get('custom_intended_selling_price') || null,
       };
@@ -419,8 +419,8 @@
     var tbody = document.getElementById('stock-purchase-tbody');
     if (!tbody) return;
 
-    var now    = new Date();
-    var ts     = now.toLocaleDateString('fr-CD') + ' ' + now.toLocaleTimeString('fr-CD', { hour: '2-digit', minute: '2-digit' });
+    var now = new Date();
+    var ts = now.toLocaleDateString('fr-CD') + ' ' + now.toLocaleTimeString('fr-CD', { hour: '2-digit', minute: '2-digit' });
     var seller = currentUserName();
 
     var tr = document.createElement('tr');
@@ -443,7 +443,7 @@
   function loadPendingStocks() {
     getPendingOps().then(function (ops) {
       ops.filter(function (op) { return op.type === 'stock_purchase'; })
-         .forEach(function (op) { renderPendingStockRow(op.data); });
+        .forEach(function (op) { renderPendingStockRow(op.data); });
     });
   }
 
@@ -456,7 +456,7 @@
       if (navigator.onLine) return;
       e.preventDefault();
 
-      var fd     = new FormData(form);
+      var fd = new FormData(form);
       var amount = parseFloat(fd.get('amount'));
 
       if (!amount || amount <= 0) {
@@ -465,9 +465,9 @@
       }
 
       var data = {
-        local_id:    generateUUID(),
+        local_id: generateUUID(),
         amount,
-        category:    fd.get('category'),
+        category: fd.get('category'),
         description: fd.get('description') || '',
       };
 
