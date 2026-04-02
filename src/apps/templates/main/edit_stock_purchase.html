@@ -65,7 +65,7 @@
                 {% endfor %}
 
                 <hr class="my-4" />
-                <div class="text-right">
+                <div class="d-flex flex-column flex-sm-row justify-content-end" style="gap:8px;">
                   <a href="{{ url_for('main_bp.achat_stock') }}" class="btn btn-secondary">Annuler</a>
                   {{ form.submit(class="btn btn-primary") }}
                 </div>

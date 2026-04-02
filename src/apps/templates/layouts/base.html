@@ -26,6 +26,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Faida">
 
+  <!-- Current user (read by faida-offline.js to label pending rows) -->
+  <meta name="faida-user" content="{{ current_user.username if current_user.is_authenticated else '' }}">
+
   <!-- Favicon - loaded as static -->
   <link rel="icon" href="/static/assets/img/brand/favicon.ico" type="image/ico">
   <!-- Fonts -->

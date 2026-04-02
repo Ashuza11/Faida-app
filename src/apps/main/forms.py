@@ -91,7 +91,7 @@ class StockeurForm(FlaskForm):
         }
     )
 
-    submit = SubmitField("Créer le stockeur")
+    submit = SubmitField("Créer stockeur")
 
     def validate_phone(self, field):
         """Validate phone is a valid DRC number."""
@@ -436,7 +436,7 @@ class CashOutflowForm(FlaskForm):
     description = StringField(
         "Description", render_kw={"placeholder": "Ex: Achat fournitures bureau"}
     )
-    submit = SubmitField("Enregistrer la Sortie")
+    submit = SubmitField("Enregistrer")
 
 
 class DebtCollectionForm(FlaskForm):
@@ -452,7 +452,7 @@ class DebtCollectionForm(FlaskForm):
         "Description (Optionnel)",
         render_kw={"placeholder": "Ex: 1ère tranche paiement"},
     )
-    submit = SubmitField("Enregistrer le Paiement")  # Generic name 'submit'
+    submit = SubmitField("Payer")
 
     def __init__(self, *args, **kwargs):
         super(DebtCollectionForm, self).__init__(*args, **kwargs)
@@ -491,7 +491,7 @@ class EditProfileForm(FlaskForm):
         ],
     )
 
-    submit = SubmitField("Mettre à jour le profil")
+    submit = SubmitField("Mettre à jour")
 
     def __init__(self, original_username, original_email, *args, **kwargs):
         super(EditProfileForm, self).__init__(*args, **kwargs)

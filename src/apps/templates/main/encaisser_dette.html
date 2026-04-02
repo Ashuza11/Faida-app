@@ -24,7 +24,7 @@
                   <h3 class="mb-0">{{ sub_page_title }}</h3>
                 </div>
                 <div class="col-4 text-right">
-                  <a href="{{ url_for('main_bp.sorties_cash') }}" class="btn btn-sm btn-outline-primary">Retour à l'aperçu</a>
+                  <a href="{{ url_for('main_bp.sorties_cash') }}" class="btn btn-sm btn-outline-primary">Retour</a>
                 </div>
               </div>
             </div>
@@ -55,9 +55,9 @@
                 {% endfor %}
 
                 <hr class="my-4" />
-                <div class="text-right">
+                <div class="d-flex flex-column flex-sm-row justify-content-end" style="gap:8px;">
                   <a href="{{ url_for('main_bp.sorties_cash') }}" class="btn btn-secondary">Annuler</a>
-                  {{ form.submit(class="btn btn-primary") }} {# Generic submit, will use form.submit.label #}
+                  {{ form.submit(class="btn btn-primary") }}
                 </div>
               </form>
             </div>

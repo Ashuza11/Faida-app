@@ -108,7 +108,13 @@
                     <div class="input-group-prepend">
                       <span class="input-group-text"><i class="ni ni-lock-circle-open"></i></span>
                     </div>
-                    {{ form.password(class="form-control", type="password", placeholder="Minimum 6 caractères") }}
+                    {{ form.password(class="form-control", type="password", placeholder="Minimum 6 caractères", id="reg-password") }}
+                    <div class="input-group-append">
+                      <button type="button" class="btn input-group-text bg-white border-0"
+                              onclick="togglePwd('reg-password', this)" tabindex="-1" style="cursor:pointer;">
+                        <i class="fas fa-eye" style="font-size:14px;color:#8898aa;"></i>
+                      </button>
+                    </div>
                   </div>
                   {% if form.password.errors %}
                     {% for error in form.password.errors %}
@@ -124,7 +130,13 @@
                     <div class="input-group-prepend">
                       <span class="input-group-text"><i class="ni ni-lock-circle-open"></i></span>
                     </div>
-                    {{ form.password_confirm(class="form-control", type="password", placeholder="Répétez le mot de passe") }}
+                    {{ form.password_confirm(class="form-control", type="password", placeholder="Répétez le mot de passe", id="reg-password-confirm") }}
+                    <div class="input-group-append">
+                      <button type="button" class="btn input-group-text bg-white border-0"
+                              onclick="togglePwd('reg-password-confirm', this)" tabindex="-1" style="cursor:pointer;">
+                        <i class="fas fa-eye" style="font-size:14px;color:#8898aa;"></i>
+                      </button>
+                    </div>
                   </div>
                   {% if form.password_confirm.errors %}
                     {% for error in form.password_confirm.errors %}
@@ -171,5 +183,19 @@
 
 {% endblock content %}
 
-<!-- Specific JS goes HERE --> 
-{% block javascripts %}{% endblock javascripts %}
+<!-- Specific JS goes HERE -->
+{% block javascripts %}
+<script>
+function togglePwd(inputId, btn) {
+  var input = document.getElementById(inputId);
+  var icon = btn.querySelector('i');
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.className = 'fas fa-eye-slash';
+  } else {
+    input.type = 'password';
+    icon.className = 'fas fa-eye';
+  }
+}
+</script>
+{% endblock javascripts %}

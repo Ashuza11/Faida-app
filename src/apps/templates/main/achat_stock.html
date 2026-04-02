@@ -58,7 +58,7 @@
                                     <th scope="col" class="text-right">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody class="list">
+                            <tbody class="list" id="stock-purchase-tbody">
                                 {% for purchase in stock_purchases %}
                                 <tr>
                                     <td>{{ purchase.id }}</td>
@@ -101,7 +101,7 @@
         <div class="modal-dialog modal-dialog-centered" role="document">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Enregistrer un nouvel Achat Stock</h5>
+                    <h5 class="modal-title">Enregistrer un Achat</h5>
                     <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                         <span aria-hidden="true">&times;</span>
                     </button>
