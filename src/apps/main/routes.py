@@ -980,7 +980,10 @@ def vente_stock():
                 if not client_id:
                     raise ValueError(
                         "Veuillez sélectionner un client existant.")
-                client = Client.query.get(int(client_id))
+                client = Client.query.filter_by(
+                    id=int(client_id),
+                    vendeur_id=get_current_vendeur_id()
+                ).first()
                 if not client:
                     raise ValueError("Client sélectionné invalide.")
 
@@ -1247,7 +1250,10 @@ def edit_sale(sale_id):
             if form.client_choice.data == "existing":
                 client_id = form.existing_client_id.data
                 if client_id:
-                    client = Client.query.get(int(client_id))
+                    client = Client.query.filter_by(
+                        id=int(client_id),
+                        vendeur_id=get_current_vendeur_id()
+                    ).first()
                     if not client:
                         raise ValueError(
                             "Client existant sélectionné invalide.")
@@ -1672,14 +1678,14 @@ def encaisser_dette():
             amount_paid = form.amount_paid.data
             description = form.description.data
 
-            sale_to_update = Sale.query.get(sale_id)
+            _vendeur_id = get_current_vendeur_id()
+            sale_to_update = Sale.query.filter_by(
+                id=sale_id,
+                vendeur_id=_vendeur_id
+            ).first()
 
             if not sale_to_update:
                 raise ValueError("Vente sélectionnée introuvable.")
-
-            if not current_user.can_access_vendeur_data(sale_to_update.vendeur_id):
-                raise ValueError(
-                    "Vous n'êtes pas autorisé à accéder à cette vente.")
 
             if amount_paid <= Decimal("0.00"):
                 raise ValueError("Le montant payé doit être positif.")
