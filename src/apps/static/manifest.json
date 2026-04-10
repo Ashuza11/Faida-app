@@ -3,6 +3,7 @@
   "short_name": "Faida",
   "description": "Application de gestion de ventes et de stock pour vendeurs en RDC",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#5e72e4",

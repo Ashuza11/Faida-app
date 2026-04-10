@@ -32,6 +32,23 @@
         .then(function (reg) { console.log('[Faida] SW registered:', reg.scope); })
         .catch(function (err) { console.warn('[Faida] SW error:', err); });
     });
+  } else {
+    // iOS Safari < 16.4 and some older browsers have no SW support.
+    var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    if (isIOS) {
+      // Show a one-time banner so the user understands why offline mode is unavailable.
+      var _iosShown = sessionStorage.getItem('faida_ios_notice');
+      if (!_iosShown) {
+        sessionStorage.setItem('faida_ios_notice', '1');
+        window.addEventListener('DOMContentLoaded', function () {
+          showToast(
+            '📱 Mode hors-ligne non disponible sur cet iPhone/iPad. Mettez à jour vers iOS 16.4+.',
+            '#fb6340',
+            8000
+          );
+        });
+      }
+    }
   }
 
   // ── 2. IndexedDB ──────────────────────────────────────────────────────────

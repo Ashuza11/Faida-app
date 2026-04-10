@@ -829,9 +829,12 @@ def edit_stock_purchase(purchase_id):
             # Step 1: Revert old amount from old network's stock
             old_stock_item = Stock.query.filter_by(
                 vendeur_id=current_user.business_vendeur_id, network=old_network).first()
-            if old_stock_item:
-                old_stock_item.balance -= old_amount_purchased
-                db.session.add(old_stock_item)
+            if not old_stock_item:
+                raise ValueError(
+                    f"Stock introuvable pour {old_network.value} lors de la restauration. Annulation."
+                )
+            old_stock_item.balance -= old_amount_purchased
+            db.session.add(old_stock_item)
 
             # Step 2: Apply new amount to new network's stock, and update its current prices
             new_stock_item = Stock.query.filter_by(
@@ -1445,20 +1448,19 @@ def delete_sale(sale_id):
             db.session.begin_nested()
 
             for sale_item in sale.sale_items:
-
                 stock_item = Stock.query.filter_by(
                     vendeur_id=current_user.business_vendeur_id,
                     network=sale_item.network).first()
-                if stock_item:
-                    stock_item.balance += sale_item.quantity
-                    db.session.add(stock_item)
-                    print(
-                        f"Reverted stock for {sale_item.network.value}: New balance is {stock_item.balance}"
+                if not stock_item:
+                    raise ValueError(
+                        f"Stock introuvable pour {sale_item.network.value} lors de la suppression. Annulation."
                     )
-                else:
-                    current_app.logger.warning(
-                        f"Warning: Stock item for network {sale_item.network.value} not found while deleting sale {sale_id}. Stock not fully reverted."
-                    )
+                stock_item.balance += sale_item.quantity
+                db.session.add(stock_item)
+                current_app.logger.info(
+                    f"delete_sale: restored {sale_item.quantity} units of {sale_item.network.value}. "
+                    f"New balance: {stock_item.balance}"
+                )
 
             for item_to_delete in list(sale.sale_items):
                 db.session.delete(item_to_delete)

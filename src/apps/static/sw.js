@@ -17,9 +17,13 @@
 const CACHE_VERSION = 'faida-v3';
 const OFFLINE_URL   = '/static/offline.html';
 
-// Static assets pre-cached on install (no auth needed)
-const PRECACHE_ASSETS = [
+// Critical assets — install FAILS if these can't be cached (offline.html must always be available)
+const PRECACHE_CRITICAL = [
   '/static/offline.html',
+];
+
+// Optional assets — cached best-effort; a single failure won't abort install
+const PRECACHE_OPTIONAL = [
   '/static/assets/css/argon.css?v=1.2.0',
   '/static/assets/js/argon.js?v=1.2.0',
   '/static/assets/vendor/nucleo/css/nucleo.css',
@@ -30,11 +34,23 @@ const PRECACHE_ASSETS = [
 // ── Install: pre-cache static assets ─────────────────────────────────────────
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_VERSION)
-      .then((cache) => cache.addAll(PRECACHE_ASSETS).catch((err) => {
-        console.warn('[SW] Some assets failed to pre-cache (CDN offline?):', err);
-      }))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE_VERSION).then(async (cache) => {
+      // Must succeed — if offline.html can't be cached, abort install so the
+      // browser retries on the next page load rather than running a broken SW.
+      await cache.addAll(PRECACHE_CRITICAL);
+
+      // Best-effort — cache each optional asset independently so one 404 or
+      // timeout doesn't wipe out everything else.
+      await Promise.allSettled(
+        PRECACHE_OPTIONAL.map((url) =>
+          cache.add(url).catch((err) =>
+            console.warn('[SW] Optional asset not cached:', url, err.message)
+          )
+        )
+      );
+
+      await self.skipWaiting();
+    })
   );
 });
 
@@ -170,8 +186,14 @@ async function syncPendingOps() {
         credentials: 'same-origin',
       });
       if (response.ok || response.status === 409) {
+        // 409 = duplicate (already saved) — treat as success
         await markSynced(db, op.id);
+      } else if (response.status >= 400 && response.status < 500) {
+        // 4xx = bad data — retrying will never work, mark as permanently failed
+        console.warn('[SW] Sync op permanently failed (HTTP', response.status, '):', op.type, op.id);
+        await markFailed(db, op.id);
       }
+      // 5xx = server error — leave as pending so next sync retries
     } catch {
       // Network still unavailable — leave as pending, retry next sync
     }
@@ -231,13 +253,21 @@ function getAllPending(db) {
 }
 
 function markSynced(db, id) {
+  return _setOpStatus(db, id, 'synced');
+}
+
+function markFailed(db, id) {
+  return _setOpStatus(db, id, 'failed');
+}
+
+function _setOpStatus(db, id, status) {
   return new Promise((resolve, reject) => {
     const tx    = db.transaction('faida_queue', 'readwrite');
     const store = tx.objectStore('faida_queue');
     const req   = store.get(id);
     req.onsuccess = (e) => {
       const record = e.target.result;
-      if (record) { record.status = 'synced'; store.put(record); }
+      if (record) { record.status = status; store.put(record); }
       resolve();
     };
     req.onerror = (e) => reject(e.target.error);
