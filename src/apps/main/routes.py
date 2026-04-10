@@ -168,6 +168,10 @@ def index():
     total_debt = float(total_debt) if total_debt else 0.00
 
     # Total Cash Inflow (Today)
+    # Use Sale.cash_paid as the single source of truth for all cash received
+    # (covers both direct payments at sale creation and encaisser_dette collections).
+    # Only add CashInflow records that are NOT linked to a sale (e.g. "Autre Entrée")
+    # to avoid double-counting encaisser_dette payments which already update Sale.cash_paid.
     query = db.session.query(func.sum(Sale.cash_paid))
     if vendeur_id:
         query = query.filter(Sale.vendeur_id == vendeur_id)
@@ -176,7 +180,9 @@ def index():
         Sale.created_at <= end_of_local_day_utc,
     ).scalar()
 
-    query = db.session.query(func.sum(CashInflow.amount))
+    query = db.session.query(func.sum(CashInflow.amount)).filter(
+        CashInflow.sale_id.is_(None)
+    )
     if vendeur_id:
         query = query.filter(CashInflow.vendeur_id == vendeur_id)
     total_cash_inflow_other = query.filter(
@@ -1577,7 +1583,13 @@ def sorties_cash():
         all_sales_cash_paid_sum if all_sales_cash_paid_sum else Decimal("0.00")
     )
 
-    total_inflow = total_cash_inflows_records + total_sales_cash_paid
+    # IMPORTANT: CashInflow records for SALE_COLLECTION are already reflected in
+    # Sale.cash_paid (encaisser_dette updates both). Adding them here would double-count.
+    # Only add CashInflow records NOT linked to a sale (e.g. "Autre Entrée").
+    total_unsale_inflows = sum(
+        inflow.amount for inflow in all_inflows if inflow.sale_id is None
+    )
+    total_inflow = total_sales_cash_paid + total_unsale_inflows
 
     # --- 5. Render Template with selected_date for the filter ---
     return render_template(
