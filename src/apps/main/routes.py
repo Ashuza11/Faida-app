@@ -1215,16 +1215,22 @@ def edit_sale(sale_id):
             # SQLAlchemy will handle clearing the relationship on `sale` after commit/flush
 
             # 2. Revert stock based on old quantities *after* deleting SaleItems
+            revert_vendeur_id = current_user.business_vendeur_id
+            if not revert_vendeur_id:
+                raise ValueError("Impossible de déterminer le vendeur pour la restauration du stock.")
             for network, quantity in old_quantities_map.items():
-                vendeur_id = current_user.business_vendeur_id
                 stock_item = Stock.query.filter_by(
-                    vendeur_id=vendeur_id, network=network).first()
-                if stock_item:
-                    stock_item.balance += quantity
-                    db.session.add(stock_item)
-                    print(
-                        f"Reverted stock for {network.value}: New balance is {stock_item.balance}"
+                    vendeur_id=revert_vendeur_id, network=network).first()
+                if not stock_item:
+                    raise ValueError(
+                        f"Stock introuvable pour {network.value} lors de la restauration. Annulation."
                     )
+                stock_item.balance += quantity
+                db.session.add(stock_item)
+                current_app.logger.info(
+                    f"edit_sale: restored {quantity} units of {network.value} "
+                    f"for vendeur {revert_vendeur_id}. New balance: {stock_item.balance}"
+                )
 
             # 3. Update Sale header data
             client = None
