@@ -44,6 +44,7 @@ from apps.models import (
     User,
     Sale,
     SaleItem,
+    SaleItemHistory,
     CashOutflow,
     CashInflow,
     CashInflowCategory,
@@ -1221,6 +1222,19 @@ def edit_sale(sale_id):
                 item.network: item.quantity for item in sale.sale_items
             }
 
+            # 0. Snapshot current items to history before mutating
+            for item in sale.sale_items:
+                db.session.add(SaleItemHistory(
+                    sale_id=sale.id,
+                    vendeur_id=sale.vendeur_id,
+                    changed_by_id=current_user.id,
+                    action='edit',
+                    network=item.network,
+                    quantity=item.quantity,
+                    price_per_unit_applied=item.price_per_unit_applied,
+                    subtotal=item.subtotal,
+                ))
+
             # 1. Delete old SaleItems associated with this sale
             for item_to_delete in list(sale.sale_items):
                 db.session.delete(item_to_delete)
@@ -1458,6 +1472,19 @@ def delete_sale(sale_id):
 
         try:
             db.session.begin_nested()
+
+            # Snapshot items to history before deletion
+            for sale_item in sale.sale_items:
+                db.session.add(SaleItemHistory(
+                    sale_id=sale.id,
+                    vendeur_id=sale.vendeur_id,
+                    changed_by_id=current_user.id,
+                    action='delete',
+                    network=sale_item.network,
+                    quantity=sale_item.quantity,
+                    price_per_unit_applied=sale_item.price_per_unit_applied,
+                    subtotal=sale_item.subtotal,
+                ))
 
             for sale_item in sale.sale_items:
                 stock_item = Stock.query.filter_by(

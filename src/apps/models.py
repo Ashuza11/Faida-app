@@ -683,6 +683,66 @@ class SaleItem(db.Model):
 
 
 # ===========================================
+# SaleItemHistory Model
+# ===========================================
+
+class SaleItemHistory(db.Model):
+    """Snapshot of sale items before an edit or delete.
+
+    Written immediately before SaleItems are mutated so that discrepancies
+    (e.g. airtime sent then sale edited) can be reconstructed after the fact.
+    """
+    __tablename__ = "sale_item_history"
+
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+
+    # When the snapshot was taken (≈ time of edit/delete)
+    snapshot_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    # The sale this snapshot belongs to (kept even after the sale is deleted)
+    sale_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("sales.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    vendeur_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=False
+    )
+
+    # Who triggered the change
+    changed_by_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=False
+    )
+
+    # What triggered the snapshot
+    action: so.Mapped[str] = so.mapped_column(
+        sa.String(10), nullable=False
+    )  # 'edit' | 'delete'
+
+    # The item state at snapshot time
+    network: so.Mapped[NetworkType] = so.mapped_column(
+        sa.Enum(NetworkType), nullable=False
+    )
+    quantity: so.Mapped[int] = so.mapped_column(sa.Integer, nullable=False)
+    price_per_unit_applied: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(10, 2), nullable=False
+    )
+    subtotal: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<SaleItemHistory sale={self.sale_id} {self.action} "
+            f"{self.quantity}x {self.network.value}>"
+        )
+
+
+# ===========================================
 # Cash Flow Models
 # ===========================================
 
