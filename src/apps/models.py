@@ -586,6 +586,16 @@ class Sale(db.Model):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
+    # The business date this sale belongs to (set by user, defaults to today).
+    # Separate from created_at so that late entries (recorded the next day) are
+    # still counted under the correct day when archiving reports.
+    sale_date: so.Mapped[date] = so.mapped_column(
+        sa.Date,
+        nullable=False,
+        default=date.today,
+        index=True,
+    )
+
     # Who made this sale (vendeur or stockeur)
     seller_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False
@@ -757,6 +767,14 @@ class CashOutflow(db.Model):
         default=lambda: datetime.now(timezone.utc)
     )
 
+    # The business date this expense belongs to (set by user, defaults to today).
+    expense_date: so.Mapped[date] = so.mapped_column(
+        sa.Date,
+        nullable=False,
+        default=date.today,
+        index=True,
+    )
+
     # Which vendeur's business
     vendeur_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False
@@ -818,6 +836,15 @@ class CashInflow(db.Model):
     )
     description: so.Mapped[Optional[str]] = so.mapped_column(
         sa.String(255), nullable=True
+    )
+
+    # The business date this payment belongs to (set by user, defaults to today).
+    # Separate from created_at so late entries are counted under the correct day.
+    payment_date: so.Mapped[date] = so.mapped_column(
+        sa.Date,
+        nullable=False,
+        default=date.today,
+        index=True,
     )
 
     # Link to sale (for payment collections)

@@ -302,10 +302,9 @@ def get_sales_history_query(date_filter=True, date_arg_key='date'):
     if date_filter:
         ctx = get_date_context(arg_key=date_arg_key)
 
-        # Apply the date range filtering using UTC timestamps
+        # Filter by business date (sale_date), not insertion timestamp
         query = filtered_query.filter(
-            Sale.created_at >= ctx['start_utc'],
-            Sale.created_at <= ctx['end_utc']
+            Sale.sale_date == ctx['selected_date']
         )
         # Return the context needed by the endpoint for the frontend filter
         return query, ctx
@@ -366,7 +365,7 @@ def get_daily_report_data(
     purchases_map = {p.network: Decimal(
         str(p.total or 0)) for p in daily_purchases}
 
-    # B. Sales (Quantity & Value) — filter by Sale.vendeur_id
+    # B. Sales (Quantity & Value) — filter by Sale.sale_date (business date set by user)
     sales_query = (
         db.session.query(
             SaleItem.network,
@@ -374,7 +373,7 @@ def get_daily_report_data(
             func.sum(SaleItem.subtotal).label("val")
         )
         .join(Sale)
-        .filter(Sale.created_at >= filter_start_dt, Sale.created_at < filter_end_dt)
+        .filter(Sale.sale_date == target_date)
     )
     if vendeur_id is not None:
         sales_query = sales_query.filter(Sale.vendeur_id == vendeur_id)
@@ -400,7 +399,7 @@ def get_daily_report_data(
         db.session.query(func.sum(Sale.debt_amount))
         .filter(
             Sale.debt_amount > 0,
-            Sale.created_at <= filter_end_dt,
+            Sale.sale_date <= target_date,
         )
     )
     if vendeur_id is not None:
@@ -571,8 +570,6 @@ def update_daily_reports(app, report_date_to_update=None, vendeur_id=None):
             overall_report.total_final_stock = total_final_stock_day_overall
             overall_report.total_virtual_value = total_virtual_value_day_overall
             overall_report.total_debts = total_debts_overall
-            overall_report.total_capital_circulant = total_virtual_value_day_overall
-            overall_report.total_sales_from_transactions = total_sales_from_transactions
 
             db.session.commit()
             app.logger.info(

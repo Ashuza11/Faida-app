@@ -10,6 +10,7 @@ from wtforms import (
     FieldList,
     FormField,
     TextAreaField,
+    DateField,
 )
 from wtforms.validators import (
     Email,
@@ -372,6 +373,11 @@ class SaleForm(FlaskForm):
     sale_items = FieldList(
         FormField(SaleItemForm), min_entries=1
     )  # Ensure at least one item
+    sale_date = DateField(
+        "Date de la vente",
+        validators=[DataRequired(message="Veuillez indiquer la date de la vente.")],
+        format='%Y-%m-%d',
+    )
     cash_paid = DecimalField(
         "Argent donné (FC)",
         validators=[
@@ -433,6 +439,11 @@ class CashOutflowForm(FlaskForm):
         choices=[(cat.name, cat.value) for cat in CashOutflowCategory],
         validators=[DataRequired()],
     )
+    expense_date = DateField(
+        "Date de la dépense",
+        validators=[DataRequired(message="Veuillez indiquer la date de la dépense.")],
+        format='%Y-%m-%d',
+    )
     description = StringField(
         "Description", render_kw={"placeholder": "Ex: Achat fournitures bureau"}
     )
@@ -447,6 +458,11 @@ class DebtCollectionForm(FlaskForm):
         "Montant Payé (FC)",
         validators=[DataRequired(), NumberRange(min=0.01)],
         render_kw={"placeholder": "Ex: 10000.00"},
+    )
+    payment_date = DateField(
+        "Date du paiement",
+        validators=[DataRequired(message="Veuillez indiquer la date du paiement.")],
+        format='%Y-%m-%d',
     )
     description = StringField(
         "Description (Optionnel)",

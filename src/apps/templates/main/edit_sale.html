@@ -121,9 +121,18 @@
                             </div>
 
                             <hr class="my-4" />
-                            <h6 class="heading-small text-muted mb-4">Paiement</h6>
+                            <h6 class="heading-small text-muted mb-4">Date &amp; Paiement</h6>
                             <div class="pl-lg-4">
                                 <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="form-group{% if form.sale_date.errors %} has-danger{% endif %}">
+                                            {{ form.sale_date.label(class="form-control-label") }}
+                                            {{ form.sale_date(class="form-control" + (" is-invalid" if form.sale_date.errors else "")) }}
+                                            {% for error in form.sale_date.errors %}
+                                                <div class="invalid-feedback d-block">{{ error }}</div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
                                     <div class="col-md-6">
                                         <div class="form-group{% if form.cash_paid.errors %} has-danger{% endif %}">
                                             {{ form.cash_paid.label(class="form-control-label") }}

@@ -6,7 +6,8 @@
 
 from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app
 from flask_login import login_required, current_user
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
+import pytz
 from decimal import Decimal
 import secrets
 
@@ -48,25 +49,20 @@ def dashboard():
         User.created_at >= week_ago
     ).count()
 
-    # Total sales across platform (today)
-    today = datetime.now(timezone.utc).date()
-    today_start = datetime.combine(
-        today, datetime.min.time()).replace(tzinfo=timezone.utc)
-    today_end = datetime.combine(
-        today, datetime.max.time()).replace(tzinfo=timezone.utc)
+    # Total sales across platform (today in Lubumbashi timezone)
+    _tz = pytz.timezone("Africa/Lubumbashi")
+    today_local = datetime.now(pytz.utc).astimezone(_tz).date()
 
     total_sales_today = db.session.query(
         db.func.sum(Sale.total_amount_due)
     ).filter(
-        Sale.created_at >= today_start,
-        Sale.created_at <= today_end
+        Sale.sale_date == today_local
     ).scalar() or Decimal('0.00')
 
     total_cash_today = db.session.query(
         db.func.sum(Sale.cash_paid)
     ).filter(
-        Sale.created_at >= today_start,
-        Sale.created_at <= today_end
+        Sale.sale_date == today_local
     ).scalar() or Decimal('0.00')
 
     # Recent vendeurs list
@@ -369,16 +365,16 @@ def platform_stats():
 
     # Daily sales for chart
     daily_sales = db.session.query(
-        db.func.date(Sale.created_at).label('date'),
+        Sale.sale_date.label('date'),
         db.func.sum(Sale.total_amount_due).label('total'),
         db.func.sum(Sale.cash_paid).label('cash'),
         db.func.count(Sale.id).label('count')
     ).filter(
-        Sale.created_at >= start_date
+        Sale.sale_date >= start_date.date()
     ).group_by(
-        db.func.date(Sale.created_at)
+        Sale.sale_date
     ).order_by(
-        db.func.date(Sale.created_at)
+        Sale.sale_date
     ).all()
 
     # Top vendeurs by sales
@@ -389,7 +385,7 @@ def platform_stats():
     ).join(
         Sale, Sale.vendeur_id == User.id
     ).filter(
-        Sale.created_at >= start_date
+        Sale.sale_date >= start_date.date()
     ).group_by(
         User.id, User.username
     ).order_by(

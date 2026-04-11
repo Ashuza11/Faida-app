@@ -126,8 +126,7 @@ def index():
         if vendeur_id:
             query = query.filter(Sale.vendeur_id == vendeur_id)
         daily_sales = query.filter(
-            Sale.created_at >= start_of_target_day_utc,
-            Sale.created_at <= end_of_target_day_utc,
+            Sale.sale_date == target_local_date,
         ).scalar()
 
         sales_data_week[target_local_date.strftime("%a")] = (
@@ -142,8 +141,7 @@ def index():
             query = query.filter(Sale.vendeur_id == vendeur_id)
         network_sales = query.filter(
             SaleItem.network == network,
-            SaleItem.created_at >= start_of_local_day_utc,
-            SaleItem.created_at <= end_of_local_day_utc,
+            Sale.sale_date == today_local_date,
         ).scalar()
         sales_by_network[network.value] = (
             float(network_sales) if network_sales else 0.00
@@ -155,8 +153,7 @@ def index():
     if vendeur_id:
         query = query.filter(Sale.vendeur_id == vendeur_id)
     total_sales_today = query.filter(
-        Sale.created_at >= start_of_local_day_utc,
-        Sale.created_at <= end_of_local_day_utc,
+        Sale.sale_date == today_local_date,
     ).scalar()
     total_sales_today = float(total_sales_today) if total_sales_today else 0.00
 
@@ -177,8 +174,7 @@ def index():
     if vendeur_id:
         query = query.filter(Sale.vendeur_id == vendeur_id)
     total_cash_inflow_sales = query.filter(
-        Sale.created_at >= start_of_local_day_utc,
-        Sale.created_at <= end_of_local_day_utc,
+        Sale.sale_date == today_local_date,
     ).scalar()
 
     query = db.session.query(func.sum(CashInflow.amount)).filter(
@@ -187,8 +183,7 @@ def index():
     if vendeur_id:
         query = query.filter(CashInflow.vendeur_id == vendeur_id)
     total_cash_inflow_other = query.filter(
-        CashInflow.created_at >= start_of_local_day_utc,
-        CashInflow.created_at <= end_of_local_day_utc,
+        CashInflow.payment_date == today_local_date,
     ).scalar()
 
     total_cash_inflow_today = (
@@ -202,8 +197,7 @@ def index():
     if vendeur_id:
         query = query.filter(CashOutflow.vendeur_id == vendeur_id)
     total_cash_outflow_today = query.filter(
-        CashOutflow.created_at >= start_of_local_day_utc,
-        CashOutflow.created_at <= end_of_local_day_utc,
+        CashOutflow.expense_date == today_local_date,
     ).scalar()
     total_cash_outflow_today = (
         float(total_cash_outflow_today) if total_cash_outflow_today else 0.00
@@ -965,9 +959,13 @@ def vente_stock():
     form.existing_client_id.choices = client_choices
 
     # Pre-fill empty rows for the FieldList on GET
-    if request.method == "GET" and not form.sale_items:
-        for _ in range(3):
-            form.sale_items.append_entry()
+    if request.method == "GET":
+        if not form.sale_items:
+            for _ in range(3):
+                form.sale_items.append_entry()
+        # Default sale_date to today in local timezone
+        if not form.sale_date.data:
+            form.sale_date.data = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
 
     # --- 2. HANDLE POST (Processing the Sale) ---
     if form.validate_on_submit():
@@ -1081,7 +1079,8 @@ def vente_stock():
                 client_name_adhoc=client_name_adhoc,
                 total_amount_due=total_amount_due,
                 cash_paid=cash_paid,
-                debt_amount=debt_amount
+                debt_amount=debt_amount,
+                sale_date=form.sale_date.data,
             )
             new_sale.sale_items.extend(sale_items_to_add)
 
@@ -1212,6 +1211,7 @@ def edit_sale(sale_id):
             item_form.price_per_unit_applied.data = item.price_per_unit_applied
 
         form.cash_paid.data = sale.cash_paid
+        form.sale_date.data = sale.sale_date
 
     if form.validate_on_submit():
         db.session.begin_nested()  # Start a nested transaction / savepoint
@@ -1282,6 +1282,7 @@ def edit_sale(sale_id):
 
             sale.client = client
             sale.client_name_adhoc = client_name_adhoc if not client else None
+            sale.sale_date = form.sale_date.data
             sale.updated_at = datetime.utcnow()
 
             total_amount_due = Decimal("0.00")
@@ -1562,8 +1563,6 @@ def sorties_cash():
     # --- 1. Get Date Context (handles URL param and UTC conversion) ---
     ctx = get_date_context()
     selected_date_str = ctx['date_str']
-    start_utc = ctx['start_utc']
-    end_utc = ctx['end_utc']
 
     # --- 2. Get Vendeur Context ---
     vendeur_id = get_current_vendeur_id()
@@ -1572,18 +1571,15 @@ def sorties_cash():
 
     # Base queries
     outflow_query = CashOutflow.query.filter(
-        CashOutflow.created_at >= start_utc,
-        CashOutflow.created_at <= end_utc
+        CashOutflow.expense_date == ctx['selected_date']
     )
 
     inflow_query = CashInflow.query.filter(
-        CashInflow.created_at >= start_utc,
-        CashInflow.created_at <= end_utc
+        CashInflow.payment_date == ctx['selected_date']
     )
 
     sales_cash_query = db.session.query(db.func.sum(Sale.cash_paid)).filter(
-        Sale.created_at >= start_utc,
-        Sale.created_at <= end_utc
+        Sale.sale_date == ctx['selected_date']
     )
 
     # Apply vendeur filter if not platform admin
@@ -1595,8 +1591,8 @@ def sorties_cash():
             Sale.vendeur_id == vendeur_id)
 
     # Execute queries
-    all_outflows = outflow_query.order_by(CashOutflow.created_at.desc()).all()
-    all_inflows = inflow_query.order_by(CashInflow.created_at.desc()).all()
+    all_outflows = outflow_query.order_by(CashOutflow.expense_date.desc(), CashOutflow.created_at.desc()).all()
+    all_inflows = inflow_query.order_by(CashInflow.payment_date.desc(), CashInflow.created_at.desc()).all()
     all_sales_cash_paid_sum = sales_cash_query.scalar()
 
     # --- 4. Calculate Totals ---
@@ -1649,6 +1645,10 @@ def enregistrer_sortie():
     page_title = "Gestion Cash"
     sub_page_title = "Enregistrer Sortie"
 
+    # Default expense_date to today in local timezone on GET
+    if request.method == "GET" and not form.expense_date.data:
+        form.expense_date.data = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
+
     if "submit" in request.form:
         if form.validate_on_submit():
             try:
@@ -1658,6 +1658,7 @@ def enregistrer_sortie():
                     description=form.description.data,
                     recorded_by=current_user,
                     vendeur_id=current_user.business_vendeur_id,
+                    expense_date=form.expense_date.data,
                 )
                 db.session.add(new_outflow)
                 db.session.commit()
@@ -1699,11 +1700,16 @@ def encaisser_dette():
     form.sale_id.choices = get_sales_with_debt(
         vendeur_id=get_current_vendeur_id())
 
+    # Default payment_date to today in local timezone
+    if request.method == "GET" and not form.payment_date.data:
+        form.payment_date.data = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
+
     if form.validate_on_submit():
         try:
             sale_id = form.sale_id.data
             amount_paid = form.amount_paid.data
             description = form.description.data
+            payment_date = form.payment_date.data
 
             _vendeur_id = get_current_vendeur_id()
             sale_to_update = Sale.query.filter_by(
@@ -1733,6 +1739,7 @@ def encaisser_dette():
                 recorded_by=current_user,
                 vendeur_id=current_user.business_vendeur_id,
                 sale=sale_to_update,
+                payment_date=payment_date,
             )
             db.session.add(new_inflow)
 
