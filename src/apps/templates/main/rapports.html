@@ -1,255 +1,471 @@
 {% extends "layouts/base.html" %}
 {% import "includes/_filters.html" as filters %}
 
-
 {% block title %} {{ page_title }} {% endblock %}
 
 {% block content %}
-    <div class="header bg-primary pb-6">
-      <div class="container-fluid">
-        <div class="header-body">
-          <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center py-4">
-            {# LEFT SIDE: Title and Breadcrumbs #}
-            <div class="d-flex align-items-center mb-3 mb-md-0">
-                <h6 class="h2 text-white d-inline-block mb-0">Rapports</h6>
-                <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
-                    <ol class="breadcrumb breadcrumb-links breadcrumb-dark mb-0">
-                        <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}"><i class="fas fa-home"></i></a></li>
-                        <li class="breadcrumb-item active">{{ page_title }}</li>
-                    </ol>
-                </nav>
+<div class="header bg-primary pb-6">
+  <div class="container-fluid">
+    <div class="header-body">
+      <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center py-4">
+        <div class="d-flex align-items-center mb-3 mb-md-0">
+          <h6 class="h2 text-white d-inline-block mb-0">Rapports</h6>
+          <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
+            <ol class="breadcrumb breadcrumb-links breadcrumb-dark mb-0">
+              <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}"><i class="fas fa-home"></i></a></li>
+              <li class="breadcrumb-item active">{{ page_title }}</li>
+            </ol>
+          </nav>
+        </div>
+        <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+          {# Date picker #}
+          <form method="GET" action="{{ url_for('main_bp.rapports') }}" class="d-flex align-items-center m-0">
+            {% if client_search %}<input type="hidden" name="client_search" value="{{ client_search }}">{% endif %}
+            <input type="date" name="date" value="{{ selected_date }}"
+                   class="form-control form-control-sm bg-white" style="width:150px;height:38px;"
+                   onchange="this.form.submit()">
+          </form>
+          {# PDF #}
+          <a href="{{ url_for('pdf_bp.download_report_pdf', date=selected_date) }}"
+             class="btn btn-success" title="Télécharger PDF"
+             style="height:38px;display:flex;align-items:center;">
+            <i class="fas fa-file-pdf"></i>
+            <span class="d-none d-lg-inline ml-2">PDF</span>
+          </a>
+          {# Archive #}
+          <form id="archive-form" action="{{ url_for('main_bp.archive_daily_report') }}" method="POST" class="m-0">
+            <input type="hidden" name="date_to_archive" value="{{ selected_date }}">
+            <button type="button" id="archive-btn" class="btn btn-primary"
+                    title="Archiver le rapport" style="height:38px;display:flex;align-items:center;">
+              <i class="fas fa-cloud-upload-alt"></i>
+              <span class="d-none d-lg-inline ml-2">Archiver</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="container-fluid mt--6">
+
+  {# ═══════════════════════════════════════════════════
+     1. KPI SUMMARY CARDS
+  ═══════════════════════════════════════════════════ #}
+  <div class="row">
+    <div class="col-xl-3 col-md-6">
+      <div class="card card-stats shadow">
+        <div class="card-body">
+          <div class="row">
+            <div class="col">
+              <h5 class="card-title text-uppercase text-muted mb-0">Total Ventes</h5>
+              <span class="h3 font-weight-bold mb-0">{{ "{:,.2f}".format(cash_summary.total) }} FC</span>
             </div>
-
-            {# RIGHT SIDE: All Controls in One Row #}
-            <div class="d-flex align-items-center flex-wrap">
-                
-                {# Date Filter - integrated inline #}
-                <form method="GET" action="{{ url_for('main_bp.rapports') }}" class="d-flex align-items-center m-0">
-                    <input type="date" 
-                          name="date" 
-                          value="{{ selected_date }}" 
-                          class="form-control form-control-sm bg-white"
-                          style="width: 150px; height: 38px;"
-                          onchange="this.form.submit()">
-                </form>
-
-                {# PDF Download Button #}
-                <a href="{{ url_for('pdf_bp.download_report_pdf', date=selected_date) }}" 
-                  class="btn btn-success ml-2"
-                  title="Télécharger PDF"
-                  style="height: 38px; display: flex; align-items: center;">
-                    <i class="fas fa-file-pdf"></i>
-                    <span class="d-none d-lg-inline ml-2">PDF</span>
-                </a>
-
-                {# Archive Button #}
-                {# Archive Button - No onsubmit, uses SweetAlert2 #}
-                <form id="archive-form" 
-                      action="{{ url_for('main_bp.archive_daily_report') }}" 
-                      method="POST" 
-                      class="m-0 ml-2">
-                    <input type="hidden" name="date_to_archive" value="{{ selected_date }}">
-                    <button type="button"
-                            id="archive-btn"
-                            class="btn btn-primary"
-                            title="Archiver le rapport"
-                            style="height: 38px; display: flex; align-items: center;">
-                        <i class="fas fa-cloud-upload-alt"></i>
-                        <span class="d-none d-lg-inline ml-2">Archiver</span>
-                    </button>
-                </form>
-            </div>
+            <div class="col-auto"><div class="icon icon-shape bg-gradient-primary text-white rounded-circle shadow"><i class="fas fa-shopping-cart"></i></div></div>
           </div>
+          <p class="mt-3 mb-0 text-muted text-sm">
+            <span class="text-nowrap">{{ cash_summary.count }} vente(s) enregistrée(s)</span>
+          </p>
+        </div>
+      </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+      <div class="card card-stats shadow">
+        <div class="card-body">
+          <div class="row">
+            <div class="col">
+              <h5 class="card-title text-uppercase text-muted mb-0">Cash Reçu</h5>
+              <span class="h3 font-weight-bold mb-0 text-success">{{ "{:,.2f}".format(cash_summary.cash) }} FC</span>
+            </div>
+            <div class="col-auto"><div class="icon icon-shape bg-gradient-success text-white rounded-circle shadow"><i class="fas fa-money-bill-wave"></i></div></div>
+          </div>
+          <p class="mt-3 mb-0 text-muted text-sm">
+            <span class="text-nowrap">Paiements reçus ce jour</span>
+          </p>
+        </div>
+      </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+      <div class="card card-stats shadow">
+        <div class="card-body">
+          <div class="row">
+            <div class="col">
+              <h5 class="card-title text-uppercase text-muted mb-0">Crédit (Dettes)</h5>
+              <span class="h3 font-weight-bold mb-0 text-danger">{{ "{:,.2f}".format(cash_summary.credit) }} FC</span>
+            </div>
+            <div class="col-auto"><div class="icon icon-shape bg-gradient-danger text-white rounded-circle shadow"><i class="fas fa-exclamation-circle"></i></div></div>
+          </div>
+          <p class="mt-3 mb-0 text-muted text-sm">
+            <span class="text-nowrap">{{ debts_today|length }} client(s) en dette</span>
+          </p>
+        </div>
+      </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+      <div class="card card-stats shadow">
+        <div class="card-body">
+          <div class="row">
+            <div class="col">
+              <h5 class="card-title text-uppercase text-muted mb-0">Bénéfice Net</h5>
+              <span class="h3 font-weight-bold mb-0 {% if grand_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                {{ "{:,.2f}".format(grand_profit) }} FC
+              </span>
+            </div>
+            <div class="col-auto"><div class="icon icon-shape bg-gradient-info text-white rounded-circle shadow"><i class="fas fa-chart-line"></i></div></div>
+          </div>
+          <p class="mt-3 mb-0 text-muted text-sm">
+            <span class="text-nowrap">Rev: {{ "{:,.2f}".format(grand_revenue) }} — Coût: {{ "{:,.2f}".format(grand_cost) }}</span>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ═══════════════════════════════════════════════════
+     2. JOURNAL DES TRANSACTIONS (stock balances)
+  ═══════════════════════════════════════════════════ #}
+  <div class="row mt-4">
+    <div class="col-xl-12">
+      <div class="card shadow">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <h3 class="mb-0">Journal des Transactions</h3>
+          {% if not is_today %}
+            <span class="badge badge-secondary">Données archivées</span>
+          {% else %}
+            <span class="badge badge-success">Données en temps réel</span>
+          {% endif %}
+        </div>
+        <div class="table-responsive">
+          <table class="table align-items-center table-flush">
+            <thead class="thead-light">
+              <tr>
+                <th>Réseau</th>
+                <th>Stock Initial</th>
+                <th>Stock Acheté</th>
+                <th>Stock Vendu</th>
+                <th>Stock Final</th>
+                <th>Valeur Virtuelle (FC)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for network in networks %}
+              {% set data = report_data[network.name] %}
+              <tr>
+                <td><strong>{{ network.value | upper }}</strong></td>
+                <td>{{ "{:,.0f}".format(data.initial_stock) }}</td>
+                <td>{{ "{:,.0f}".format(data.purchased_stock) }}</td>
+                <td>{{ "{:,.0f}".format(data.sold_stock) }}</td>
+                <td>{{ "{:,.0f}".format(data.final_stock) }}</td>
+                <td>{{ "{:,.2f}".format(data.virtual_value) }}</td>
+              </tr>
+              {% endfor %}
+              <tr class="bg-primary text-white font-weight-bold">
+                <td>Total Général</td>
+                <td>{{ "{:,.0f}".format(grand_totals.initial_stock) }}</td>
+                <td>{{ "{:,.0f}".format(grand_totals.purchased_stock) }}</td>
+                <td>{{ "{:,.0f}".format(grand_totals.sold_stock) }}</td>
+                <td>{{ "{:,.0f}".format(grand_totals.final_stock) }}</td>
+                <td>{{ "{:,.2f}".format(grand_totals.virtual_value) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ═══════════════════════════════════════════════════
+     3. PROFIT PAR RÉSEAU + DÉTAIL MULTI-PRIX
+  ═══════════════════════════════════════════════════ #}
+  <div class="row mt-4">
+    <div class="col-xl-8">
+      <div class="card shadow">
+        <div class="card-header border-0">
+          <h3 class="mb-0">Bénéfice par Réseau</h3>
+        </div>
+        <div class="table-responsive">
+          <table class="table align-items-center table-flush">
+            <thead class="thead-light">
+              <tr>
+                <th>Réseau</th>
+                <th>Qté Vendue</th>
+                <th>Prix d'Achat</th>
+                <th>Coût Total (FC)</th>
+                <th>Revenu (FC)</th>
+                <th>Bénéfice (FC)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for network in networks %}
+              {% set p = profit_data[network.name] %}
+              <tr>
+                <td><strong>{{ network.value | upper }}</strong></td>
+                <td>{{ "{:,.0f}".format(p.qty) }}</td>
+                <td>{{ "{:,.2f}".format(p.buying_price) }} FC</td>
+                <td>{{ "{:,.2f}".format(p.cost) }}</td>
+                <td>{{ "{:,.2f}".format(p.revenue) }}</td>
+                <td class="{% if p.profit >= 0 %}text-success{% else %}text-danger{% endif %} font-weight-bold">
+                  {{ "{:,.2f}".format(p.profit) }}
+                </td>
+              </tr>
+              {% endfor %}
+              <tr class="bg-primary text-white font-weight-bold">
+                <td>Total</td>
+                <td>{{ "{:,.0f}".format(profit_data.values() | sum(attribute='qty')) }}</td>
+                <td>—</td>
+                <td>{{ "{:,.2f}".format(grand_cost) }}</td>
+                <td>{{ "{:,.2f}".format(grand_revenue) }}</td>
+                <td>{{ "{:,.2f}".format(grand_profit) }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
 
-    <div class="container-fluid mt--6">
-
-          <div class="row mt-5">
-        <div class="col-xl-12">
-          <div class="card shadow">
-            <div class="card-header border-0">
-              <h3 class="mb-0">Historique des Achats Stock</h3>
-            </div>
-            <div class="table-responsive">
-              <table class="table align-items-center table-flush">
-                <thead class="thead-light">
-                  <tr>
-                    <th scope="col">#</th>
-                    <th scope="col">Réseau</th>
-                    <th scope="col">Quantité Achetée</th>
-                    <th scope="col">Prix d'Achat (FC)</th>
-                    <th scope="col">Acheteur</th>
-                    <th scope="col">Date & Heure</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for purchase in recent_purchases %}
-                  <tr>
-                    <td>{{ loop.index }}</td>
-                    <td>{{ purchase.network.value | upper }}</td>
-                    <td>{{ "{:,.2f}".format(purchase.amount_purchased | default(0)) }}</td>
-                    <td>{{ "{:,.2f}".format(purchase.buying_price_at_purchase | default(0)) }}</td>
-                    <td>{{ purchase.purchased_by.username }}</td>
-                    <td>{{ purchase.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
-                  </tr>
-                  {% else %}
-                  <tr>
-                    <td colspan="7" class="text-center">Aucun achat de stock enregistré pour cette date.</td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          </div>
+    {# Multi-price breakdown #}
+    <div class="col-xl-4">
+      <div class="card shadow">
+        <div class="card-header border-0">
+          <h3 class="mb-0">Détail par Prix de Vente</h3>
         </div>
-      </div>
-
-
-      <div class="row mt-5">
-        <div class="col-xl-12">
-          <div class="card shadow">
-            <div class="card-header border-0">
-              <h3 class="mb-0">Historique des Ventes</h3>
-            </div>
-            <div class="table-responsive">
-              <table class="table align-items-center table-flush">
-                <thead class="thead-light">
-                  <tr>
-                    <th scope="col">#</th>
-                    <th scope="col">Client</th>
-                    <th scope="col">Vendeur</th>
-                    <th scope="col">Total Dû (FC)</th>
-                    <th scope="col">Argent Donné (FC)</th>
-                    <th scope="col">Dette (FC)</th>
-                    <th scope="col">Date & Heure</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for sale in recent_sales %}
-                  <tr>
-                    <td>{{ loop.index }}</td>
-                    <td>
-                      {% if sale.client %}
-                        {{ sale.client.name }}
-                      {% else %}
-                        {{ sale.client_name_adhoc or 'Client Anonyme' }}
-                      {% endif %}
-                    </td>
-                    <td>{{ sale.seller.username }}</td>
-                    <td>{{ "{:,.2f}".format(sale.total_amount_due | default(0)) }}</td>
-                    <td>{{ "{:,.2f}".format(sale.cash_paid | default(0)) }}</td>
-                    <td>
-                      {% if sale.debt_amount > 0 %}
-                        <span class="badge badge-danger h-6 p-2">{{ "{:,.2f}".format(sale.debt_amount) }}</span>
-                      {% else %}
-                        {{ "{:,.2f}".format(sale.debt_amount | default(0)) }}
-                      {% endif %}
-                    </td>
-                    <td>{{ sale.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
-                  </tr>
-                  {% else %}
-                  <tr>
-                    <td colspan="8" class="text-center">Aucune vente enregistrée pour cette date.</td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-
-
-      <div class="row">
-        <div class="col-xl-12">
-          <div class="card">
-            <div class="card-header border-0">
-              <h3 class="mb-0">Journal des transactions</h3>
-            </div>
-            <div class="table-responsive">
-              <table class="table align-items-center table-flush">
-                <thead class="thead-light">
-                  <tr>
-                    <th scope="col">Réseau</th>
-                    <th scope="col">Stock Initial</th>
-                    <th scope="col">Stock Acheté</th>
-                    <th scope="col">Stock Vendus</th>
-                    <th scope="col">Stock Final</th>
-                    <th scope="col">Unités (FC)</th>
-                    <th scope="col">Dettes (FC)</th> 
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for network in networks %}
-                    {% set data = report_data[network.name] %}
+        <div class="card-body p-0">
+          {% set has_breakdown = namespace(found=false) %}
+          {% for network in networks %}
+            {% if price_breakdown.get(network.name) %}
+              {% set has_breakdown.found = true %}
+              <div class="px-3 pt-3">
+                <h6 class="text-uppercase text-muted mb-2">{{ network.value | upper }}</h6>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-sm align-items-center table-flush mb-0">
+                  <thead class="thead-light">
                     <tr>
-                      <td><strong>{{ network.value | upper }}</strong></td> 
-                      <td>{{ "{:,.2f}".format(data.initial_stock | default(0)) }}</td>
-                      <td>{{ "{:,.2f}".format(data.purchased_stock | default(0)) }}</td>
-                      <td>{{ "{:,.2f}".format(data.sold_stock | default(0)) }}</td> 
-                      <td>{{ "{:,.2f}".format(data.final_stock | default(0)) }}</td>
-                      <td>{{ "{:,.2f}".format(data.virtual_value | default(0)) }}</td>
-                      <td>{{ "{:,.2f}".format(data.debt_amount | default(0)) }}</td> 
+                      <th>Prix unitaire</th>
+                      <th>Quantité</th>
+                      <th>Revenu (FC)</th>
                     </tr>
-                  {% endfor %}
-                  {# Total Row #}
-                  <tr class="bg-primary text-white">
-                    <td><strong>Total Général</strong></td>
-                    <td><strong>{{ "{:,.2f}".format(grand_totals.initial_stock | default(0)) }}</strong></td>
-                    <td><strong>{{ "{:,.2f}".format(grand_totals.purchased_stock | default(0)) }}</strong></td>
-                    <td><strong>{{ "{:,.2f}".format(grand_totals.sold_stock | default(0)) }}</strong></td> 
-                    <td><strong>{{ "{:,.2f}".format(grand_totals.final_stock | default(0)) }}</strong></td>
-                    <td><strong>{{ "{:,.2f}".format(grand_totals.virtual_value | default(0)) }}</strong></td>
-                    <td><strong>{{ "{:,.2f}".format(grand_totals.total_debts | default(0)) }}</strong></td> 
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {% for entry in price_breakdown[network.name] %}
+                    <tr>
+                      <td>{{ "{:,.2f}".format(entry.price) }} FC</td>
+                      <td>{{ "{:,.0f}".format(entry.qty) }}</td>
+                      <td>{{ "{:,.2f}".format(entry.revenue) }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% endif %}
+          {% endfor %}
+          {% if not has_breakdown.found %}
+          <div class="p-3 text-center text-muted">Aucune vente enregistrée pour cette date.</div>
+          {% endif %}
+        </div>
       </div>
-
-      {% include "includes/footer.html" %}
     </div>
+  </div>
 
+  {# ═══════════════════════════════════════════════════
+     4. LISTE DES DETTES DU JOUR
+  ═══════════════════════════════════════════════════ #}
+  {% if debts_today %}
+  <div class="row mt-4">
+    <div class="col-xl-12">
+      <div class="card shadow">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <h3 class="mb-0 text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Dettes du Jour</h3>
+          <span class="badge badge-danger">Total : {{ "{:,.2f}".format(cash_summary.credit) }} FC</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table align-items-center table-flush">
+            <thead class="thead-light">
+              <tr>
+                <th>#</th>
+                <th>Client</th>
+                <th>Total Dû (FC)</th>
+                <th>Cash Payé (FC)</th>
+                <th>Dette Restante (FC)</th>
+                <th>Heure</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for sale in debts_today %}
+              <tr>
+                <td>{{ loop.index }}</td>
+                <td>
+                  <strong>{{ sale.client_display_name }}</strong>
+                </td>
+                <td>{{ "{:,.2f}".format(sale.total_amount_due) }}</td>
+                <td>{{ "{:,.2f}".format(sale.cash_paid) }}</td>
+                <td><span class="badge badge-danger">{{ "{:,.2f}".format(sale.debt_amount) }}</span></td>
+                <td>{{ sale.created_at.strftime('%H:%M') }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ═══════════════════════════════════════════════════
+     5. HISTORIQUE DES ACHATS STOCK
+  ═══════════════════════════════════════════════════ #}
+  <div class="row mt-4">
+    <div class="col-xl-12">
+      <div class="card shadow">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <h3 class="mb-0">Historique des Achats Stock</h3>
+          <span class="badge badge-primary">{{ all_purchases|length }} achat(s)</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table align-items-center table-flush">
+            <thead class="thead-light">
+              <tr>
+                <th>#</th>
+                <th>Réseau</th>
+                <th>Quantité Achetée</th>
+                <th>Prix d'Achat (FC)</th>
+                <th>Montant Total (FC)</th>
+                <th>Acheteur</th>
+                <th>Heure</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for purchase in all_purchases %}
+              <tr>
+                <td>{{ loop.index }}</td>
+                <td><strong>{{ purchase.network.value | upper }}</strong></td>
+                <td>{{ "{:,.0f}".format(purchase.amount_purchased) }}</td>
+                <td>{{ "{:,.2f}".format(purchase.buying_price_at_purchase) }}</td>
+                <td>{{ "{:,.2f}".format(purchase.amount_purchased * purchase.buying_price_at_purchase) }}</td>
+                <td>{{ purchase.purchased_by.username }}</td>
+                <td>{{ purchase.created_at.strftime('%H:%M') }}</td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="7" class="text-center text-muted py-3">Aucun achat de stock pour cette date.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ═══════════════════════════════════════════════════
+     6. HISTORIQUE DES VENTES
+  ═══════════════════════════════════════════════════ #}
+  <div class="row mt-4">
+    <div class="col-xl-12">
+      <div class="card shadow">
+        <div class="card-header border-0">
+          <div class="d-flex justify-content-between align-items-center flex-wrap" style="gap:8px;">
+            <h3 class="mb-0">Historique des Ventes <small class="text-muted">(10 premiers)</small></h3>
+            {# Client search filter #}
+            <form method="GET" action="{{ url_for('main_bp.rapports') }}" class="d-flex align-items-center m-0" style="gap:6px;">
+              <input type="hidden" name="date" value="{{ selected_date }}">
+              <input type="text" name="client_search" value="{{ client_search }}"
+                     placeholder="Recherche client..." class="form-control form-control-sm"
+                     style="width:200px;">
+              <button type="submit" class="btn btn-sm btn-primary">
+                <i class="fas fa-search"></i>
+              </button>
+              {% if client_search %}
+              <a href="{{ url_for('main_bp.rapports', date=selected_date) }}" class="btn btn-sm btn-secondary">
+                <i class="fas fa-times"></i>
+              </a>
+              {% endif %}
+            </form>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table align-items-center table-flush">
+            <thead class="thead-light">
+              <tr>
+                <th>#</th>
+                <th>Client</th>
+                <th>Vendeur</th>
+                <th>Total Dû (FC)</th>
+                <th>Cash Payé (FC)</th>
+                <th>Dette (FC)</th>
+                <th>Heure</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for sale in sales_today %}
+              <tr>
+                <td>{{ loop.index }}</td>
+                <td><strong>{{ sale.client_display_name }}</strong></td>
+                <td>{{ sale.seller.username }}</td>
+                <td>{{ "{:,.2f}".format(sale.total_amount_due) }}</td>
+                <td>{{ "{:,.2f}".format(sale.cash_paid) }}</td>
+                <td>
+                  {% if sale.debt_amount > 0 %}
+                    <span class="badge badge-danger">{{ "{:,.2f}".format(sale.debt_amount) }}</span>
+                  {% else %}
+                    <span class="text-success">0.00</span>
+                  {% endif %}
+                </td>
+                <td>{{ sale.created_at.strftime('%H:%M') }}</td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="7" class="text-center text-muted py-3">
+                  {% if client_search %}
+                    Aucune vente trouvée pour "{{ client_search }}" à cette date.
+                  {% else %}
+                    Aucune vente enregistrée pour cette date.
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if sales_today|length == 10 %}
+        <div class="card-footer text-center text-muted small">
+          Affichage limité à 10 résultats.
+          <a href="{{ url_for('main_bp.vente_stock') }}">Voir toutes les ventes →</a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% include "includes/footer.html" %}
+</div>
 {% endblock content %}
+
 {% block javascripts %}
 {{ super() }}
-
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    var archiveBtn = document.getElementById('archive-btn');
-    var archiveForm = document.getElementById('archive-form');
-    
-    console.log('Button found:', archiveBtn);  // Debug
-    console.log('Form found:', archiveForm);   // Debug
-    
-    if (archiveBtn && archiveForm) {
-        archiveBtn.addEventListener('click', function(e) {
-            e.preventDefault();
-            console.log('Button clicked!');  // Debug
-            
-            if (typeof Swal !== 'undefined') {
-                Swal.fire({
-                    title: 'Archiver le rapport ?',
-                    text: 'Voulez-vous archiver le rapport du {{ selected_date }} ?',
-                    icon: 'question',
-                    showCancelButton: true,
-                    confirmButtonText: 'Oui, archiver',
-                    cancelButtonText: 'Annuler'
-                }).then(function(result) {
-                    if (result.isConfirmed) {
-                        archiveForm.submit();
-                    }
-                });
-            } else {
-                // Fallback
-                if (confirm('Archiver le rapport du {{ selected_date }} ?')) {
-                    archiveForm.submit();
-                }
-            }
+document.addEventListener('DOMContentLoaded', function () {
+  var archiveBtn = document.getElementById('archive-btn');
+  var archiveForm = document.getElementById('archive-form');
+  if (archiveBtn && archiveForm) {
+    archiveBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      if (typeof Swal !== 'undefined') {
+        Swal.fire({
+          title: 'Archiver le rapport ?',
+          text: 'Voulez-vous archiver le rapport du {{ selected_date }} ?',
+          icon: 'question',
+          showCancelButton: true,
+          confirmButtonText: 'Oui, archiver',
+          cancelButtonText: 'Annuler'
+        }).then(function (result) {
+          if (result.isConfirmed) { archiveForm.submit(); }
         });
-    }
+      } else {
+        if (confirm('Archiver le rapport du {{ selected_date }} ?')) { archiveForm.submit(); }
+      }
+    });
+  }
 });
 </script>
 {% endblock javascripts %}

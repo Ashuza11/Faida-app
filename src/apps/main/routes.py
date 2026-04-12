@@ -1783,66 +1783,37 @@ def encaisser_dette():
 def rapports():
     page_title = "Rapport Journalier"
 
-    # --- REFACTORED: Step 1 & 2 replaced with single Utility Call ---
-    # This retrieves selected_date, is_today flag, and correct UTC ranges
     ctx = get_date_context()
+    target_date = ctx['selected_date']
+    vendeur_id = get_current_vendeur_id()
 
-    current_app.logger.debug(
-        f"Single Report requested for: {ctx['selected_date']}")
+    current_app.logger.debug(f"Report requested for: {target_date}")
 
-    # Get recent purchases (filtered by date, desc order)
-    purchase_query, _ = get_stock_purchase_history_query(date_filter=True)
-    recent_purchases = purchase_query.limit(5).all()
-
-    # Get recent sales (filtered by date, desc order)
-    sales_query, _ = get_sales_history_query(date_filter=True)
-    recent_sales = sales_query.limit(5).all()
-
-    # 3. Initialize Data Structures (Empty State)
     networks = list(NetworkType.__members__.values())
-
     def zero_money(): return Decimal("0.00")
 
+    # ── Stock balance table (initial / purchased / sold qty / final / virtual value) ──
     report_data = {
         network.name: {
-            "initial_stock": zero_money(),
-            "purchased_stock": zero_money(),
-            "sold_stock": zero_money(),
-            "final_stock": zero_money(),
-            "virtual_value": zero_money(),
-            "debt_amount": zero_money(),
-            "sales_from_transactions_value": zero_money(),
-            "network": network,
+            "initial_stock": zero_money(), "purchased_stock": zero_money(),
+            "sold_stock": zero_money(), "final_stock": zero_money(),
+            "virtual_value": zero_money(), "network": network,
         } for network in networks
     }
-
     grand_totals = {
-        "initial_stock": zero_money(),
-        "purchased_stock": zero_money(),
-        "sold_stock": zero_money(),
-        "final_stock": zero_money(),
-        "virtual_value": zero_money(),
-        "total_debts": zero_money(),
-        "total_calculated_sold_stock": zero_money()
+        "initial_stock": zero_money(), "purchased_stock": zero_money(),
+        "sold_stock": zero_money(), "final_stock": zero_money(),
+        "virtual_value": zero_money(), "total_debts": zero_money(),
+        "total_calculated_sold_stock": zero_money(),
     }
 
-    # 4. Fetch Data Logic
-
-    # SCENARIO A: LIVE REPORT (Today)
-    # We use the boolean flag from our utility
     if ctx['is_today']:
-        current_app.logger.info("Fetching LIVE report data for today.")
-
-        # We use the pre-calculated UTC ranges from the utility context
-        calculated_data, total_sales_val, total_live_debts = get_daily_report_data(
-            current_app,
-            ctx['selected_date'],
+        calculated_data, _, total_live_debts = get_daily_report_data(
+            current_app, target_date,
             start_of_utc_range=ctx['start_utc'],
             end_of_utc_range=ctx['end_utc'],
-            vendeur_id=get_current_vendeur_id(),
+            vendeur_id=vendeur_id,
         )
-
-        # Map live calculations to view structure
         for network_name, data in calculated_data.items():
             report_data[network_name].update({
                 "initial_stock": data["initial_stock"],
@@ -1850,51 +1821,31 @@ def rapports():
                 "sold_stock": data["sold_stock_quantity"],
                 "final_stock": data["final_stock"],
                 "virtual_value": data["virtual_value"],
-                "sales_from_transactions_value": data["sold_stock_value"],
             })
-
-            # Accumulate Grand Totals
             grand_totals["initial_stock"] += data["initial_stock"]
             grand_totals["purchased_stock"] += data["purchased_stock"]
             grand_totals["sold_stock"] += data["sold_stock_quantity"]
             grand_totals["final_stock"] += data["final_stock"]
             grand_totals["virtual_value"] += data["virtual_value"]
-
         grand_totals["total_debts"] = total_live_debts or zero_money()
-
-    # SCENARIO B: HISTORICAL REPORT (Past Date)
     else:
-        current_app.logger.info(
-            f"Fetching HISTORICAL report for {ctx['selected_date']}.")
-
-        current_vendeur_id = get_current_vendeur_id()
-
-        # Fetch the single overall summary for that day — scoped to this vendeur
-        overall_report_query = DailyOverallReport.query.filter_by(
-            report_date=ctx['selected_date'])
-        if current_vendeur_id:
-            overall_report_query = overall_report_query.filter_by(
-                vendeur_id=current_vendeur_id)
-        overall_report = overall_report_query.first()
-
+        overall_report_q = DailyOverallReport.query.filter_by(report_date=target_date)
+        if vendeur_id:
+            overall_report_q = overall_report_q.filter_by(vendeur_id=vendeur_id)
+        overall_report = overall_report_q.first()
         if overall_report:
-            # Populate Grand Totals directly from the saved report
-            grand_totals["initial_stock"] = overall_report.total_initial_stock
-            grand_totals["purchased_stock"] = overall_report.total_purchased_stock
-            grand_totals["sold_stock"] = overall_report.total_sold_stock
-            grand_totals["final_stock"] = overall_report.total_final_stock
-            grand_totals["virtual_value"] = overall_report.total_virtual_value
-            grand_totals["total_debts"] = overall_report.total_debts
-
-            # Fetch detailed breakdown per network — scoped to this vendeur
-            network_reports_query = DailyStockReport.query.filter_by(
-                report_date=ctx['selected_date'])
-            if current_vendeur_id:
-                network_reports_query = network_reports_query.filter_by(
-                    vendeur_id=current_vendeur_id)
-            daily_network_reports = network_reports_query.all()
-
-            for r in daily_network_reports:
+            grand_totals.update({
+                "initial_stock": overall_report.total_initial_stock,
+                "purchased_stock": overall_report.total_purchased_stock,
+                "sold_stock": overall_report.total_sold_stock,
+                "final_stock": overall_report.total_final_stock,
+                "virtual_value": overall_report.total_virtual_value,
+                "total_debts": overall_report.total_debts,
+            })
+            net_reports_q = DailyStockReport.query.filter_by(report_date=target_date)
+            if vendeur_id:
+                net_reports_q = net_reports_q.filter_by(vendeur_id=vendeur_id)
+            for r in net_reports_q.all():
                 if r.network.name in report_data:
                     report_data[r.network.name].update({
                         "initial_stock": r.initial_stock_balance,
@@ -1904,15 +1855,115 @@ def rapports():
                         "virtual_value": r.virtual_value,
                     })
         else:
-            flash(
-                f"Aucun rapport archivé trouvé pour le {ctx['date_str']}.", "warning")
+            flash(f"Aucun rapport archivé trouvé pour le {ctx['date_str']}. "
+                  "Les données financières ci-dessous restent disponibles.", "warning")
 
-    # 5. Final Calculation (Applied to both scenarios)
     grand_totals["total_calculated_sold_stock"] = (
         grand_totals["initial_stock"]
         + grand_totals["purchased_stock"]
         - grand_totals["final_stock"]
     )
+
+    # ── Live financial queries (always from transactions, keyed on sale_date) ──
+
+    # Buying prices per network for cost/profit calculation
+    stock_items = Stock.query.filter_by(vendeur_id=vendeur_id).all() if vendeur_id else []
+    buying_price_map = {s.network: s.buying_price_per_unit for s in stock_items}
+
+    # Price breakdown: per network × selling price → qty + revenue
+    pb_q = (
+        db.session.query(
+            SaleItem.network,
+            SaleItem.price_per_unit_applied,
+            func.sum(SaleItem.quantity).label('qty'),
+            func.sum(SaleItem.subtotal).label('revenue'),
+        )
+        .join(Sale)
+        .filter(Sale.sale_date == target_date)
+    )
+    if vendeur_id:
+        pb_q = pb_q.filter(Sale.vendeur_id == vendeur_id)
+    price_breakdown_rows = pb_q.group_by(
+        SaleItem.network, SaleItem.price_per_unit_applied
+    ).order_by(SaleItem.network, SaleItem.price_per_unit_applied).all()
+
+    # Build price_breakdown dict: {network_name: [{price, qty, revenue}, ...]}
+    price_breakdown = {}
+    for row in price_breakdown_rows:
+        key = row.network.name
+        if key not in price_breakdown:
+            price_breakdown[key] = []
+        price_breakdown[key].append({
+            "price": Decimal(str(row.price_per_unit_applied)),
+            "qty": int(row.qty or 0),
+            "revenue": Decimal(str(row.revenue or 0)),
+        })
+
+    # Profit per network
+    profit_data = {}
+    grand_profit = zero_money()
+    grand_revenue = zero_money()
+    grand_cost = zero_money()
+    for network in networks:
+        entries = price_breakdown.get(network.name, [])
+        total_qty = sum(e["qty"] for e in entries)
+        total_revenue = sum(e["revenue"] for e in entries)
+        buying_price = buying_price_map.get(network, Decimal("0.94"))
+        total_cost = Decimal(str(total_qty)) * buying_price
+        profit = total_revenue - total_cost
+        profit_data[network.name] = {
+            "network": network,
+            "qty": total_qty,
+            "revenue": total_revenue,
+            "cost": total_cost,
+            "profit": profit,
+            "buying_price": buying_price,
+        }
+        grand_revenue += total_revenue
+        grand_cost += total_cost
+        grand_profit += profit
+
+    # Cash & credit summary for the day
+    cash_q = db.session.query(
+        func.sum(Sale.cash_paid).label('cash'),
+        func.sum(Sale.debt_amount).label('credit'),
+        func.sum(Sale.total_amount_due).label('total'),
+        func.count(Sale.id).label('count'),
+    ).filter(Sale.sale_date == target_date)
+    if vendeur_id:
+        cash_q = cash_q.filter(Sale.vendeur_id == vendeur_id)
+    cash_row = cash_q.first()
+    cash_summary = {
+        "cash": Decimal(str(cash_row.cash or 0)),
+        "credit": Decimal(str(cash_row.credit or 0)),
+        "total": Decimal(str(cash_row.total or 0)),
+        "count": int(cash_row.count or 0),
+    }
+
+    # Debt detail list for the day
+    debts_q = Sale.query.filter(
+        Sale.sale_date == target_date,
+        Sale.debt_amount > 0,
+    )
+    if vendeur_id:
+        debts_q = debts_q.filter(Sale.vendeur_id == vendeur_id)
+    debts_today = debts_q.order_by(Sale.debt_amount.desc()).all()
+
+    # All stock purchases for the date
+    purchase_query, _ = get_stock_purchase_history_query(date_filter=True)
+    all_purchases = purchase_query.all()
+
+    # Sales history (max 10), with optional client name search
+    client_search = request.args.get('client_search', '').strip()
+    sales_q, _ = get_sales_history_query(date_filter=True)
+    if client_search:
+        sales_q = sales_q.filter(
+            db.or_(
+                Sale.client_name_adhoc.ilike(f'%{client_search}%'),
+                Sale.client.has(Client.name.ilike(f'%{client_search}%')),
+            )
+        )
+    sales_today = sales_q.limit(10).all()
 
     return render_template(
         "main/rapports.html",
@@ -1921,9 +1972,19 @@ def rapports():
         report_data=report_data,
         grand_totals=grand_totals,
         selected_date=ctx['date_str'],
-        # Pass the lists to the template
-        recent_purchases=recent_purchases,
-        recent_sales=recent_sales,
+        is_today=ctx['is_today'],
+        # Financial data
+        price_breakdown=price_breakdown,
+        profit_data=profit_data,
+        grand_profit=grand_profit,
+        grand_revenue=grand_revenue,
+        grand_cost=grand_cost,
+        cash_summary=cash_summary,
+        debts_today=debts_today,
+        # Lists
+        all_purchases=all_purchases,
+        sales_today=sales_today,
+        client_search=client_search,
         segment="rapports",
     )
 
