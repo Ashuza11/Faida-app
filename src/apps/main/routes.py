@@ -50,6 +50,7 @@ from apps.models import (
     CashInflowCategory,
     DailyOverallReport,
     DailyStockReport,
+    StockOpeningBalance,
     normalize_phone,
     validate_drc_phone
 )
@@ -60,6 +61,7 @@ from apps.main.forms import (
     ClientForm,
     ClientEditForm,
     StockPurchaseForm,
+    StockOpeningBalanceForm,
     SaleForm,
     CashOutflowForm,
     DebtCollectionForm,
@@ -934,6 +936,117 @@ def delete_stock_purchase(purchase_id):
         page_title="Confirmer Suppression",
         segment="stock",
         sub_segment="achat_stock",
+    )
+
+
+@bp.route("/stock/ouverture", methods=["GET", "POST"])
+@login_required
+@business_member_required
+def stock_ouverture():
+    """
+    Set the opening (initial) airtime balance per network for a given date.
+    Saves to StockOpeningBalance so get_daily_report_data() uses it as anchor.
+    Also provides a "copy from yesterday" helper endpoint.
+    """
+    vendeur_id = get_current_vendeur_id()
+    form = StockOpeningBalanceForm()
+
+    # Default to today
+    if request.method == "GET":
+        from datetime import date as _date
+        form.balance_date.data = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
+        # Pre-fill with any existing entry for today
+        if vendeur_id:
+            existing = StockOpeningBalance.query.filter_by(
+                vendeur_id=vendeur_id,
+                balance_date=form.balance_date.data,
+            ).all()
+            existing_map = {ob.network.name.lower(): ob.quantity for ob in existing}
+            for field_name in ('airtel', 'africel', 'orange', 'vodacom'):
+                field = getattr(form, field_name)
+                val = existing_map.get(field_name)
+                if val is not None:
+                    field.data = int(val)
+
+    if form.validate_on_submit():
+        if not vendeur_id:
+            flash("Impossible de déterminer le vendeur.", "danger")
+            return redirect(url_for('main_bp.stock_ouverture'))
+
+        balance_date = form.balance_date.data
+        network_fields = {
+            NetworkType.AIRTEL:   form.airtel.data,
+            NetworkType.AFRICEL:  form.africel.data,
+            NetworkType.ORANGE:   form.orange.data,
+            NetworkType.VODACOM:  form.vodacom.data,
+        }
+
+        try:
+            for network, qty in network_fields.items():
+                if qty is None:
+                    qty = 0
+                entry = StockOpeningBalance.query.filter_by(
+                    vendeur_id=vendeur_id,
+                    network=network,
+                    balance_date=balance_date,
+                ).first()
+                if entry:
+                    entry.quantity = Decimal(str(qty))
+                    entry.set_by_id = current_user.id
+                else:
+                    entry = StockOpeningBalance(
+                        vendeur_id=vendeur_id,
+                        network=network,
+                        balance_date=balance_date,
+                        quantity=Decimal(str(qty)),
+                        set_by_id=current_user.id,
+                    )
+                    db.session.add(entry)
+
+            db.session.commit()
+            flash(
+                f"Stock initial du {balance_date.strftime('%d/%m/%Y')} enregistré avec succès.",
+                "success",
+            )
+            return redirect(url_for('main_bp.stock_ouverture'))
+
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error saving opening balance: {e}")
+            flash("Une erreur est survenue lors de l'enregistrement.", "danger")
+
+    # Fetch yesterday's data to show as suggestion
+    yesterday = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date() - timedelta(days=1)
+    yesterday_map = {}
+    if vendeur_id:
+        prev_reports = DailyStockReport.query.filter_by(
+            report_date=yesterday, vendeur_id=vendeur_id
+        ).all()
+        if prev_reports:
+            yesterday_map = {r.network.name.lower(): int(r.final_stock_balance or 0)
+                             for r in prev_reports}
+        else:
+            # Fall back to live Stock.balance if no archive
+            live_stocks = Stock.query.filter_by(vendeur_id=vendeur_id).all()
+            yesterday_map = {s.network.name.lower(): int(s.balance or 0)
+                             for s in live_stocks}
+
+    # Existing entries (all dates) for the history table
+    history_q = StockOpeningBalance.query.filter_by(vendeur_id=vendeur_id) if vendeur_id \
+        else StockOpeningBalance.query
+    history = history_q.order_by(
+        StockOpeningBalance.balance_date.desc()
+    ).limit(30).all()
+
+    return render_template(
+        "main/stock_ouverture.html",
+        form=form,
+        yesterday_map=yesterday_map,
+        yesterday=yesterday,
+        history=history,
+        segment="stock",
+        sub_segment="stock_ouverture",
+        page_title="Stock Initial",
     )
 
 

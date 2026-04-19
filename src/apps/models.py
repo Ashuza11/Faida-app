@@ -300,6 +300,13 @@ class User(db.Model, UserMixin):
         foreign_keys="[CashOutflow.recorded_by_id]"
     )
 
+    # Opening balances set by this vendeur
+    opening_balances: so.Mapped[List["StockOpeningBalance"]] = so.relationship(
+        back_populates="vendeur",
+        foreign_keys="[StockOpeningBalance.vendeur_id]",
+        cascade="all, delete-orphan",
+    )
+
     def set_password(self, password: str) -> None:
         """Hash and set the user's password."""
         self.password_hash = generate_password_hash(password)
@@ -564,6 +571,66 @@ class StockPurchase(db.Model):
     def vendeur_id(self) -> int:
         """Get the vendeur_id through the stock item."""
         return self.stock_item.vendeur_id if self.stock_item else None
+
+
+# ===========================================
+# StockOpeningBalance Model
+# ===========================================
+
+class StockOpeningBalance(db.Model):
+    """
+    Manually set opening (initial) airtime balance for a given network/date/vendeur.
+    Takes highest priority in daily report initial-stock calculation,
+    overriding the automatic reverse-calculation and archive fallback.
+    """
+    __tablename__ = "stock_opening_balances"
+
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+
+    vendeur_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=False, index=True
+    )
+    vendeur: so.Mapped["User"] = so.relationship(
+        foreign_keys=[vendeur_id],
+        back_populates="opening_balances",
+    )
+
+    network: so.Mapped[NetworkType] = so.mapped_column(
+        sa.Enum(NetworkType), nullable=False
+    )
+
+    balance_date: so.Mapped[date] = so.mapped_column(
+        sa.Date(), nullable=False, index=True
+    )
+
+    quantity: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(15, 2), nullable=False, default=Decimal("0.00")
+    )
+
+    set_by_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=True
+    )
+    set_by: so.Mapped[Optional["User"]] = so.relationship(
+        foreign_keys=[set_by_id]
+    )
+
+    created_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "vendeur_id", "network", "balance_date",
+            name="_opening_balance_vendeur_network_date_uc"
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<StockOpeningBalance {self.network.name} "
+            f"{self.balance_date} vendeur#{self.vendeur_id}: {self.quantity}>"
+        )
 
 
 # ===========================================

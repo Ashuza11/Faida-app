@@ -1,0 +1,171 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} Stock Initial {% endblock %}
+
+{% block content %}
+  {% set breadcrumb_items = [
+    {'text': 'Stock', 'url': url_for('main_bp.achat_stock')},
+    {'text': 'Stock Initial', 'url': url_for('main_bp.stock_ouverture')},
+  ] %}
+  {% include 'includes/page_header.html' %}
+
+  <div class="container-fluid mt--6">
+    <div class="row">
+
+      {# ── Left: Form ───────────────────────────────────────── #}
+      <div class="col-xl-5">
+        <div class="card shadow">
+          <div class="card-header">
+            <div class="row align-items-center">
+              <div class="col">
+                <h3 class="mb-0">Définir Stock Initial</h3>
+                <p class="text-muted text-sm mb-0">
+                  Entrez les quantités d'airtime au début de la journée.
+                  Ces valeurs ancrent le "Stock Initial" dans le rapport journalier.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div class="card-body">
+            {# Suggestion banner from yesterday #}
+            {% if yesterday_map %}
+            <div class="alert alert-info alert-dismissible fade show py-2" role="alert">
+              <strong>Solde d'hier ({{ yesterday.strftime('%d/%m/%Y') }}) :</strong>
+              {% for net, qty in yesterday_map.items() %}
+                <span class="badge badge-primary ml-1">{{ net | upper }}: {{ "{:,}".format(qty) }}</span>
+              {% endfor %}
+              <button type="button" id="btn-copy-yesterday" class="btn btn-sm btn-white ml-2">
+                <i class="fas fa-copy"></i> Copier dans le formulaire
+              </button>
+              <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+            </div>
+            {% endif %}
+
+            <form method="POST" action="{{ url_for('main_bp.stock_ouverture') }}">
+              {{ form.hidden_tag() }}
+
+              <div class="form-group">
+                <label class="form-control-label">{{ form.balance_date.label }}</label>
+                <div class="input-group input-group-merge input-group-alternative">
+                  <div class="input-group-prepend">
+                    <span class="input-group-text"><i class="fas fa-calendar-alt"></i></span>
+                  </div>
+                  {{ form.balance_date(class="form-control" + (" is-invalid" if form.balance_date.errors else "")) }}
+                </div>
+                {% for e in form.balance_date.errors %}
+                  <div class="invalid-feedback d-block">{{ e }}</div>
+                {% endfor %}
+              </div>
+
+              <hr class="my-3">
+              <p class="text-muted text-sm mb-3">Quantités d'ouverture par réseau :</p>
+
+              <div class="row">
+                {% for field_name, icon_color in [('airtel','red'), ('africel','blue'), ('orange','orange'), ('vodacom','red')] %}
+                {% set field = form[field_name] %}
+                <div class="col-6 mb-3">
+                  <label class="form-control-label">{{ field.label }}</label>
+                  <div class="input-group input-group-merge input-group-alternative">
+                    <div class="input-group-prepend">
+                      <span class="input-group-text"><i class="fas fa-sim-card"></i></span>
+                    </div>
+                    {{ field(class="form-control network-qty" + (" is-invalid" if field.errors else ""),
+                             id="field_" + field_name,
+                             **{"data-network": field_name}) }}
+                  </div>
+                  {% for e in field.errors %}
+                    <div class="invalid-feedback d-block">{{ e }}</div>
+                  {% endfor %}
+                </div>
+                {% endfor %}
+              </div>
+
+              <hr class="my-3">
+              <div class="d-flex justify-content-end" style="gap:8px;">
+                <a href="{{ url_for('main_bp.achat_stock') }}" class="btn btn-secondary">Annuler</a>
+                {{ form.submit(class="btn btn-primary") }}
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      {# ── Right: History table ─────────────────────────────── #}
+      <div class="col-xl-7">
+        <div class="card shadow">
+          <div class="card-header border-0 d-flex justify-content-between align-items-center">
+            <h3 class="mb-0">Historique des Stocks Initiaux</h3>
+            <span class="badge badge-primary">30 dernières entrées</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table align-items-center table-flush">
+              <thead class="thead-light">
+                <tr>
+                  <th>Date</th>
+                  <th>Airtel</th>
+                  <th>Africel</th>
+                  <th>Orange</th>
+                  <th>Vodacom</th>
+                  <th>Saisi par</th>
+                </tr>
+              </thead>
+              <tbody>
+                {# Group history by date #}
+                {% set seen_dates = namespace(dates=[]) %}
+                {% for entry in history %}
+                  {% if entry.balance_date not in seen_dates.dates %}
+                    {% set _ = seen_dates.dates.append(entry.balance_date) %}
+                    {# Collect all networks for this date #}
+                    {% set row = namespace(airtel='-', africel='-', orange='-', vodacom='-', set_by='-') %}
+                    {% for e in history if e.balance_date == entry.balance_date %}
+                      {% if e.network.name == 'AIRTEL' %}{% set row.airtel = "{:,}".format(e.quantity|int) %}{% endif %}
+                      {% if e.network.name == 'AFRICEL' %}{% set row.africel = "{:,}".format(e.quantity|int) %}{% endif %}
+                      {% if e.network.name == 'ORANGE' %}{% set row.orange = "{:,}".format(e.quantity|int) %}{% endif %}
+                      {% if e.network.name == 'VODACOM' %}{% set row.vodacom = "{:,}".format(e.quantity|int) %}{% endif %}
+                      {% if e.set_by %}{% set row.set_by = e.set_by.username %}{% endif %}
+                    {% endfor %}
+                    <tr>
+                      <td><strong>{{ entry.balance_date.strftime('%d/%m/%Y') }}</strong></td>
+                      <td>{{ row.airtel }}</td>
+                      <td>{{ row.africel }}</td>
+                      <td>{{ row.orange }}</td>
+                      <td>{{ row.vodacom }}</td>
+                      <td class="text-muted">{{ row.set_by }}</td>
+                    </tr>
+                  {% endif %}
+                {% else %}
+                <tr>
+                  <td colspan="6" class="text-center text-muted py-3">
+                    Aucun stock initial enregistré.
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    {% include "includes/footer.html" %}
+  </div>
+{% endblock content %}
+
+{% block javascripts %}
+{{ super() }}
+<script>
+(function () {
+  var yesterdayData = {{ yesterday_map | tojson }};
+
+  var btn = document.getElementById('btn-copy-yesterday');
+  if (btn) {
+    btn.addEventListener('click', function () {
+      Object.keys(yesterdayData).forEach(function (net) {
+        var el = document.getElementById('field_' + net);
+        if (el) el.value = yesterdayData[net];
+      });
+    });
+  }
+})();
+</script>
+{% endblock javascripts %}

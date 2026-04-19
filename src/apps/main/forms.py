@@ -531,6 +531,40 @@ class EditProfileForm(FlaskForm):
                 )
 
 
+class StockOpeningBalanceForm(FlaskForm):
+    """
+    Lets vendors set the opening (initial) airtime balance per network for a date.
+    Submitted values anchor the initial_stock in daily reports, overriding the
+    reverse-calculation fallback.
+    """
+    balance_date = DateField(
+        "Date",
+        validators=[DataRequired(message="Veuillez indiquer la date.")],
+        format='%Y-%m-%d',
+    )
+    airtel = IntegerField(
+        "Airtel (unités)",
+        validators=[Optional(), NumberRange(min=0, message="La quantité doit être ≥ 0.")],
+        render_kw={"placeholder": "0"},
+    )
+    africel = IntegerField(
+        "Africel (unités)",
+        validators=[Optional(), NumberRange(min=0)],
+        render_kw={"placeholder": "0"},
+    )
+    orange = IntegerField(
+        "Orange (unités)",
+        validators=[Optional(), NumberRange(min=0)],
+        render_kw={"placeholder": "0"},
+    )
+    vodacom = IntegerField(
+        "Vodacom (unités)",
+        validators=[Optional(), NumberRange(min=0)],
+        render_kw={"placeholder": "0"},
+    )
+    submit = SubmitField("Enregistrer Stock Initial")
+
+
 # Form for confirming deletion of a sale
 class DeleteConfirmForm(FlaskForm):
     submit = SubmitField("Oui, Supprimer", validators=[DataRequired()])

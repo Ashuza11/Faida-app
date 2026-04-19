@@ -24,7 +24,10 @@
                             <div class="col">
                                 <h3 class="mb-0">Historique des Achats</h3>
                             </div>
-                            <div class="col text-right">
+                            <div class="col text-right" style="display:flex;gap:8px;justify-content:flex-end;align-items:center;">
+                                <a href="{{ url_for('main_bp.stock_ouverture') }}" class="btn btn-sm btn-outline-info">
+                                    <i class="fas fa-layer-group"></i> Stock Initial
+                                </a>
                                 {# "Ajouter Achat" button to open the modal #}
                                 {% if current_user.is_authenticated and (current_user.role.value == 'superadmin' or current_user.role.value == 'vendeur') %}
                                     <button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#addStockPurchaseModal">

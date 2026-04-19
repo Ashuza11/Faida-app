@@ -11,6 +11,7 @@ from apps.models import (
     NetworkType,
     Stock,
     StockPurchase,
+    StockOpeningBalance,
     Sale,
     SaleItem,
     DailyOverallReport,
@@ -381,7 +382,13 @@ def get_daily_report_data(
     sales_qty_map = {s.network: Decimal(str(s.qty or 0)) for s in daily_sales}
     sales_val_map = {s.network: Decimal(str(s.val or 0)) for s in daily_sales}
 
-    # 4. Determine Previous Final Stock (Initial Stock Basis) — scoped to this vendeur
+    # 4a. Check for manually set opening balance for target_date (highest priority)
+    opening_q = StockOpeningBalance.query.filter_by(balance_date=target_date)
+    if vendeur_id is not None:
+        opening_q = opening_q.filter_by(vendeur_id=vendeur_id)
+    manual_opening_map = {ob.network: Decimal(str(ob.quantity)) for ob in opening_q.all()}
+
+    # 4b. Determine Previous Final Stock (fallback) — scoped to this vendeur
     previous_day = target_date - timedelta(days=1)
     prev_reports_query = DailyStockReport.query.filter_by(
         report_date=previous_day)
@@ -423,26 +430,28 @@ def get_daily_report_data(
             else Decimal("1.00")
         )
 
-        # --- STEP 6a: DETERMINE INITIAL STOCK (CRITICAL FIX) ---
-        initial_stock = previous_stock_map.get(network)
+        # --- STEP 6a: DETERMINE INITIAL STOCK ---
+        # Priority: 1) manually set opening balance  2) yesterday's archive  3) reverse-calc
+        if network in manual_opening_map:
+            initial_stock = manual_opening_map[network]
+            app.logger.debug(
+                f"[{network.name}] Using manual opening balance: {initial_stock}"
+            )
+        else:
+            initial_stock = previous_stock_map.get(network)
 
-        if initial_stock is None:
-            # If no historical record exists for the day before...
-            if is_live_report:
-                # REVERSE CALCULATION for TODAY's report: Initial = Current + Sold - Purchased
-                initial_stock = current_balance + qty_sold - qty_purchased
-
-                app.logger.debug(
-                    f"[{network.name}] LIVE FIX: Initial Stock reverse calculated to {initial_stock} "
-                    f"from Current: {current_balance}, Sold: {qty_sold}, Purchased: {qty_purchased}."
-                )
-            else:
-                # If it's a historical date AND no record exists, assume the start was 0.
-                initial_stock = Decimal("0.00")
-
-        # If initial_stock was found in history, ensure it's Decimal
-        elif not isinstance(initial_stock, Decimal):
-            initial_stock = Decimal(str(initial_stock))
+            if initial_stock is None:
+                if is_live_report:
+                    # Reverse-calculate for today when no anchor exists
+                    initial_stock = current_balance + qty_sold - qty_purchased
+                    app.logger.debug(
+                        f"[{network.name}] LIVE FIX: Initial Stock reverse calculated to {initial_stock} "
+                        f"from Current: {current_balance}, Sold: {qty_sold}, Purchased: {qty_purchased}."
+                    )
+                else:
+                    initial_stock = Decimal("0.00")
+            elif not isinstance(initial_stock, Decimal):
+                initial_stock = Decimal(str(initial_stock))
 
         # --- STEP 6b: CALCULATE FINAL STOCK ---
         final_stock = initial_stock + qty_purchased - qty_sold
