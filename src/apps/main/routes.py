@@ -14,10 +14,10 @@ from apps.main.utils import (
     get_local_timezone_datetime_info,
     APP_TIMEZONE,
     get_date_context,
+    get_utc_range_for_date,
     get_stock_purchase_history_query,
     get_sales_history_query,
     update_daily_reports,
-
 )
 
 from apps.decorators import (
@@ -84,153 +84,96 @@ def health():
 @bp.route("/index")
 @login_required
 def index():
-    # Use the new utility function to get timezone-aware date/time info
-    local_now, today_local_date, start_of_local_day_utc, end_of_local_day_utc = (
-        get_local_timezone_datetime_info()
-    )
+    _, today_local_date, _, _ = get_local_timezone_datetime_info()
 
-    # --- Get current vendeur context ---
+    # Support ?date= filter; default to today
+    ctx = get_date_context()
+    selected_date = ctx['selected_date']
+    selected_date_str = ctx['date_str']
+    is_today = ctx['is_today']
+
     vendeur_id = get_current_vendeur_id()
 
-    # --- 1. Total Stock for each network (Card stats) ---
+    # --- 1. Stock balances — always live (current physical inventory) ---
     if vendeur_id:
         current_stocks = Stock.query.filter_by(vendeur_id=vendeur_id).all()
     else:
-        current_stocks = Stock.query.all()  # Platform admin sees all
+        current_stocks = Stock.query.all()
+    total_stocks_data = {s.network.value: s.balance for s in current_stocks}
 
-    total_stocks_data = {
-        stock.network.value: stock.balance for stock in current_stocks
-    }
-
-    # --- 2. Sales Over Time (Chart 1 - Sales Value) ---
+    # --- 2. Sales Over Time chart (always last 7 days from today) ---
     sales_data_week = {}
     for i in range(6, -1, -1):
-        target_local_date = today_local_date - timedelta(days=i)
-        start_of_target_day_utc = APP_TIMEZONE.localize(
-            datetime(
-                target_local_date.year,
-                target_local_date.month,
-                target_local_date.day,
-                0, 0, 0,
-            )
-        ).astimezone(pytz.utc)
-        end_of_target_day_utc = APP_TIMEZONE.localize(
-            datetime(
-                target_local_date.year,
-                target_local_date.month,
-                target_local_date.day,
-                23, 59, 59, 999999,
-            )
-        ).astimezone(pytz.utc)
-
-        # Query with vendeur filtering
-        query = db.session.query(func.sum(Sale.total_amount_due))
+        d = today_local_date - timedelta(days=i)
+        q = db.session.query(func.sum(Sale.total_amount_due))
         if vendeur_id:
-            query = query.filter(Sale.vendeur_id == vendeur_id)
-        daily_sales = query.filter(
-            Sale.sale_date == target_local_date,
-        ).scalar()
+            q = q.filter(Sale.vendeur_id == vendeur_id)
+        val = q.filter(Sale.sale_date == d).scalar()
+        sales_data_week[d.strftime("%a")] = float(val) if val else 0.0
 
-        sales_data_week[target_local_date.strftime("%a")] = (
-            float(daily_sales) if daily_sales else 0.00
-        )
-
-    # --- 3. Sales by Network (Chart 2) ---
+    # --- 3. Sales by Network chart (for the selected date) ---
     sales_by_network = {}
     for network in NetworkType:
-        query = db.session.query(func.sum(SaleItem.subtotal)).join(Sale)
+        q = db.session.query(func.sum(SaleItem.subtotal)).join(Sale)
         if vendeur_id:
-            query = query.filter(Sale.vendeur_id == vendeur_id)
-        network_sales = query.filter(
-            SaleItem.network == network,
-            Sale.sale_date == today_local_date,
-        ).scalar()
-        sales_by_network[network.value] = (
-            float(network_sales) if network_sales else 0.00
-        )
+            q = q.filter(Sale.vendeur_id == vendeur_id)
+        val = q.filter(SaleItem.network == network, Sale.sale_date == selected_date).scalar()
+        sales_by_network[network.value] = float(val) if val else 0.0
 
-    # --- 4. Key Performance Indicators ---
-    # Total Sales Today
-    query = db.session.query(func.sum(Sale.total_amount_due))
+    # --- 4. KPI cards — scoped to selected_date ---
+    def _sale_q():
+        q = db.session.query
+        return q
+
+    # Total sales
+    q = db.session.query(func.sum(Sale.total_amount_due))
     if vendeur_id:
-        query = query.filter(Sale.vendeur_id == vendeur_id)
-    total_sales_today = query.filter(
-        Sale.sale_date == today_local_date,
-    ).scalar()
-    total_sales_today = float(total_sales_today) if total_sales_today else 0.00
+        q = q.filter(Sale.vendeur_id == vendeur_id)
+    total_sales_today = float(q.filter(Sale.sale_date == selected_date).scalar() or 0)
 
-    # Total Debt
-    query = db.session.query(func.sum(Sale.debt_amount)
-                             ).filter(Sale.debt_amount > 0)
+    # Debts from sales on selected date
+    q = db.session.query(func.sum(Sale.debt_amount)).filter(Sale.debt_amount > 0)
     if vendeur_id:
-        query = query.filter(Sale.vendeur_id == vendeur_id)
-    total_debt = query.scalar()
-    total_debt = float(total_debt) if total_debt else 0.00
+        q = q.filter(Sale.vendeur_id == vendeur_id)
+    total_debt = float(q.filter(Sale.sale_date == selected_date).scalar() or 0)
 
-    # Total Cash Inflow (Today)
-    # Use Sale.cash_paid as the single source of truth for all cash received
-    # (covers both direct payments at sale creation and encaisser_dette collections).
-    # Only add CashInflow records that are NOT linked to a sale (e.g. "Autre Entrée")
-    # to avoid double-counting encaisser_dette payments which already update Sale.cash_paid.
-    query = db.session.query(func.sum(Sale.cash_paid))
+    # Cash inflow — sales cash paid on selected date
+    q = db.session.query(func.sum(Sale.cash_paid))
     if vendeur_id:
-        query = query.filter(Sale.vendeur_id == vendeur_id)
-    total_cash_inflow_sales = query.filter(
-        Sale.sale_date == today_local_date,
-    ).scalar()
+        q = q.filter(Sale.vendeur_id == vendeur_id)
+    total_cash_inflow_sales = q.filter(Sale.sale_date == selected_date).scalar() or Decimal("0.00")
 
-    query = db.session.query(func.sum(CashInflow.amount)).filter(
-        CashInflow.sale_id.is_(None)
-    )
+    # Cash inflow — non-sale entries on selected date
+    q = db.session.query(func.sum(CashInflow.amount)).filter(CashInflow.sale_id.is_(None))
     if vendeur_id:
-        query = query.filter(CashInflow.vendeur_id == vendeur_id)
-    total_cash_inflow_other = query.filter(
-        CashInflow.payment_date == today_local_date,
-    ).scalar()
+        q = q.filter(CashInflow.vendeur_id == vendeur_id)
+    total_cash_inflow_other = q.filter(CashInflow.payment_date == selected_date).scalar() or Decimal("0.00")
 
-    total_cash_inflow_today = (
-        (total_cash_inflow_sales or Decimal("0.00")) +
-        (total_cash_inflow_other or Decimal("0.00"))
-    )
-    total_cash_inflow_today = float(total_cash_inflow_today)
+    total_cash_inflow_today = float(total_cash_inflow_sales + total_cash_inflow_other)
 
-    # Total Cash Outflow (Today)
-    query = db.session.query(func.sum(CashOutflow.amount))
+    # Cash outflow on selected date
+    q = db.session.query(func.sum(CashOutflow.amount))
     if vendeur_id:
-        query = query.filter(CashOutflow.vendeur_id == vendeur_id)
-    total_cash_outflow_today = query.filter(
-        CashOutflow.expense_date == today_local_date,
-    ).scalar()
-    total_cash_outflow_today = (
-        float(total_cash_outflow_today) if total_cash_outflow_today else 0.00
-    )
+        q = q.filter(CashOutflow.vendeur_id == vendeur_id)
+    total_cash_outflow_today = float(q.filter(CashOutflow.expense_date == selected_date).scalar() or 0)
 
-    # --- 5. Recent Sales History (Table) ---
+    # --- 5. Recent sales for the selected date ---
     base_query = Sale.query.options(
         db.joinedload(Sale.client),
         db.joinedload(Sale.sale_items),
-    ).order_by(Sale.created_at.desc())
+    ).filter(Sale.sale_date == selected_date).order_by(Sale.created_at.desc())
+    recent_sales = filter_by_vendeur(base_query, Sale).limit(5).all()
 
-    filtered_query = filter_by_vendeur(base_query, Sale)
-    recent_sales = filtered_query.limit(5).all()
-
-    # --- 6. Daily Reports ---
+    # --- 6. Archived daily reports (always yesterday, for the report summary widget) ---
     yesterday_local_date = today_local_date - timedelta(days=1)
-
     if vendeur_id:
         daily_stock_reports = DailyStockReport.query.filter_by(
-            report_date=yesterday_local_date, vendeur_id=vendeur_id
-        ).all()
+            report_date=yesterday_local_date, vendeur_id=vendeur_id).all()
         daily_overall_report = DailyOverallReport.query.filter_by(
-            report_date=yesterday_local_date, vendeur_id=vendeur_id
-        ).first()
+            report_date=yesterday_local_date, vendeur_id=vendeur_id).first()
     else:
-        daily_stock_reports = DailyStockReport.query.filter_by(
-            report_date=yesterday_local_date
-        ).all()
-        daily_overall_report = DailyOverallReport.query.filter_by(
-            report_date=yesterday_local_date
-        ).first()
+        daily_stock_reports = DailyStockReport.query.filter_by(report_date=yesterday_local_date).all()
+        daily_overall_report = DailyOverallReport.query.filter_by(report_date=yesterday_local_date).first()
 
     return render_template(
         "main/index.html",
@@ -246,6 +189,8 @@ def index():
         daily_stock_reports=daily_stock_reports,
         daily_overall_report=daily_overall_report,
         NetworkType=NetworkType,
+        selected_date=selected_date_str,
+        is_today=is_today,
     )
 
 
@@ -982,26 +927,70 @@ def stock_ouverture():
         }
 
         try:
+            today_local = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
+            is_today = (balance_date == today_local)
+
             for network, qty in network_fields.items():
                 if qty is None:
                     qty = 0
+                opening_qty = Decimal(str(qty))
+
+                # Upsert the StockOpeningBalance anchor
                 entry = StockOpeningBalance.query.filter_by(
                     vendeur_id=vendeur_id,
                     network=network,
                     balance_date=balance_date,
                 ).first()
                 if entry:
-                    entry.quantity = Decimal(str(qty))
+                    entry.quantity = opening_qty
                     entry.set_by_id = current_user.id
                 else:
                     entry = StockOpeningBalance(
                         vendeur_id=vendeur_id,
                         network=network,
                         balance_date=balance_date,
-                        quantity=Decimal(str(qty)),
+                        quantity=opening_qty,
                         set_by_id=current_user.id,
                     )
                     db.session.add(entry)
+
+                # For today: recalculate Stock.balance so sales/display stay correct.
+                # new_balance = opening − already_sold_today + already_purchased_today
+                if is_today:
+                    sold_today = db.session.query(
+                        func.coalesce(func.sum(SaleItem.quantity), 0)
+                    ).join(Sale).filter(
+                        Sale.sale_date == today_local,
+                        Sale.vendeur_id == vendeur_id,
+                        SaleItem.network == network,
+                    ).scalar()
+
+                    day_start_utc, day_end_utc = get_utc_range_for_date(today_local)
+                    purchased_today = db.session.query(
+                        func.coalesce(func.sum(StockPurchase.amount_purchased), 0)
+                    ).join(Stock, StockPurchase.stock_item_id == Stock.id).filter(
+                        Stock.vendeur_id == vendeur_id,
+                        StockPurchase.network == network,
+                        StockPurchase.created_at >= day_start_utc,
+                        StockPurchase.created_at <= day_end_utc,
+                    ).scalar()
+
+                    new_balance = opening_qty - Decimal(str(sold_today)) + Decimal(str(purchased_today))
+                    stock_item = Stock.query.filter_by(
+                        vendeur_id=vendeur_id, network=network
+                    ).first()
+                    if stock_item:
+                        stock_item.balance = max(new_balance, Decimal("0.00"))
+                    else:
+                        stock_item = Stock(
+                            vendeur_id=vendeur_id,
+                            network=network,
+                            balance=max(new_balance, Decimal("0.00")),
+                            buying_price_per_unit=Decimal("0.94"),
+                            selling_price_per_unit=Decimal("1.00"),
+                            reduction_rate=Decimal("0.00"),
+                        )
+                        db.session.add(stock_item)
 
             db.session.commit()
             flash(
@@ -1808,10 +1797,18 @@ def enregistrer_sortie():
 @login_required
 @business_member_required
 def encaisser_dette():
+    # Date filter: default to today, allow ?date= override
+    ctx = get_date_context()
+    filter_date = ctx['selected_date']
+    filter_date_str = ctx['date_str']
+    _vendeur_id = get_current_vendeur_id()
+
     form = DebtCollectionForm()
-    # Populate choices scoped to the current vendeur — never show other businesses' debts
+    # Show only debts from the selected date (defaults to today)
     form.sale_id.choices = get_sales_with_debt(
-        vendeur_id=get_current_vendeur_id())
+        vendeur_id=_vendeur_id,
+        sale_date=filter_date,
+    )
 
     # Default payment_date to today in local timezone
     if request.method == "GET" and not form.payment_date.data:
@@ -1824,7 +1821,6 @@ def encaisser_dette():
             description = form.description.data
             payment_date = form.payment_date.data
 
-            _vendeur_id = get_current_vendeur_id()
             sale_to_update = Sale.query.filter_by(
                 id=sale_id,
                 vendeur_id=_vendeur_id
@@ -1881,12 +1877,22 @@ def encaisser_dette():
                 f"Erreur lors de l'enregistrement du paiement: {e}", "danger")
             print(f"Error recording debt collection: {e}")
 
+    # Count all unpaid debts for this vendor (regardless of date) to show in the filter UI
+    total_debt_count = Sale.query.filter(
+        Sale.debt_amount > 0,
+        Sale.vendeur_id == _vendeur_id,
+    ).count() if _vendeur_id else 0
+
     return render_template(
         "main/encaisser_dette.html",
         form=form,
         segment="stock",
         sub_segment="Sorties_Cash",
         sub_page_title="Encaisser Dette",
+        selected_date=filter_date_str,
+        is_today=ctx['is_today'],
+        total_debt_count=total_debt_count,
+        debt_count_today=len(form.sale_id.choices),
     )
 
 

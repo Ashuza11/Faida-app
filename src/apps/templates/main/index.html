@@ -12,13 +12,26 @@
           <div class="row align-items-center py-4">
             <div class="col-lg-6 col-7">
               <h6 class="h2 text-white d-inline-block mb-0">Dashboard</h6>
+              {% if not is_today %}
+                <span class="badge badge-warning ml-2">{{ selected_date }}</span>
+              {% endif %}
               <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
                 <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
                   <li class="breadcrumb-item"><a href="#"><i class="fas fa-home"></i></a></li>
-                  <li class="breadcrumb-item"><a href="#">Dashboards</a></li>
                   <li class="breadcrumb-item active" aria-current="page">Principal</li>
                 </ol>
               </nav>
+            </div>
+            <div class="col-lg-6 col-5 text-right d-flex justify-content-end align-items-center" style="gap:8px;">
+              <form method="GET" action="{{ url_for('main_bp.index') }}" class="m-0 d-flex align-items-center" style="gap:6px;">
+                <input type="date" name="date" value="{{ selected_date }}"
+                       class="form-control form-control-sm bg-white text-dark"
+                       style="width:150px;height:36px;"
+                       onchange="this.form.submit()">
+              </form>
+              {% if not is_today %}
+                <a href="{{ url_for('main_bp.index') }}" class="btn btn-sm btn-white">Aujourd'hui</a>
+              {% endif %}
             </div>
           </div>
           <div class="row">
@@ -63,7 +76,7 @@
                       </div>
                     </div>
                     <p class="mt-3 mb-0 text-sm">
-                      <span class="text-nowrap">Ventes enregistrées </span>
+                      <span class="text-nowrap">{% if is_today %}Aujourd'hui{% else %}{{ selected_date }}{% endif %}</span>
                     </p>
                   </div>
                 </div>
@@ -83,7 +96,7 @@
                       </div>
                     </div>
                     <p class="mt-3 mb-0 text-sm">
-                      <span class="text-nowrap">Dettes impayées</span>
+                      <span class="text-nowrap">Ventes du {% if is_today %}jour{% else %}{{ selected_date }}{% endif %}</span>
                     </p>
                   </div>
                 </div>
@@ -103,7 +116,7 @@
                       </div>
                     </div>
                     <p class="mt-3 mb-0 text-sm">
-                      <span class="text-nowrap">Argent total reçu aujourd'hui</span>
+                      <span class="text-nowrap">Cash reçu {% if is_today %}aujourd'hui{% else %}le {{ selected_date }}{% endif %}</span>
                     </p>
                   </div>
                 </div>
@@ -123,7 +136,7 @@
                       </div>
                     </div>
                     <p class="mt-3 mb-0 text-sm">
-                      <span class="text-nowrap">Dépenses totales aujourd'hui</span>
+                      <span class="text-nowrap">Dépenses {% if is_today %}aujourd'hui{% else %}le {{ selected_date }}{% endif %}</span>
                     </p>
                   </div>
                 </div>

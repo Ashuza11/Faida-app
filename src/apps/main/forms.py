@@ -410,13 +410,16 @@ class SaleForm(FlaskForm):
         return True
 
 
-def get_sales_with_debt(vendeur_id=None):
+def get_sales_with_debt(vendeur_id=None, sale_date=None):
     """Return (id, label) choices for sales that still have outstanding debt.
     Always pass vendeur_id so only that business's sales are shown.
+    If sale_date is given, restrict to sales made on that date.
     """
     query = Sale.query.filter(Sale.debt_amount > Decimal("0.00"))
     if vendeur_id is not None:
         query = query.filter(Sale.vendeur_id == vendeur_id)
+    if sale_date is not None:
+        query = query.filter(Sale.sale_date == sale_date)
     sales = query.order_by(Sale.created_at.desc()).all()
     return [
         (
