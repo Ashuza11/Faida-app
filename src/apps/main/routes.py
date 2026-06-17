@@ -31,7 +31,7 @@ from apps.decorators import (
 
 from apps import db
 from decimal import Decimal, InvalidOperation
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pytz
 from apps.models import (
     User,
@@ -40,8 +40,6 @@ from apps.models import (
     StockPurchase,
     NetworkType,
     Stock,
-    RoleType,
-    User,
     Sale,
     SaleItem,
     SaleItemHistory,
@@ -207,7 +205,7 @@ def route_template(template):
     except TemplateNotFound:
         abort(404)
     except Exception as e:
-        print(f"An unexpected error occurred in route_template: {e}")
+        current_app.logger.error(f"Unexpected error in route_template: {e}")
         abort(500)
 
 
@@ -511,9 +509,6 @@ def client_edit(client_id):
     client_edit_form = ClientEditForm()
     if client_edit_form.validate_on_submit():
         client.name = client_edit_form.name.data
-        client.email = (
-            client_edit_form.email.data if client_edit_form.email.data else None
-        )
         client.phone_airtel = client_edit_form.phone_airtel.data
         client.phone_africel = client_edit_form.phone_africel.data
         client.phone_orange = client_edit_form.phone_orange.data
@@ -612,7 +607,6 @@ def achat_stock():
                     balance=amount_purchased,
                     buying_price_per_unit=buying_price_to_record,
                     selling_price_per_unit=selling_price_to_record,
-                    reduction_rate=Decimal("0.00"),
                 )
                 db.session.add(stock_item)
 
@@ -643,8 +637,7 @@ def achat_stock():
             flash("Une erreur système est survenue lors de l'enregistrement.", "danger")
 
     elif form.errors:
-        # This helps debug if Validation is failing silently
-        print("Form Errors:", form.errors)
+        current_app.logger.debug("achat_stock form errors: %s", form.errors)
         flash("Veuillez corriger les erreurs dans le formulaire.", "danger")
 
     # --- 2. HANDLE GET (Data Fetching & Pagination) ---
@@ -769,9 +762,8 @@ def edit_stock_purchase(purchase_id):
             # Update the StockPurchase record itself
             purchase.network = network_enum
             purchase.amount_purchased = amount_purchased
-            purchase.buying_price_at_purchase = buying_price_to_record  # NEW
-            purchase.selling_price_at_purchase = selling_price_to_record  # UPDATED
-            purchase.updated_at = datetime.utcnow()
+            purchase.buying_price_at_purchase = buying_price_to_record
+            purchase.selling_price_at_purchase = selling_price_to_record
 
             # --- Adjust Stock Balance and Buying/Selling Prices on Stock model ---
             # Step 1: Revert old amount from old network's stock
@@ -801,9 +793,8 @@ def edit_stock_purchase(purchase_id):
                     vendeur_id=current_user.business_vendeur_id,
                     network=network_enum,
                     balance=amount_purchased,
-                    buying_price_per_unit=buying_price_to_record,  # Corrected here
-                    selling_price_per_unit=selling_price_to_record,  # NEW
-                    reduction_rate=Decimal("0.00"),
+                    buying_price_per_unit=buying_price_to_record,
+                    selling_price_per_unit=selling_price_to_record,
                 )
                 db.session.add(new_stock_item)
 
@@ -845,12 +836,10 @@ def delete_stock_purchase(purchase_id):
             stock_item = Stock.query.filter_by(
                 vendeur_id=current_user.business_vendeur_id, network=purchase.network).first()
             if stock_item:
-                stock_item.balance -= purchase.amount_purchased
-                # Note: deleting a purchase does not adjust buying_price_per_unit/selling_price_per_unit
-                # on Stock because those reflect the *latest* purchase. If the deleted purchase was
-                # the latest, these prices on Stock might become "stale" until a new purchase occurs.
-                # A more complex system might look for the next latest purchase to update them,
-                # but for simplicity, we leave them as is.
+                stock_item.balance = max(
+                    Decimal("0.00"),
+                    stock_item.balance - purchase.amount_purchased
+                )
                 db.session.add(stock_item)
             else:
                 flash(
@@ -988,7 +977,6 @@ def stock_ouverture():
                             balance=max(new_balance, Decimal("0.00")),
                             buying_price_per_unit=Decimal("0.94"),
                             selling_price_per_unit=Decimal("1.00"),
-                            reduction_rate=Decimal("0.00"),
                         )
                         db.session.add(stock_item)
 
@@ -1254,19 +1242,19 @@ def update_sale_cash(sale_id):
 
     if new_debt < 0:
         flash("Le paiement ne peut pas dépasser le montant total dû.", "danger")
-        return redirect(url_for(""))
+        return redirect(url_for("main_bp.vente_stock"))
 
     sale.cash_paid = new_cash
     sale.debt_amount = new_debt
-    sale.updated_at = datetime.utcnow()
+    sale.updated_at = datetime.now(timezone.utc)
 
     try:
         db.session.commit()
         flash("Paiement mis à jour avec succès!", "success")
     except Exception as e:
         db.session.rollback()
+        current_app.logger.error(f"Error updating sale cash {sale_id}: {e}")
         flash(f"Erreur lors de la mise à jour: {e}", "danger")
-        print(f"Error updating cash: {e}")
 
     return redirect(url_for("main_bp.vente_stock"))
 
@@ -1385,7 +1373,7 @@ def edit_sale(sale_id):
             sale.client = client
             sale.client_name_adhoc = client_name_adhoc if not client else None
             sale.sale_date = form.sale_date.data
-            sale.updated_at = datetime.utcnow()
+            sale.updated_at = datetime.now(timezone.utc)
 
             total_amount_due = Decimal("0.00")
             sale_items_to_add = []
@@ -1541,10 +1529,10 @@ def edit_sale(sale_id):
             )
         except Exception as e:
             db.session.rollback()
+            current_app.logger.error(f"Error during sale edit {sale_id}: {e}", exc_info=True)
             flash(
                 f"Erreur inattendue lors de la modification de la vente: {e}", "danger"
             )
-            print(f"Error during sale edit: {e}")
             return render_template(
                 "main/edit_sale.html",
                 form=form,
@@ -1571,7 +1559,6 @@ def delete_sale(sale_id):
     confirm_form = DeleteConfirmForm()
 
     if request.method == "POST":
-        print("POST request received! Trying to delete...")
 
         try:
             db.session.begin_nested()
@@ -1609,7 +1596,6 @@ def delete_sale(sale_id):
 
             db.session.delete(sale)
             db.session.commit()
-            print("Sale deleted successfully!")
             flash(f"Vente #{sale_id} supprimée avec succès!", "success")
             return redirect(url_for("main_bp.vente_stock"))
 
@@ -1770,10 +1756,10 @@ def enregistrer_sortie():
 
             except Exception as e:
                 db.session.rollback()
+                current_app.logger.error(f"Error saving cash outflow: {e}")
                 flash(
                     f"Erreur lors de l'enregistrement de la sortie: {str(e)}", "danger"
                 )
-                print(f"Error saving cash outflow: {e}")
 
         else:
             for field, errors in form.errors.items():
@@ -1821,10 +1807,9 @@ def encaisser_dette():
             description = form.description.data
             payment_date = form.payment_date.data
 
-            sale_to_update = Sale.query.filter_by(
-                id=sale_id,
-                vendeur_id=_vendeur_id
-            ).first()
+            sale_to_update = Sale.query.get(sale_id)
+            if sale_to_update and _vendeur_id and sale_to_update.vendeur_id != _vendeur_id:
+                sale_to_update = None
 
             if not sale_to_update:
                 raise ValueError("Vente sélectionnée introuvable.")
@@ -1854,7 +1839,7 @@ def encaisser_dette():
 
             sale_to_update.cash_paid += amount_paid
             sale_to_update.debt_amount -= amount_paid
-            sale_to_update.updated_at = datetime.utcnow()
+            sale_to_update.updated_at = datetime.now(timezone.utc)
             db.session.add(sale_to_update)
 
             db.session.commit()
@@ -1873,15 +1858,15 @@ def encaisser_dette():
             db.session.rollback()
         except Exception as e:
             db.session.rollback()
+            current_app.logger.error(f"Error recording debt collection: {e}")
             flash(
                 f"Erreur lors de l'enregistrement du paiement: {e}", "danger")
-            print(f"Error recording debt collection: {e}")
 
-    # Count all unpaid debts for this vendor (regardless of date) to show in the filter UI
-    total_debt_count = Sale.query.filter(
-        Sale.debt_amount > 0,
-        Sale.vendeur_id == _vendeur_id,
-    ).count() if _vendeur_id else 0
+    # Count all unpaid debts (regardless of date) to show in the filter UI
+    debt_q = Sale.query.filter(Sale.debt_amount > 0)
+    if _vendeur_id:
+        debt_q = debt_q.filter(Sale.vendeur_id == _vendeur_id)
+    total_debt_count = debt_q.count()
 
     return render_template(
         "main/encaisser_dette.html",
@@ -2162,7 +2147,7 @@ def profile():
         if current_user.email != form.email.data:
             current_user.email = form.email.data
         if current_user.phone != form.phone.data:
-            current_user.phone = form.phone.data
+            current_user.set_phone(form.phone.data)
 
         # Handle password change (your existing logic with translated flashes)
         if form.current_password.data or form.new_password.data:

@@ -5,7 +5,6 @@ from decimal import Decimal
 from apps import db
 from flask import current_app, request, url_for
 from apps.decorators import filter_by_vendeur, get_current_vendeur_id
-from apps.decorators import filter_by_vendeur
 from apps.models import (
     DailyStockReport,
     NetworkType,

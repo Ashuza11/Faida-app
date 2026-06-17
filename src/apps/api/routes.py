@@ -274,7 +274,6 @@ def create_stock_purchase():
                 balance=amount_purchased,
                 buying_price_per_unit=buying_price,
                 selling_price_per_unit=selling_price,
-                reduction_rate=Decimal("0.00"),
             )
             db.session.add(stock_item)
 

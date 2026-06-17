@@ -7,7 +7,9 @@ Flows:
 3. Logout: Standard Flask-Login
 """
 
-from flask import render_template, redirect, request, url_for, flash, current_app
+import time
+
+from flask import render_template, redirect, request, url_for, flash, current_app, session
 from flask_login import current_user, login_user, logout_user, login_required
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -31,6 +33,10 @@ def route_default():
     return redirect(url_for("auth_bp.login"))
 
 
+_LOGIN_MAX_ATTEMPTS = 5
+_LOGIN_LOCKOUT_SECONDS = 300  # 5 minutes
+
+
 @bp.route("/login", methods=["GET", "POST"])
 def login():
     """
@@ -44,6 +50,16 @@ def login():
     if current_user.is_authenticated:
         return redirect(url_for("main_bp.index"))
 
+    # --- Brute-force guard (session-based) ---
+    lockout_until = session.get('login_lockout_until', 0)
+    if time.time() < lockout_until:
+        remaining = int(lockout_until - time.time())
+        flash(
+            f"Trop de tentatives échouées. Réessayez dans {remaining} secondes.",
+            "danger",
+        )
+        return render_template("auth/login.html", form=LoginForm())
+
     form = LoginForm()
 
     # Handle form submission
@@ -52,14 +68,29 @@ def login():
         phone = normalize_phone(form.phone.data)
         user = User.query.filter_by(phone=phone).first()
 
+        def _fail(message):
+            attempts = session.get('login_attempts', 0) + 1
+            session['login_attempts'] = attempts
+            time.sleep(1)  # constant 1-second delay on every failure
+            if attempts >= _LOGIN_MAX_ATTEMPTS:
+                session['login_lockout_until'] = time.time() + _LOGIN_LOCKOUT_SECONDS
+                session.pop('login_attempts', None)
+                flash(
+                    f"Trop de tentatives. Compte bloqué pour "
+                    f"{_LOGIN_LOCKOUT_SECONDS // 60} minutes.",
+                    "danger",
+                )
+            else:
+                flash(message, "danger")
+
         # Check if user exists
         if user is None:
-            flash("Numéro de téléphone non trouvé", "danger")
+            _fail("Numéro de téléphone ou mot de passe incorrect")
             return render_template("auth/login.html", form=form)
 
         # Check password
         if not user.check_password(form.password.data):
-            flash("Mot de passe incorrect", "danger")
+            _fail("Numéro de téléphone ou mot de passe incorrect")
             return render_template("auth/login.html", form=form)
 
         # Check if account is active
@@ -67,7 +98,11 @@ def login():
             flash("Ce compte a été désactivé. Contactez l'administrateur.", "warning")
             return render_template("auth/login.html", form=form)
 
-        # Success! Log them in
+        # Success — clear attempt counters
+        session.pop('login_attempts', None)
+        session.pop('login_lockout_until', None)
+
+        # Log them in
         login_user(user, remember=form.remember_me.data)
 
         # Update last login time
