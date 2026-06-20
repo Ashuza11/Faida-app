@@ -85,6 +85,31 @@ def create_app(config_object=DebugConfig):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         return response
 
+    # ── Digital Asset Links: required for TWA (Android shell) verification ───
+    # Set ANDROID_PACKAGE_NAME and ANDROID_CERT_FINGERPRINT in .env after
+    # the APK is signed. Until then the endpoint returns an empty list so
+    # the regular PWA (Chrome) is unaffected.
+    @app.route("/.well-known/assetlinks.json")
+    def assetlinks():
+        import json
+        from flask import Response
+        fingerprint = app.config.get("ANDROID_CERT_FINGERPRINT", "")
+        package = app.config.get("ANDROID_PACKAGE_NAME", "com.faida.app")
+        if not fingerprint:
+            payload = []
+        else:
+            payload = [{
+                "relation": ["delegate_permission/common.handle_all_urls"],
+                "target": {
+                    "namespace": "android_app",
+                    "package_name": package,
+                    "sha256_cert_fingerprints": [fingerprint],
+                },
+            }]
+        response = Response(json.dumps(payload), mimetype="application/json")
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
     # --- Register CLI Commands (AFTER everything else is initialized) ---
     # Import it here, inside the function
     from apps.cli import register_cli_commands

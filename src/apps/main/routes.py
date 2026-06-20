@@ -65,7 +65,7 @@ from apps.main.forms import (
     DebtCollectionForm,
     EditProfileForm,
     DeleteConfirmForm,
-    get_sales_with_debt,
+    get_clients_with_debt,
 )
 
 
@@ -1783,73 +1783,90 @@ def enregistrer_sortie():
 @login_required
 @business_member_required
 def encaisser_dette():
-    # Date filter: default to today, allow ?date= override
     ctx = get_date_context()
     filter_date = ctx['selected_date']
     filter_date_str = ctx['date_str']
     _vendeur_id = get_current_vendeur_id()
 
     form = DebtCollectionForm()
-    # Show only debts from the selected date (defaults to today)
-    form.sale_id.choices = get_sales_with_debt(
+    # One entry per client (aggregated across all their unpaid sales on the date)
+    form.client_key.choices = get_clients_with_debt(
         vendeur_id=_vendeur_id,
         sale_date=filter_date,
     )
 
-    # Default payment_date to today in local timezone
     if request.method == "GET" and not form.payment_date.data:
         form.payment_date.data = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
 
     if form.validate_on_submit():
         try:
-            sale_id = form.sale_id.data
+            client_key = form.client_key.data
             amount_paid = form.amount_paid.data
             description = form.description.data
             payment_date = form.payment_date.data
 
-            sale_to_update = Sale.query.get(sale_id)
-            if sale_to_update and _vendeur_id and sale_to_update.vendeur_id != _vendeur_id:
-                sale_to_update = None
-
-            if not sale_to_update:
-                raise ValueError("Vente sélectionnée introuvable.")
-
             if amount_paid <= Decimal("0.00"):
                 raise ValueError("Le montant payé doit être positif.")
 
-            if amount_paid > sale_to_update.debt_amount:
+            # Resolve all unpaid sales for this client on the selected date
+            unpaid_q = Sale.query.filter(
+                Sale.debt_amount > 0,
+                Sale.sale_date == filter_date,
+            )
+            if _vendeur_id:
+                unpaid_q = unpaid_q.filter(Sale.vendeur_id == _vendeur_id)
+
+            if client_key.startswith("c:"):
+                unpaid_q = unpaid_q.filter(Sale.client_id == int(client_key[2:]))
+            elif client_key.startswith("a:"):
+                unpaid_q = unpaid_q.filter(Sale.client_name_adhoc == client_key[2:])
+            else:
+                raise ValueError("Clé client invalide.")
+
+            unpaid_sales = unpaid_q.order_by(Sale.created_at.asc()).all()
+            if not unpaid_sales:
+                raise ValueError("Aucune vente impayée trouvée pour ce client.")
+
+            total_debt = sum(s.debt_amount for s in unpaid_sales)
+            if amount_paid > total_debt:
                 flash(
-                    f"Le montant payé ({amount_paid:,.2f} FC) est supérieur à la dette restante ({sale_to_update.debt_amount:,.2f} FC). Ajustement à la dette.",
+                    f"Le montant payé ({amount_paid:,.2f} FC) dépasse la dette totale "
+                    f"({total_debt:,.2f} FC). Ajustement automatique.",
                     "warning",
                 )
-                amount_paid = (
-                    sale_to_update.debt_amount
-                )  # Cap payment at outstanding debt
+                amount_paid = total_debt
 
-            new_inflow = CashInflow(
-                amount=amount_paid,
-                category=CashInflowCategory.SALE_COLLECTION,
-                description=description,
-                recorded_by=current_user,
-                vendeur_id=current_user.business_vendeur_id,
-                sale=sale_to_update,
-                payment_date=payment_date,
-            )
-            db.session.add(new_inflow)
-
-            sale_to_update.cash_paid += amount_paid
-            sale_to_update.debt_amount -= amount_paid
-            sale_to_update.updated_at = datetime.now(timezone.utc)
-            db.session.add(sale_to_update)
+            # Waterfall: pay oldest sales first until the money runs out
+            remaining = amount_paid
+            paid_count = 0
+            for sale in unpaid_sales:
+                if remaining <= Decimal("0.00"):
+                    break
+                pay = min(remaining, sale.debt_amount)
+                sale.cash_paid += pay
+                sale.debt_amount -= pay
+                sale.updated_at = datetime.now(timezone.utc)
+                db.session.add(CashInflow(
+                    amount=pay,
+                    category=CashInflowCategory.SALE_COLLECTION,
+                    description=description,
+                    recorded_by=current_user,
+                    vendeur_id=current_user.business_vendeur_id,
+                    sale=sale,
+                    payment_date=payment_date,
+                ))
+                remaining -= pay
+                paid_count += 1
 
             db.session.commit()
+            client_name = unpaid_sales[0].client_display_name
             flash(
-                f"Paiement de {amount_paid:,.2f} FC pour la vente #{sale_id} enregistré avec succès. Nouvelle dette: {sale_to_update.debt_amount:,.2f} FC.",
+                f"Paiement de {amount_paid:,.2f} FC pour {client_name} enregistré. "
+                f"{paid_count} vente(s) soldée(s).",
                 "success",
             )
-            return redirect(
-                url_for("main_bp.sorties_cash")
-            )  # Redirect back to overview
+            return redirect(url_for("main_bp.sorties_cash"))
+
         except InvalidOperation:
             flash("Montant invalide. Veuillez entrer un nombre valide.", "danger")
             db.session.rollback()
@@ -1859,14 +1876,11 @@ def encaisser_dette():
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Error recording debt collection: {e}")
-            flash(
-                f"Erreur lors de l'enregistrement du paiement: {e}", "danger")
+            flash(f"Erreur lors de l'enregistrement du paiement: {e}", "danger")
 
-    # Count all unpaid debts (regardless of date) to show in the filter UI
-    debt_q = Sale.query.filter(Sale.debt_amount > 0)
-    if _vendeur_id:
-        debt_q = debt_q.filter(Sale.vendeur_id == _vendeur_id)
-    total_debt_count = debt_q.count()
+    # Count unique clients with any outstanding debt (for the "Voir toutes" link)
+    all_debt_choices = get_clients_with_debt(vendeur_id=_vendeur_id, sale_date=None)
+    total_debt_count = len(all_debt_choices)
 
     return render_template(
         "main/encaisser_dette.html",
@@ -1877,7 +1891,7 @@ def encaisser_dette():
         selected_date=filter_date_str,
         is_today=ctx['is_today'],
         total_debt_count=total_debt_count,
-        debt_count_today=len(form.sale_id.choices),
+        debt_count_today=len(form.client_key.choices),
     )
 
 
@@ -2044,14 +2058,35 @@ def rapports():
         "count": int(cash_row.count or 0),
     }
 
-    # Debt detail list for the day
+    # Debt detail list for the day — grouped by client so each client appears once
     debts_q = Sale.query.filter(
         Sale.sale_date == target_date,
         Sale.debt_amount > 0,
     )
     if vendeur_id:
         debts_q = debts_q.filter(Sale.vendeur_id == vendeur_id)
-    debts_today = debts_q.order_by(Sale.debt_amount.desc()).all()
+
+    debt_map: dict = {}
+    for sale in debts_q.order_by(Sale.created_at.asc()).all():
+        key = sale.client_id if sale.client_id else f"adhoc::{sale.client_name_adhoc}"
+        if key not in debt_map:
+            debt_map[key] = {
+                "name": sale.client_display_name,
+                "total_amount_due": Decimal("0.00"),
+                "cash_paid": Decimal("0.00"),
+                "debt_amount": Decimal("0.00"),
+                "sale_count": 0,
+                "last_time": sale.created_at,
+            }
+        entry = debt_map[key]
+        entry["total_amount_due"] += sale.total_amount_due
+        entry["cash_paid"] += sale.cash_paid
+        entry["debt_amount"] += sale.debt_amount
+        entry["sale_count"] += 1
+        if sale.created_at > entry["last_time"]:
+            entry["last_time"] = sale.created_at
+
+    debts_today = sorted(debt_map.values(), key=lambda x: x["debt_amount"], reverse=True)
 
     # All stock purchases for the date
     purchase_query, _ = get_stock_purchase_history_query(date_filter=True)

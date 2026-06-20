@@ -410,9 +410,12 @@ class SaleForm(FlaskForm):
         return True
 
 
-def get_sales_with_debt(vendeur_id=None, sale_date=None):
-    """Return (id, label) choices for sales that still have outstanding debt.
-    Always pass vendeur_id so only that business's sales are shown.
+def get_clients_with_debt(vendeur_id=None, sale_date=None):
+    """Return (client_key, label) choices grouped by client.
+
+    Each client appears at most once, with their combined outstanding debt.
+    client_key format: "c:{client_id}" for registered clients,
+                       "a:{client_name_adhoc}" for ad-hoc names.
     If sale_date is given, restrict to sales made on that date.
     """
     query = Sale.query.filter(Sale.debt_amount > Decimal("0.00"))
@@ -420,14 +423,31 @@ def get_sales_with_debt(vendeur_id=None, sale_date=None):
         query = query.filter(Sale.vendeur_id == vendeur_id)
     if sale_date is not None:
         query = query.filter(Sale.sale_date == sale_date)
-    sales = query.order_by(Sale.created_at.desc()).all()
+    sales = query.order_by(Sale.created_at.asc()).all()
+
+    client_map: dict = {}
+    for s in sales:
+        if s.client_id:
+            key = f"c:{s.client_id}"
+            name = s.client.name if s.client else f"Client #{s.client_id}"
+        else:
+            adhoc = (s.client_name_adhoc or "Inconnu").strip()
+            key = f"a:{adhoc}"
+            name = adhoc
+
+        if key not in client_map:
+            client_map[key] = {"name": name, "total_debt": Decimal("0.00"), "count": 0}
+        client_map[key]["total_debt"] += s.debt_amount
+        client_map[key]["count"] += 1
+
+    sorted_clients = sorted(client_map.items(), key=lambda x: x[1]["total_debt"], reverse=True)
     return [
         (
-            s.id,
-            f"Vente #{s.id} — {s.client.name if s.client else (s.client_name_adhoc or 'Inconnu')} "
-            f"(Dette: {s.debt_amount:,.2f} FC)",
+            key,
+            f"{data['name']} — Dette: {data['total_debt']:,.2f} FC"
+            + (f" ({data['count']} ventes)" if data['count'] > 1 else ""),
         )
-        for s in sales
+        for key, data in sorted_clients
     ]
 
 
@@ -454,8 +474,8 @@ class CashOutflowForm(FlaskForm):
 
 
 class DebtCollectionForm(FlaskForm):
-    sale_id = SelectField(
-        "Sélectionner la Vente", coerce=int, validators=[DataRequired()]
+    client_key = SelectField(
+        "Sélectionner le Client", coerce=str, validators=[DataRequired()]
     )
     amount_paid = DecimalField(
         "Montant Payé (FC)",
@@ -475,9 +495,9 @@ class DebtCollectionForm(FlaskForm):
 
     def __init__(self, *args, **kwargs):
         super(DebtCollectionForm, self).__init__(*args, **kwargs)
-        # Choices are set by the route after instantiation using get_sales_with_debt(vendeur_id=...)
-        if not self.sale_id.choices:
-            self.sale_id.choices = []
+        # Choices are set by the route after instantiation using get_clients_with_debt(vendeur_id=...)
+        if not self.client_key.choices:
+            self.client_key.choices = []
 
 
 # User Profile Form

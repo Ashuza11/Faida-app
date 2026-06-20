@@ -291,16 +291,19 @@
               </tr>
             </thead>
             <tbody>
-              {% for sale in debts_today %}
+              {% for debt in debts_today %}
               <tr>
                 <td>{{ loop.index }}</td>
                 <td>
-                  <strong>{{ sale.client_display_name }}</strong>
+                  <strong>{{ debt.name }}</strong>
+                  {% if debt.sale_count > 1 %}
+                  <span class="badge badge-secondary ml-1">{{ debt.sale_count }} ventes</span>
+                  {% endif %}
                 </td>
-                <td>{{ "{:,.2f}".format(sale.total_amount_due) }}</td>
-                <td>{{ "{:,.2f}".format(sale.cash_paid) }}</td>
-                <td><span class="badge badge-danger">{{ "{:,.2f}".format(sale.debt_amount) }}</span></td>
-                <td>{{ sale.created_at.strftime('%H:%M') }}</td>
+                <td>{{ "{:,.2f}".format(debt.total_amount_due) }}</td>
+                <td>{{ "{:,.2f}".format(debt.cash_paid) }}</td>
+                <td><span class="badge badge-danger">{{ "{:,.2f}".format(debt.debt_amount) }}</span></td>
+                <td>{{ debt.last_time.strftime('%H:%M') }}</td>
               </tr>
               {% endfor %}
             </tbody>

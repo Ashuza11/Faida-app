@@ -5,6 +5,7 @@ All routes require an active Flask session (login_required).
 from flask import jsonify, request, current_app
 from flask_login import login_required, current_user
 from decimal import Decimal, InvalidOperation
+from datetime import date
 
 from apps.api import api_bp
 from apps import db
@@ -379,3 +380,178 @@ def create_cash_outflow():
 def sync_status():
     """Returns a lightweight status response — used to detect connectivity."""
     return jsonify({"status": "online", "user": current_user.username}), 200
+
+
+# ── SMS auto-capture ──────────────────────────────────────────────────────────
+@api_bp.route("/sms-ingest", methods=["POST"])
+@login_required
+def sms_ingest():
+    """
+    Receives a raw SMS from the Android TWA BroadcastReceiver and creates
+    the appropriate Sale or StockPurchase record automatically.
+
+    Body: { "sender": "1000", "body": "5037:Votre transfert de 2500 U au 972067057..." }
+
+    Returns:
+      type=sale     → Sale created, client linked if phone matched
+      type=purchase → StockPurchase created, stock balance increased
+      type=unknown  → Sender or pattern not recognized, ignored silently
+    """
+    payload = request.get_json(silent=True)
+    if not payload:
+        return jsonify({"error": "Invalid JSON body"}), 400
+
+    sender = payload.get("sender", "").strip()
+    body = payload.get("body", "").strip()
+    if not sender or not body:
+        return jsonify({"error": "sender and body are required"}), 400
+
+    vendeur_id = current_user.business_vendeur_id
+    if vendeur_id is None:
+        return jsonify({"error": "Platform admins cannot use SMS ingest"}), 403
+
+    from apps.main.sms_parser import parse_sms
+    parsed = parse_sms(sender, body)
+
+    if parsed.message_type == "unknown":
+        current_app.logger.debug(f"[SMS] Ignored unknown sender={sender!r}")
+        return jsonify({"type": "unknown", "status": "ignored"}), 200
+
+    if parsed.quantity <= 0:
+        return jsonify({"error": "Parsed quantity is zero — message format may have changed"}), 400
+
+    try:
+        if parsed.message_type == "sale":
+            return _sms_create_sale(parsed, vendeur_id)
+        else:
+            return _sms_create_purchase(parsed, vendeur_id)
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"[SMS ingest] Unhandled error: {e}", exc_info=True)
+        return jsonify({"error": "Erreur serveur lors du traitement SMS"}), 500
+
+
+def _sms_create_sale(parsed, vendeur_id: int):
+    """Create a Sale from a parsed sell SMS."""
+    from sqlalchemy import or_
+
+    # Match recipient phone to a known client (check all 4 network phone columns)
+    client = None
+    if parsed.recipient_phone:
+        client = Client.query.filter(
+            Client.vendeur_id == vendeur_id,
+            or_(
+                Client.phone_airtel == parsed.recipient_phone,
+                Client.phone_africel == parsed.recipient_phone,
+                Client.phone_orange == parsed.recipient_phone,
+                Client.phone_vodacom == parsed.recipient_phone,
+            )
+        ).first()
+
+    # Build adhoc name for unknown recipients
+    if client is None:
+        if parsed.client_name and parsed.recipient_phone:
+            client_name_adhoc = f"{parsed.client_name} ({parsed.recipient_phone})"
+        elif parsed.client_name:
+            client_name_adhoc = parsed.client_name
+        else:
+            client_name_adhoc = parsed.recipient_phone or "Client inconnu"
+    else:
+        client_name_adhoc = None
+
+    # Get stock for this network
+    stock_item = Stock.query.filter_by(
+        vendeur_id=vendeur_id, network=parsed.network
+    ).first()
+    if not stock_item:
+        return jsonify({"error": f"Stock {parsed.network.value} introuvable"}), 400
+
+    if parsed.quantity > stock_item.balance:
+        return jsonify({
+            "type": "sale",
+            "status": "rejected",
+            "error": (
+                f"Stock {parsed.network.value} insuffisant: "
+                f"{stock_item.balance} disponible, {parsed.quantity} demandé"
+            ),
+        }), 400
+
+    unit_price = stock_item.selling_price_per_unit or Decimal("1.00")
+    subtotal = custom_round_up(Decimal(parsed.quantity) * unit_price)
+
+    stock_item.balance -= parsed.quantity
+    db.session.add(stock_item)
+
+    sale_item = SaleItem(
+        network=parsed.network,
+        quantity=parsed.quantity,
+        price_per_unit_applied=unit_price,
+        subtotal=subtotal,
+    )
+    new_sale = Sale(
+        seller_id=current_user.id,
+        vendeur_id=vendeur_id,
+        client=client,
+        client_name_adhoc=client_name_adhoc,
+        sale_date=date.today(),
+        total_amount_due=subtotal,
+        cash_paid=subtotal,    # assume cash received; vendor edits if credit
+        debt_amount=Decimal("0.00"),
+    )
+    new_sale.sale_items.append(sale_item)
+    db.session.add(new_sale)
+    db.session.commit()
+
+    current_app.logger.info(
+        f"[SMS] Sale created: #{new_sale.id} {parsed.network.value} "
+        f"{parsed.quantity}U → {parsed.recipient_phone} (client_known={client is not None})"
+    )
+    return jsonify({
+        "type": "sale",
+        "status": "created",
+        "sale_id": new_sale.id,
+        "network": parsed.network.value,
+        "quantity": parsed.quantity,
+        "total_fc": float(subtotal),
+        "client": client.name if client else client_name_adhoc,
+        "client_known": client is not None,
+    }), 201
+
+
+def _sms_create_purchase(parsed, vendeur_id: int):
+    """Create a StockPurchase from a parsed purchase SMS."""
+    stock_item = Stock.query.filter_by(
+        vendeur_id=vendeur_id, network=parsed.network
+    ).first()
+    if not stock_item:
+        return jsonify({"error": f"Stock {parsed.network.value} introuvable"}), 400
+
+    buying_price = stock_item.buying_price_per_unit or Decimal("0.00")
+    selling_price = stock_item.selling_price_per_unit or Decimal("1.00")
+
+    stock_item.balance += parsed.quantity
+    db.session.add(stock_item)
+
+    new_purchase = StockPurchase(
+        stock_item_id=stock_item.id,
+        network=parsed.network,
+        amount_purchased=parsed.quantity,
+        buying_price_at_purchase=buying_price,
+        selling_price_at_purchase=selling_price,
+        purchased_by=current_user,
+    )
+    db.session.add(new_purchase)
+    db.session.commit()
+
+    current_app.logger.info(
+        f"[SMS] Purchase created: #{new_purchase.id} {parsed.network.value} "
+        f"+{parsed.quantity}U (new balance: {stock_item.balance})"
+    )
+    return jsonify({
+        "type": "purchase",
+        "status": "created",
+        "purchase_id": new_purchase.id,
+        "network": parsed.network.value,
+        "quantity": parsed.quantity,
+        "new_balance": float(stock_item.balance),
+    }), 201
