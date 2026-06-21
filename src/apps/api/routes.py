@@ -384,12 +384,12 @@ def sync_status():
 
 # ── SMS auto-capture ──────────────────────────────────────────────────────────
 @api_bp.route("/sms-ingest", methods=["POST"])
-@login_required
 def sms_ingest():
     """
     Receives a raw SMS from the Android TWA BroadcastReceiver and creates
     the appropriate Sale or StockPurchase record automatically.
 
+    Auth: active Flask session (browser) OR X-Api-Token header (Android app).
     Body: { "sender": "1000", "body": "5037:Votre transfert de 2500 U au 972067057..." }
 
     Returns:
@@ -397,6 +397,18 @@ def sms_ingest():
       type=purchase → StockPurchase created, stock balance increased
       type=unknown  → Sender or pattern not recognized, ignored silently
     """
+    # Authenticate: session (browser) or X-Api-Token header (Android)
+    from apps.models import User as _User
+    if current_user.is_authenticated:
+        authed_user = current_user
+    else:
+        token = request.headers.get("X-Api-Token", "").strip()
+        if not token:
+            return jsonify({"error": "Authentication required"}), 401
+        authed_user = _User.query.filter_by(api_token=token, is_active=True).first()
+        if not authed_user:
+            return jsonify({"error": "Token invalide ou compte désactivé"}), 401
+
     payload = request.get_json(silent=True)
     if not payload:
         return jsonify({"error": "Invalid JSON body"}), 400
@@ -406,7 +418,7 @@ def sms_ingest():
     if not sender or not body:
         return jsonify({"error": "sender and body are required"}), 400
 
-    vendeur_id = current_user.business_vendeur_id
+    vendeur_id = authed_user.business_vendeur_id
     if vendeur_id is None:
         return jsonify({"error": "Platform admins cannot use SMS ingest"}), 403
 
@@ -422,16 +434,16 @@ def sms_ingest():
 
     try:
         if parsed.message_type == "sale":
-            return _sms_create_sale(parsed, vendeur_id)
+            return _sms_create_sale(parsed, vendeur_id, authed_user)
         else:
-            return _sms_create_purchase(parsed, vendeur_id)
+            return _sms_create_purchase(parsed, vendeur_id, authed_user)
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"[SMS ingest] Unhandled error: {e}", exc_info=True)
         return jsonify({"error": "Erreur serveur lors du traitement SMS"}), 500
 
 
-def _sms_create_sale(parsed, vendeur_id: int):
+def _sms_create_sale(parsed, vendeur_id: int, authed_user):
     """Create a Sale from a parsed sell SMS."""
     from sqlalchemy import or_
 
@@ -489,7 +501,7 @@ def _sms_create_sale(parsed, vendeur_id: int):
         subtotal=subtotal,
     )
     new_sale = Sale(
-        seller_id=current_user.id,
+        seller_id=authed_user.id,
         vendeur_id=vendeur_id,
         client=client,
         client_name_adhoc=client_name_adhoc,
@@ -518,7 +530,7 @@ def _sms_create_sale(parsed, vendeur_id: int):
     }), 201
 
 
-def _sms_create_purchase(parsed, vendeur_id: int):
+def _sms_create_purchase(parsed, vendeur_id: int, authed_user):
     """Create a StockPurchase from a parsed purchase SMS."""
     stock_item = Stock.query.filter_by(
         vendeur_id=vendeur_id, network=parsed.network
@@ -538,7 +550,7 @@ def _sms_create_purchase(parsed, vendeur_id: int):
         amount_purchased=parsed.quantity,
         buying_price_at_purchase=buying_price,
         selling_price_at_purchase=selling_price,
-        purchased_by=current_user,
+        purchased_by=authed_user,
     )
     db.session.add(new_purchase)
     db.session.commit()

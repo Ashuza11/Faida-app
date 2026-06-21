@@ -24,6 +24,7 @@ import sqlalchemy as sa
 import sqlalchemy.orm as so
 from decimal import Decimal
 import re
+import secrets
 
 
 # ===========================================
@@ -253,6 +254,11 @@ class User(db.Model, UserMixin):
 
     is_active: so.Mapped[bool] = so.mapped_column(default=True)
 
+    # Personal API token — used by Android TWA to authenticate SMS ingest calls
+    api_token: so.Mapped[Optional[str]] = so.mapped_column(
+        sa.String(64), nullable=True, unique=True, index=True
+    )
+
     # Relationships
 
     # Self-referential: vendeur -> their stockeurs
@@ -318,6 +324,15 @@ class User(db.Model, UserMixin):
     def set_phone(self, phone: str) -> None:
         """Normalize and set the user's phone number."""
         self.phone = normalize_phone(phone)
+
+    def get_or_create_api_token(self) -> str:
+        """Return the existing API token, generating and saving one if absent."""
+        if not self.api_token:
+            from apps import db
+            self.api_token = secrets.token_urlsafe(32)
+            db.session.add(self)
+            db.session.commit()
+        return self.api_token
 
     def __repr__(self) -> str:
         return f"<User {self.username} ({self.role.value})>"

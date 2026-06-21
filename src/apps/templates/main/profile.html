@@ -170,6 +170,25 @@
 
 
             <hr class="my-4" />
+
+            {# ── Code API pour l'application Android (TWA) ── #}
+            <h6 class="heading-small text-muted mb-3">Application Android — Code API</h6>
+            <p class="text-sm text-muted mb-2">
+              Entrez ce code dans l'application Android Faida lors de la première configuration
+              pour activer la capture automatique des SMS réseau.
+            </p>
+            <div class="input-group mb-3">
+              <input id="apiTokenField" type="text" class="form-control form-control-sm"
+                     value="{{ api_token }}" readonly style="font-family:monospace;font-size:0.8rem;">
+              <div class="input-group-append">
+                <button class="btn btn-outline-secondary btn-sm" type="button"
+                        onclick="navigator.clipboard.writeText('{{ api_token }}');this.textContent='Copié ✓';setTimeout(()=>this.textContent='Copier',2000)">
+                  Copier
+                </button>
+              </div>
+            </div>
+
+            <hr class="my-4" />
             <div class="mt-3">
                 {{ form.submit(class_="btn btn-primary btn-block", value="Mettre à jour") }}
             </div>

@@ -2244,6 +2244,9 @@ def profile():
         else 0
     )
 
+    # Generate API token if the user doesn't have one yet (lazy creation)
+    api_token = current_user.get_or_create_api_token()
+
     return render_template(
         "main/profile.html",
         segment="profile",
@@ -2251,6 +2254,7 @@ def profile():
         num_clients_created=num_clients_created,
         num_sales_made=num_sales_made,
         num_stock_purchases=num_stock_purchases,
+        api_token=api_token,
     )
 
 
