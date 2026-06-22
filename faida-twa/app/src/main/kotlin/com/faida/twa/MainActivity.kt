@@ -15,27 +15,24 @@ import com.google.androidbrowserhelper.trusted.TwaLauncher
 class MainActivity : AppCompatActivity() {
 
     private val SMS_PERMISSION_CODE = 101
-    private val NOTIF_PERMISSION_CODE = 102
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        val serverUrl = prefs.getString(KEY_SERVER_URL, "").orEmpty().trim()
-        val apiToken  = prefs.getString(KEY_API_TOKEN,  "").orEmpty().trim()
+        val apiToken = prefs.getString(KEY_API_TOKEN, "").orEmpty().trim()
 
-        // First launch: ask user to configure server URL and API token
-        if (serverUrl.isEmpty() || apiToken.isEmpty()) {
+        // First launch: show setup screen to enter the API token
+        if (apiToken.isEmpty()) {
             startActivity(Intent(this, SetupActivity::class.java))
             finish()
             return
         }
 
-        // Ask for SMS + notification permissions if not yet granted
-        requestMissingPermissions(serverUrl)
+        requestMissingPermissions()
     }
 
-    private fun requestMissingPermissions(serverUrl: String) {
+    private fun requestMissingPermissions() {
         val needed = mutableListOf<String>()
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS)
@@ -55,7 +52,7 @@ class MainActivity : AppCompatActivity() {
         if (needed.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, needed.toTypedArray(), SMS_PERMISSION_CODE)
         } else {
-            launchTwa(serverUrl)
+            launchTwa()
         }
     }
 
@@ -63,9 +60,6 @@ class MainActivity : AppCompatActivity() {
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        val serverUrl = prefs.getString(KEY_SERVER_URL, "").orEmpty()
-
         if (grantResults.none { it == PackageManager.PERMISSION_DENIED }) {
             Toast.makeText(this, "Capture SMS activée ✓", Toast.LENGTH_SHORT).show()
         } else {
@@ -75,17 +69,15 @@ class MainActivity : AppCompatActivity() {
                 Toast.LENGTH_LONG
             ).show()
         }
-        launchTwa(serverUrl)
+        launchTwa()
     }
 
-    private fun launchTwa(serverUrl: String) {
-        TwaLauncher(this).launch(Uri.parse(serverUrl))
-        // TwaLauncher finishes this activity after handing off to Chrome
+    private fun launchTwa() {
+        TwaLauncher(this).launch(Uri.parse(BuildConfig.SERVER_URL))
     }
 
     companion object {
-        const val PREFS_NAME   = "faida_prefs"
-        const val KEY_SERVER_URL = "server_url"
-        const val KEY_API_TOKEN  = "api_token"
+        const val PREFS_NAME    = "faida_prefs"
+        const val KEY_API_TOKEN = "api_token"
     }
 }

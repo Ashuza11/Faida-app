@@ -1,0 +1,134 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} Codes API Android {% endblock %}
+
+{% block content %}
+<div class="header bg-primary pb-6">
+  <div class="container-fluid">
+    <div class="header-body">
+      <div class="row align-items-center py-4">
+        <div class="col-lg-6 col-7">
+          <h6 class="h2 text-white d-inline-block mb-0">Codes API Android</h6>
+          <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
+            <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
+              <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}"><i class="fas fa-home"></i></a></li>
+              <li class="breadcrumb-item"><a href="{{ url_for('admin_bp.dashboard') }}">Admin</a></li>
+              <li class="breadcrumb-item active">Codes API</li>
+            </ol>
+          </nav>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="container-fluid mt--6">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+      </div>
+    {% endfor %}
+  {% endwith %}
+
+  <div class="row">
+    <div class="col">
+      <div class="card shadow">
+        <div class="card-header border-0">
+          <div class="row align-items-center">
+            <div class="col">
+              <h3 class="mb-0">Codes à partager avec les vendeurs</h3>
+              <p class="text-sm text-muted mb-0">
+                Copiez et envoyez le code à chaque vendeur par WhatsApp.
+                Le vendeur le colle dans l'application Android lors de la première ouverture.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table align-items-center table-flush">
+            <thead class="thead-light">
+              <tr>
+                <th>Vendeur</th>
+                <th>Téléphone</th>
+                <th>Code API</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for vendeur in vendeurs %}
+              <tr>
+                <td>
+                  <strong>{{ vendeur.name }}</strong>
+                </td>
+                <td class="text-muted">{{ vendeur.phone }}</td>
+                <td>
+                  <div class="input-group input-group-sm" style="min-width:260px">
+                    <input id="token-{{ vendeur.id }}"
+                           type="text"
+                           class="form-control form-control-sm"
+                           value="{{ vendeur.api_token }}"
+                           readonly
+                           style="font-family:monospace;font-size:0.75rem;">
+                    <div class="input-group-append">
+                      <button class="btn btn-outline-secondary btn-sm"
+                              onclick="copyToken('token-{{ vendeur.id }}', this)"
+                              type="button">
+                        <i class="fas fa-copy"></i> Copier
+                      </button>
+                    </div>
+                  </div>
+                </td>
+                <td class="text-right">
+                  <form method="POST"
+                        action="{{ url_for('admin_bp.regenerate_token', vendeur_id=vendeur.id) }}"
+                        onsubmit="return confirm('Générer un nouveau code ? L\'ancien code ne fonctionnera plus.')">
+                    <button class="btn btn-sm btn-outline-danger" type="submit">
+                      <i class="fas fa-sync-alt"></i> Nouveau code
+                    </button>
+                  </form>
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="4" class="text-center text-muted py-4">Aucun vendeur actif.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card-footer">
+          <p class="text-sm text-muted mb-0">
+            <i class="fas fa-info-circle mr-1"></i>
+            Message WhatsApp à envoyer :
+            <em>"Bonjour, voici votre code Faida Android : <strong>[coller le code]</strong>.
+            Ouvrez l'application, collez ce code et appuyez sur Activer."</em>
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block javascripts %}
+{{ super() }}
+<script>
+function copyToken(inputId, btn) {
+  const input = document.getElementById(inputId);
+  navigator.clipboard.writeText(input.value).then(() => {
+    const original = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check"></i> Copié';
+    btn.classList.replace('btn-outline-secondary', 'btn-success');
+    setTimeout(() => {
+      btn.innerHTML = original;
+      btn.classList.replace('btn-success', 'btn-outline-secondary');
+    }, 2000);
+  });
+}
+</script>
+{% endblock %}

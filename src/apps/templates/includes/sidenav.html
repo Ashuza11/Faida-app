@@ -50,6 +50,12 @@
                     <span class="nav-link-text">Codes d'invitation</span>
                   </a>
                 </li>
+                <li class="nav-item">
+                  <a class="nav-link {% if sub_segment == 'android_tokens' %}active{% endif %}" href="{{ url_for('admin_bp.android_tokens') }}">
+                    <i class="fab fa-android"></i>
+                    <span class="nav-link-text">Codes API Android</span>
+                  </a>
+                </li>
               </ul>
             </div>
           </li>

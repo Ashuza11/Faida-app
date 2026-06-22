@@ -7,7 +7,6 @@ import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.faida.twa.MainActivity.Companion.KEY_API_TOKEN
-import com.faida.twa.MainActivity.Companion.KEY_SERVER_URL
 import com.faida.twa.MainActivity.Companion.PREFS_NAME
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,13 +41,14 @@ object FaidaApiClient {
         scope.launch {
             try {
                 val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                val serverUrl = prefs.getString(KEY_SERVER_URL, "").orEmpty().trimEnd('/')
-                val apiToken  = prefs.getString(KEY_API_TOKEN, "").orEmpty()
+                val apiToken = prefs.getString(KEY_API_TOKEN, "").orEmpty()
 
-                if (serverUrl.isEmpty() || apiToken.isEmpty()) {
-                    Log.w(TAG, "Server URL or API token not configured — skipping SMS")
+                if (apiToken.isEmpty()) {
+                    Log.w(TAG, "API token not configured — skipping SMS")
                     return@launch
                 }
+
+                val serverUrl = BuildConfig.SERVER_URL
 
                 val jsonBody = JSONObject().apply {
                     put("sender", sender)

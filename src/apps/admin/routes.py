@@ -400,3 +400,44 @@ def platform_stats():
         segment='admin',
         sub_segment='stats'
     )
+
+
+# ============================================================
+# ANDROID APP TOKENS — view and generate API tokens for vendeurs
+# ============================================================
+
+@bp.route('/android-tokens')
+@login_required
+@platform_admin_required
+def android_tokens():
+    """Show API tokens for all active vendeurs so admin can share them."""
+    vendeurs = (
+        User.query
+        .filter_by(role=RoleType.VENDEUR, is_active=True)
+        .order_by(User.name.asc())
+        .all()
+    )
+    # Ensure every vendeur has a token (generate lazily)
+    for v in vendeurs:
+        if not v.api_token:
+            v.get_or_create_api_token()
+
+    return render_template(
+        'admin/android_tokens.html',
+        vendeurs=vendeurs,
+        segment='admin',
+        sub_segment='android_tokens',
+    )
+
+
+@bp.route('/android-tokens/<int:vendeur_id>/regenerate', methods=['POST'])
+@login_required
+@platform_admin_required
+def regenerate_token(vendeur_id):
+    """Generate a fresh API token for a vendeur (invalidates the old one)."""
+    import secrets as _secrets
+    vendeur = User.query.get_or_404(vendeur_id)
+    vendeur.api_token = _secrets.token_urlsafe(32)
+    db.session.commit()
+    flash(f'Nouveau code généré pour {vendeur.name}.', 'success')
+    return redirect(url_for('admin_bp.android_tokens'))
