@@ -368,6 +368,12 @@ def test_wholesale_sales_page_records_new_retailer(app, session):
     assert page.status_code == 200
     assert b"Marge du jour par prix" in page.data
     assert b"$0.40" in page.data
+    assert b"$0.21" in page.data
+
+    report_page = client.get("/businesses/wholesale/report")
+    assert report_page.status_code == 200
+    assert b"$0.40" in report_page.data
+    assert b"$0.21" in report_page.data
 
 
 def test_debt_collection_is_oldest_first_and_keeps_payment_date(session):

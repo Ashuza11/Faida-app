@@ -7,8 +7,8 @@
     <a class="btn btn-outline-primary" href="{{ url_for('main_bp.wholesale_dashboard') }}">Tableau de bord</a>
   </div>
   <div class="row mb-4">
-    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge des ventes du jour</small><div class="h2 text-success">${{ "{:.2f}".format(sales_margin) }}</div></div></div></div>
-    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge correspondant au cash encaissé aujourd'hui</small><div class="h2 text-info">${{ "{:.2f}".format(collected_margin) }}</div></div></div></div>
+    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge des ventes du jour</small><div class="h2 text-success">${{ "{:.2f}".format(daily_report.totals.sales_margin) }}</div></div></div></div>
+    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge correspondant au cash encaissé aujourd'hui</small><div class="h2 text-info">${{ "{:.2f}".format(daily_report.totals.collected_margin) }}</div></div></div></div>
   </div>
   <div class="row">
     <div class="col-lg-5 mb-4"><div class="card shadow"><div class="card-header"><h3 class="mb-0">Nouvelle vente</h3></div><div class="card-body">
@@ -29,7 +29,7 @@
     <div class="col-lg-7">
       <div class="card shadow mb-4"><div class="card-header"><h3 class="mb-0">Marge du jour par prix</h3></div><div class="table-responsive"><table class="table">
         <thead><tr><th>Réseau</th><th>Prix</th><th>Unités</th><th>Ventes</th><th>Marge</th></tr></thead>
-        <tbody>{% for group in price_groups %}<tr><td>{{ group.network.value.capitalize() }}</td><td>${{ "{:.5f}".format(group.price_per_unit_applied) }}</td><td>{{ group.quantity }}</td><td>${{ "{:.2f}".format(group.revenue) }}</td><td class="text-success">${{ "{:.2f}".format(group.margin) }}</td></tr>{% else %}<tr><td colspan="5" class="text-center text-muted">Aucune vente aujourd'hui.</td></tr>{% endfor %}</tbody>
+        <tbody>{% for group in daily_report.price_groups %}<tr><td>{{ group.network.value.capitalize() }}</td><td>${{ "{:.5f}".format(group.price_per_unit_applied) }}</td><td>{{ group.quantity }}</td><td>${{ "{:.2f}".format(group.revenue) }}</td><td class="text-success">${{ "{:.2f}".format(group.margin) }}</td></tr>{% else %}<tr><td colspan="5" class="text-center text-muted">Aucune vente aujourd'hui.</td></tr>{% endfor %}</tbody>
       </table></div></div>
       <div class="card shadow"><div class="card-header"><h3 class="mb-0">Ventes récentes</h3></div><div class="table-responsive"><table class="table">
         <thead><tr><th>Client</th><th>Total</th><th>Payé</th><th>Dette</th><th>Date</th><th>Statut / correction</th></tr></thead>

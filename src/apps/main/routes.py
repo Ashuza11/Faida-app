@@ -444,43 +444,10 @@ def wholesale_sales():
         .limit(100)
         .all()
     )
-    price_groups = (
-        db.session.query(
-            SaleItem.network,
-            SaleItem.price_per_unit_applied,
-            func.sum(SaleItem.quantity).label("quantity"),
-            func.sum(SaleItem.subtotal).label("revenue"),
-            func.sum(SaleItem.cost_total).label("cost"),
-            func.sum(SaleItem.margin_amount).label("margin"),
-        )
-        .join(Sale)
-        .filter(
-            Sale.business_id == business.id,
-            Sale.sale_date == today,
-            Sale.status == TransactionStatus.ACTIVE,
-        )
-        .group_by(SaleItem.network, SaleItem.price_per_unit_applied)
-        .order_by(SaleItem.network, SaleItem.price_per_unit_applied)
-        .all()
+    daily_report = build_wholesale_daily_report(
+        business=business,
+        target_date=today,
     )
-    sales_margin = sum(
-        (Decimal(str(group.margin or 0)) for group in price_groups), Decimal("0")
-    )
-    collected_margin = Decimal("0")
-    inflows = CashInflow.query.filter_by(
-        business_id=business.id,
-        payment_date=today,
-        category=CashInflowCategory.SALE_COLLECTION,
-        status=TransactionStatus.ACTIVE,
-    ).all()
-    for inflow in inflows:
-        if inflow.sale and inflow.sale.total_amount_due:
-            sale_margin = sum(
-                (item.margin_amount for item in inflow.sale.sale_items), Decimal("0")
-            )
-            collected_margin += (
-                inflow.amount * sale_margin / inflow.sale.total_amount_due
-            )
 
     preset_data = {network.name: [] for network in NetworkType}
     for preset in presets:
@@ -494,9 +461,7 @@ def wholesale_sales():
         business=business,
         form=form,
         sales=sales,
-        price_groups=price_groups,
-        sales_margin=sales_margin,
-        collected_margin=collected_margin,
+        daily_report=daily_report,
         preset_data=preset_data,
         reversal_form=TransactionReversalForm(),
         segment="businesses",
