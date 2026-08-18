@@ -10,14 +10,16 @@ from apps.models import (
     CashInflowCategory,
     Client,
     PaymentAllocationKind,
+    PaymentEvent,
     Sale,
+    TransactionStatus,
 )
 
 
 def allocate_registered_client_payment(
     *, client_id: int, vendeur_id: int, business_id: int | None,
     amount: Decimal, recorded_by, payment_date: date, exclude_sale_id=None,
-    description=None,
+    description=None, payment_event=None,
 ) -> Decimal:
     """Pay a registered client's oldest debts and return unused cash."""
     remaining = Decimal(amount)
@@ -25,6 +27,7 @@ def allocate_registered_client_payment(
         Sale.vendeur_id == vendeur_id,
         Sale.business_id == business_id,
         Sale.client_id == client_id,
+        Sale.status == TransactionStatus.ACTIVE,
         Sale.debt_amount > Decimal("0.00"),
     )
     if exclude_sale_id is not None:
@@ -50,6 +53,7 @@ def allocate_registered_client_payment(
             recorded_by=recorded_by,
             vendeur_id=vendeur_id,
             business_id=business_id,
+            payment_event=payment_event,
             sale=sale,
             payment_date=payment_date,
         ))
@@ -70,12 +74,26 @@ def apply_payment_to_sale(
             Sale.client_id == sale.client_id,
             Sale.id != sale.id,
             Sale.debt_amount > 0,
+            Sale.status == TransactionStatus.ACTIVE,
         ).scalar() or Decimal("0.00")
         maximum += old_debt
     if amount > maximum:
         raise ValueError(
             "Le montant payé dépasse la dette totale du client et la vente actuelle."
         )
+
+    payment_event = None
+    if amount > 0 and sale.client_id is not None:
+        payment_event = PaymentEvent(
+            business_id=sale.business_id,
+            client_id=sale.client_id,
+            source_sale_id=sale.id,
+            recorded_by_id=recorded_by.id,
+            amount=amount,
+            payment_date=payment_date,
+            description="Paiement lors de la vente",
+        )
+        db.session.add(payment_event)
 
     remaining = amount
     if sale.client_id is not None:
@@ -87,6 +105,7 @@ def apply_payment_to_sale(
             recorded_by=recorded_by,
             payment_date=payment_date,
             exclude_sale_id=sale.id,
+            payment_event=payment_event,
         )
     current_paid = min(remaining, sale.total_amount_due)
     sale.cash_paid = current_paid
@@ -101,6 +120,7 @@ def apply_payment_to_sale(
             recorded_by=recorded_by,
             vendeur_id=sale.vendeur_id,
             business_id=sale.business_id,
+            payment_event=payment_event,
             sale=sale,
             payment_date=payment_date,
         ))
@@ -132,12 +152,22 @@ def collect_client_debt(
         Sale.business_id == business.id,
         Sale.client_id == client.id,
         Sale.debt_amount > 0,
+        Sale.status == TransactionStatus.ACTIVE,
     ).scalar() or Decimal("0.00")
     if total_debt <= 0:
         raise ValueError("Ce client n'a aucune dette impayée.")
     if amount > total_debt:
         raise ValueError("Le montant payé dépasse la dette totale du client.")
 
+    payment_event = PaymentEvent(
+        business_id=business.id,
+        client_id=client.id,
+        recorded_by_id=recorded_by.id,
+        amount=amount,
+        payment_date=payment_date,
+        description=description,
+    )
+    db.session.add(payment_event)
     remaining = allocate_registered_client_payment(
         client_id=client.id,
         vendeur_id=business.owner_user_id,
@@ -146,6 +176,7 @@ def collect_client_debt(
         recorded_by=recorded_by,
         payment_date=payment_date,
         description=description,
+        payment_event=payment_event,
     )
     if remaining != 0:
         raise RuntimeError("Le paiement n'a pas été entièrement alloué.")

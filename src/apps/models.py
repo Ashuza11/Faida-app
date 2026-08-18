@@ -79,6 +79,11 @@ class PaymentAllocationKind(PyEnum):
     PRIOR_DEBT = "prior_debt"
 
 
+class TransactionStatus(PyEnum):
+    ACTIVE = "active"
+    REVERSED = "reversed"
+
+
 class CashOutflowCategory(PyEnum):
     """Categories for cash outflows."""
     PURCHASE_AIRTIME = "Achat Stock"
@@ -761,6 +766,18 @@ class StockPurchase(db.Model):
     purchase_date: so.Mapped[date] = so.mapped_column(
         sa.Date, nullable=False, default=date.today, index=True
     )
+    status: so.Mapped[TransactionStatus] = so.mapped_column(
+        sa.Enum(TransactionStatus), nullable=False, default=TransactionStatus.ACTIVE
+    )
+    reversed_at: so.Mapped[Optional[datetime]] = so.mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    reversed_by_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=True
+    )
+    reversal_reason: so.Mapped[Optional[str]] = so.mapped_column(
+        sa.String(255), nullable=True
+    )
 
     created_at: so.Mapped[datetime] = so.mapped_column(
         sa.DateTime(timezone=True),
@@ -914,6 +931,18 @@ class Sale(db.Model):
     )
     initial_cash_paid: so.Mapped[Decimal] = so.mapped_column(
         sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
+    status: so.Mapped[TransactionStatus] = so.mapped_column(
+        sa.Enum(TransactionStatus), nullable=False, default=TransactionStatus.ACTIVE
+    )
+    reversed_at: so.Mapped[Optional[datetime]] = so.mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    reversed_by_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=True
+    )
+    reversal_reason: so.Mapped[Optional[str]] = so.mapped_column(
+        sa.String(255), nullable=True
     )
 
     # Relationships
@@ -1111,6 +1140,35 @@ class CashOutflow(db.Model):
         return f"<CashOutflow {self.amount} - {self.category.value}>"
 
 
+class PaymentEvent(db.Model):
+    """One customer payment before it is split across sale debts."""
+    __tablename__ = "payment_events"
+
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+    business_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("businesses.id"), nullable=True, index=True
+    )
+    client_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("clients.id"), nullable=False, index=True
+    )
+    source_sale_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("sales.id"), nullable=True, index=True
+    )
+    recorded_by_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=False
+    )
+    amount: so.Mapped[Decimal] = so.mapped_column(sa.Numeric(12, 2), nullable=False)
+    payment_date: so.Mapped[date] = so.mapped_column(sa.Date, nullable=False, index=True)
+    description: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
+    created_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    allocations: so.Mapped[List["CashInflow"]] = so.relationship(
+        back_populates="payment_event", cascade="all, delete-orphan"
+    )
+
+
 class CashInflow(db.Model):
     """Cash inflows (receipts) - per vendeur."""
     __tablename__ = "cash_inflows"
@@ -1128,6 +1186,12 @@ class CashInflow(db.Model):
     )
     business_id: so.Mapped[Optional[int]] = so.mapped_column(
         sa.ForeignKey("businesses.id"), nullable=True, index=True
+    )
+    payment_event_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("payment_events.id"), nullable=True, index=True
+    )
+    payment_event: so.Mapped[Optional[PaymentEvent]] = so.relationship(
+        back_populates="allocations"
     )
 
     recorded_by_id: so.Mapped[int] = so.mapped_column(

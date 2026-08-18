@@ -685,6 +685,15 @@ class WholesaleDebtPaymentForm(FlaskForm):
     submit = SubmitField("Enregistrer le paiement")
 
 
+class TransactionReversalForm(FlaskForm):
+    reason = StringField(
+        "Raison de l'annulation",
+        validators=[DataRequired(), Length(min=3, max=255)],
+        render_kw={"placeholder": "Ex: quantité saisie incorrectement"},
+    )
+    submit = SubmitField("Confirmer l'annulation")
+
+
 # Form for confirming deletion of a sale
 class DeleteConfirmForm(FlaskForm):
     submit = SubmitField("Oui, Supprimer", validators=[DataRequired()])

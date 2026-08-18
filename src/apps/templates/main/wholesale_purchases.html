@@ -32,13 +32,14 @@
       <div class="card shadow">
         <div class="card-header"><h3 class="mb-0">Historique</h3></div>
         <div class="table-responsive"><table class="table align-items-center">
-          <thead><tr><th>Réseau</th><th>Unités</th><th>Coût total</th><th>Coût/unité</th><th>Date</th></tr></thead>
-          <tbody>{% for purchase in purchases %}<tr>
+          <thead><tr><th>Réseau</th><th>Unités</th><th>Coût total</th><th>Coût/unité</th><th>Date</th><th>Statut / correction</th></tr></thead>
+          <tbody>{% for purchase in purchases %}<tr class="{% if purchase.status.value == 'reversed' %}text-muted{% endif %}">
             <td>{{ purchase.network.value.capitalize() }}</td><td>{{ purchase.amount_purchased }}</td>
             <td>${{ "{:.2f}".format(purchase.actual_total_cost) }}</td>
             <td>${{ "{:.8f}".format(purchase.buying_price_at_purchase) }}</td>
-            <td>{{ purchase.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
-          </tr>{% else %}<tr><td colspan="5" class="text-center text-muted">Aucun achat enregistré.</td></tr>{% endfor %}</tbody>
+            <td>{{ purchase.purchase_date.strftime('%d/%m/%Y') }}</td>
+            <td>{% if purchase.status.value == 'reversed' %}<span class="badge badge-danger">Annulé</span><br><small>{{ purchase.reversal_reason }}</small>{% else %}<form method="post" action="{{ url_for('main_bp.reverse_wholesale_purchase_route', purchase_id=purchase.id) }}">{{ reversal_form.csrf_token }}<div class="input-group input-group-sm"><input class="form-control" name="reason" minlength="3" maxlength="255" required placeholder="Raison"><div class="input-group-append"><button class="btn btn-outline-danger" type="submit">Annuler</button></div></div></form>{% endif %}</td>
+          </tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Aucun achat enregistré.</td></tr>{% endfor %}</tbody>
         </table></div>
       </div>
     </div>

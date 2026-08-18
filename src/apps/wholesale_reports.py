@@ -17,6 +17,7 @@ from apps.models import (
     SaleItem,
     Stock,
     StockPurchase,
+    TransactionStatus,
 )
 
 
@@ -43,6 +44,7 @@ def build_wholesale_daily_report(
                 Stock.business_id == business.id,
                 StockPurchase.network == network,
                 StockPurchase.purchase_date < target_date,
+                StockPurchase.status == TransactionStatus.ACTIVE,
             )
             .scalar()
             or 0
@@ -54,6 +56,7 @@ def build_wholesale_daily_report(
                 Sale.business_id == business.id,
                 SaleItem.network == network,
                 Sale.sale_date < target_date,
+                Sale.status == TransactionStatus.ACTIVE,
             )
             .scalar()
             or 0
@@ -68,6 +71,7 @@ def build_wholesale_daily_report(
                 Stock.business_id == business.id,
                 StockPurchase.network == network,
                 StockPurchase.purchase_date == target_date,
+                StockPurchase.status == TransactionStatus.ACTIVE,
             )
             .one()
         )
@@ -83,6 +87,7 @@ def build_wholesale_daily_report(
                 Sale.business_id == business.id,
                 SaleItem.network == network,
                 Sale.sale_date == target_date,
+                Sale.status == TransactionStatus.ACTIVE,
             )
             .one()
         )
@@ -111,7 +116,11 @@ def build_wholesale_daily_report(
             func.sum(SaleItem.margin_amount).label("margin"),
         )
         .join(Sale)
-        .filter(Sale.business_id == business.id, Sale.sale_date == target_date)
+        .filter(
+            Sale.business_id == business.id,
+            Sale.sale_date == target_date,
+            Sale.status == TransactionStatus.ACTIVE,
+        )
         .group_by(SaleItem.network, SaleItem.price_per_unit_applied)
         .order_by(SaleItem.network, SaleItem.price_per_unit_applied)
         .all()
@@ -144,7 +153,9 @@ def build_wholesale_daily_report(
             )
 
     sales_for_day = Sale.query.filter_by(
-        business_id=business.id, sale_date=target_date
+        business_id=business.id,
+        sale_date=target_date,
+        status=TransactionStatus.ACTIVE,
     ).all()
     new_debt = sum(
         (
@@ -157,7 +168,11 @@ def build_wholesale_daily_report(
         db.session.query(
             func.sum(Sale.total_amount_due - Sale.initial_cash_paid)
         )
-        .filter(Sale.business_id == business.id, Sale.sale_date <= target_date)
+        .filter(
+            Sale.business_id == business.id,
+            Sale.sale_date <= target_date,
+            Sale.status == TransactionStatus.ACTIVE,
+        )
         .scalar()
         or ZERO
     )

@@ -1,10 +1,10 @@
 """Business-scoped sales transactions."""
 
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from apps import db
-from apps.inventory import consume_stock
+from apps.inventory import consume_stock, restore_sale_cost
 from apps.payments import apply_payment_to_sale
 from apps.models import (
     Business,
@@ -17,6 +17,7 @@ from apps.models import (
     Sale,
     SaleItem,
     Stock,
+    TransactionStatus,
     User,
 )
 from apps.money import as_decimal, calculate_invoice_total, quantize_unit_price
@@ -110,3 +111,40 @@ def record_wholesale_sale(
         payment_date=sale_date,
     )
     return sale
+
+
+def reverse_unpaid_wholesale_sale(
+    *, sale: Sale, business: Business, reversed_by: User, reason: str
+) -> None:
+    """Reverse a wholesale sale only while no cash has been allocated to it."""
+    if business.business_type != BusinessType.WHOLESALE:
+        raise ValueError("Cette opération est réservée au registre grossiste.")
+    if business.owner_user_id != reversed_by.id:
+        raise PermissionError("Seul le propriétaire peut annuler cette vente.")
+    if sale.business_id != business.id:
+        raise PermissionError("Cette vente appartient à une autre entreprise.")
+    if sale.status != TransactionStatus.ACTIVE:
+        raise ValueError("Cette vente est déjà annulée.")
+    if sale.cash_inflows or sale.cash_paid > 0:
+        raise ValueError(
+            "Cette vente a déjà reçu un paiement; annulez d'abord le paiement."
+        )
+    reason = (reason or "").strip()
+    if len(reason) < 3:
+        raise ValueError("Indiquez la raison de l'annulation.")
+
+    for item in sale.sale_items:
+        stock = (
+            Stock.query.filter_by(
+                business_id=business.id, network=item.network
+            )
+            .with_for_update()
+            .one()
+        )
+        restore_sale_cost(
+            stock=stock, quantity=item.quantity, cost_total=item.cost_total
+        )
+    sale.status = TransactionStatus.REVERSED
+    sale.reversed_at = datetime.now(timezone.utc)
+    sale.reversed_by_id = reversed_by.id
+    sale.reversal_reason = reason

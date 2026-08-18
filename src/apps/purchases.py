@@ -1,7 +1,7 @@
 """Business-scoped stock purchase transactions."""
 
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime, timezone
 
 from apps import db
 from apps.inventory import record_purchase, reverse_purchase
@@ -14,6 +14,9 @@ from apps.models import (
     PricePreset,
     Stock,
     StockPurchase,
+    Sale,
+    SaleItem,
+    TransactionStatus,
     User,
 )
 from apps.money import as_decimal, quantize_unit_price
@@ -240,3 +243,46 @@ def delete_retail_purchase(
         actual_total_cost=purchase.actual_total_cost,
     )
     db.session.delete(purchase)
+
+
+def reverse_wholesale_purchase(
+    *, purchase: StockPurchase, business: Business, reversed_by: User, reason: str
+) -> None:
+    """Reverse an unconsumed wholesale purchase without deleting its audit row."""
+    if business.business_type != BusinessType.WHOLESALE:
+        raise ValueError("Cette opération est réservée au registre grossiste.")
+    if business.owner_user_id != reversed_by.id:
+        raise PermissionError("Seul le propriétaire peut annuler cet achat.")
+    if purchase.stock_item.business_id != business.id:
+        raise PermissionError("Cet achat appartient à une autre entreprise.")
+    if purchase.status != TransactionStatus.ACTIVE:
+        raise ValueError("Cet achat est déjà annulé.")
+    reason = (reason or "").strip()
+    if len(reason) < 3:
+        raise ValueError("Indiquez la raison de l'annulation.")
+
+    later_sale_exists = (
+        db.session.query(SaleItem.id)
+        .join(Sale)
+        .filter(
+            Sale.business_id == business.id,
+            Sale.status == TransactionStatus.ACTIVE,
+            SaleItem.network == purchase.network,
+            Sale.sale_date >= purchase.purchase_date,
+        )
+        .first()
+        is not None
+    )
+    if later_sale_exists:
+        raise ValueError(
+            "Cet achat ne peut pas être annulé car ce stock a déjà pu être vendu."
+        )
+    reverse_purchase(
+        stock=purchase.stock_item,
+        quantity=purchase.amount_purchased,
+        actual_total_cost=purchase.actual_total_cost,
+    )
+    purchase.status = TransactionStatus.REVERSED
+    purchase.reversed_at = datetime.now(timezone.utc)
+    purchase.reversed_by_id = reversed_by.id
+    purchase.reversal_reason = reason

@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -6,11 +7,13 @@ from apps.businesses import create_business
 from apps.models import (
     BusinessApprovalStatus,
     BusinessType,
+    Client,
     NetworkType,
     PriceOperation,
     RoleType,
     Stock,
     StockPurchase,
+    TransactionStatus,
     User,
 )
 from apps.purchases import (
@@ -18,7 +21,10 @@ from apps.purchases import (
     record_retail_purchase,
     record_wholesale_purchase,
     replace_retail_purchase,
+    reverse_wholesale_purchase,
 )
+from apps.sales import record_wholesale_sale
+from apps.wholesale_reports import build_wholesale_daily_report
 
 
 def make_owner(session, suffix):
@@ -99,6 +105,75 @@ def test_custom_cost_updates_wholesale_weighted_inventory(session):
     assert stock.balance == Decimal("20000")
     assert stock.inventory_value == Decimal("193.500000000000")
     assert stock.average_cost_per_unit == Decimal("0.009675000000")
+
+
+def test_wholesale_purchase_reversal_preserves_audit_and_inventory(session):
+    owner = make_owner(session, 21)
+    business = approved_wholesale(session, owner, "Purchase reversal")
+    purchase = record_wholesale_purchase(
+        business=business,
+        purchased_by=owner,
+        network=NetworkType.AIRTEL,
+        quantity=10000,
+        custom_unit_cost=Decimal("0.00935"),
+        purchase_date=date.today(),
+    )
+    session.flush()
+
+    reverse_wholesale_purchase(
+        purchase=purchase,
+        business=business,
+        reversed_by=owner,
+        reason="Coût incorrect",
+    )
+    session.flush()
+
+    assert purchase.status == TransactionStatus.REVERSED
+    assert purchase.reversal_reason == "Coût incorrect"
+    assert purchase.reversed_by_id == owner.id
+    assert purchase.stock_item.balance == 0
+    assert purchase.stock_item.inventory_value == 0
+    report = build_wholesale_daily_report(
+        business=business, target_date=date.today()
+    )
+    assert report["totals"]["purchased"] == 0
+    assert report["totals"]["purchase_cost"] == 0
+
+
+def test_wholesale_purchase_reversal_rejects_possibly_consumed_stock(session):
+    owner = make_owner(session, 22)
+    business = approved_wholesale(session, owner, "Consumed purchase")
+    purchase = record_wholesale_purchase(
+        business=business,
+        purchased_by=owner,
+        network=NetworkType.AIRTEL,
+        quantity=10000,
+        custom_unit_cost=Decimal("0.00935"),
+        purchase_date=date.today(),
+    )
+    client = Client(name="Retailer", vendeur_id=owner.id, business_id=business.id)
+    session.add(client)
+    record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=100,
+        cash_received=0,
+        sale_date=date.today(),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    session.flush()
+
+    with pytest.raises(ValueError, match="déjà pu être vendu"):
+        reverse_wholesale_purchase(
+            purchase=purchase,
+            business=business,
+            reversed_by=owner,
+            reason="Coût incorrect",
+        )
+
+    assert purchase.status == TransactionStatus.ACTIVE
 
 
 def test_purchase_rejects_preset_from_another_business(session):

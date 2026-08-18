@@ -67,6 +67,7 @@ from apps.models import (
     CurrencyCode,
     PriceOperation,
     PricePreset,
+    TransactionStatus,
 )
 
 from apps.main.forms import (
@@ -86,6 +87,7 @@ from apps.main.forms import (
     WholesalePurchaseForm,
     WholesaleSaleForm,
     WholesaleDebtPaymentForm,
+    TransactionReversalForm,
 )
 from apps.businesses import (
     businesses_for_user,
@@ -98,8 +100,9 @@ from apps.purchases import (
     record_retail_purchase,
     record_wholesale_purchase,
     replace_retail_purchase,
+    reverse_wholesale_purchase,
 )
-from apps.sales import record_wholesale_sale
+from apps.sales import record_wholesale_sale, reverse_unpaid_wholesale_sale
 from apps.wholesale_reports import build_wholesale_daily_report
 
 
@@ -113,7 +116,9 @@ _WHOLESALE_SAFE_ENDPOINTS = {
     "main_bp.switch_business",
     "main_bp.wholesale_dashboard",
     "main_bp.wholesale_purchases",
+    "main_bp.reverse_wholesale_purchase_route",
     "main_bp.wholesale_sales",
+    "main_bp.reverse_wholesale_sale_route",
     "main_bp.wholesale_clients",
     "main_bp.wholesale_client_detail",
     "main_bp.wholesale_report",
@@ -313,8 +318,36 @@ def wholesale_purchases():
         form=form,
         purchases=purchases,
         preset_data=preset_data,
+        reversal_form=TransactionReversalForm(),
         segment="businesses",
     )
+
+
+@bp.route("/businesses/wholesale/purchases/<int:purchase_id>/reverse", methods=["POST"])
+@login_required
+@vendeur_required
+def reverse_wholesale_purchase_route(purchase_id):
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    purchase = db.get_or_404(StockPurchase, purchase_id)
+    form = TransactionReversalForm()
+    if not form.validate_on_submit():
+        flash("Indiquez une raison valide pour l'annulation.", "danger")
+        return redirect(url_for("main_bp.wholesale_purchases"))
+    try:
+        reverse_wholesale_purchase(
+            purchase=purchase,
+            business=business,
+            reversed_by=current_user,
+            reason=form.reason.data,
+        )
+        db.session.commit()
+        flash("Achat annulé. Enregistrez la valeur corrigée si nécessaire.", "success")
+    except (ValueError, PermissionError) as error:
+        db.session.rollback()
+        flash(str(error), "danger")
+    return redirect(url_for("main_bp.wholesale_purchases"))
 
 
 @bp.route("/businesses/wholesale/sales", methods=["GET", "POST"])
@@ -409,7 +442,11 @@ def wholesale_sales():
             func.sum(SaleItem.margin_amount).label("margin"),
         )
         .join(Sale)
-        .filter(Sale.business_id == business.id, Sale.sale_date == today)
+        .filter(
+            Sale.business_id == business.id,
+            Sale.sale_date == today,
+            Sale.status == TransactionStatus.ACTIVE,
+        )
         .group_by(SaleItem.network, SaleItem.price_per_unit_applied)
         .order_by(SaleItem.network, SaleItem.price_per_unit_applied)
         .all()
@@ -448,8 +485,36 @@ def wholesale_sales():
         sales_margin=sales_margin,
         collected_margin=collected_margin,
         preset_data=preset_data,
+        reversal_form=TransactionReversalForm(),
         segment="businesses",
     )
+
+
+@bp.route("/businesses/wholesale/sales/<int:sale_id>/reverse", methods=["POST"])
+@login_required
+@vendeur_required
+def reverse_wholesale_sale_route(sale_id):
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    sale = db.get_or_404(Sale, sale_id)
+    form = TransactionReversalForm()
+    if not form.validate_on_submit():
+        flash("Indiquez une raison valide pour l'annulation.", "danger")
+        return redirect(url_for("main_bp.wholesale_sales"))
+    try:
+        reverse_unpaid_wholesale_sale(
+            sale=sale,
+            business=business,
+            reversed_by=current_user,
+            reason=form.reason.data,
+        )
+        db.session.commit()
+        flash("Vente annulée. Enregistrez la valeur corrigée si nécessaire.", "success")
+    except (ValueError, PermissionError) as error:
+        db.session.rollback()
+        flash(str(error), "danger")
+    return redirect(url_for("main_bp.wholesale_sales"))
 
 
 @bp.route("/businesses/wholesale/clients")
@@ -476,7 +541,11 @@ def wholesale_clients():
             func.sum(Sale.cash_paid).label("paid"),
             func.sum(Sale.debt_amount).label("debt"),
         )
-        .filter(Sale.business_id == business.id, Sale.client_id.isnot(None))
+        .filter(
+            Sale.business_id == business.id,
+            Sale.client_id.isnot(None),
+            Sale.status == TransactionStatus.ACTIVE,
+        )
         .group_by(Sale.client_id)
         .all()
     }
@@ -539,9 +608,10 @@ def wholesale_client_detail(client_id):
         .order_by(CashInflow.payment_date.desc(), CashInflow.created_at.desc())
         .all()
     )
-    total_purchased = sum((sale.total_amount_due for sale in sales), Decimal("0"))
-    total_paid = sum((sale.cash_paid for sale in sales), Decimal("0"))
-    total_debt = sum((sale.debt_amount for sale in sales), Decimal("0"))
+    active_sales = [sale for sale in sales if sale.status == TransactionStatus.ACTIVE]
+    total_purchased = sum((sale.total_amount_due for sale in active_sales), Decimal("0"))
+    total_paid = sum((sale.cash_paid for sale in active_sales), Decimal("0"))
+    total_debt = sum((sale.debt_amount for sale in active_sales), Decimal("0"))
     return render_template(
         "main/wholesale_client_detail.html",
         business=business,

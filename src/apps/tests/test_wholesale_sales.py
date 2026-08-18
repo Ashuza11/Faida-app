@@ -10,15 +10,18 @@ from apps.models import (
     CashInflow,
     Client,
     NetworkType,
+    PaymentEvent,
     PriceOperation,
     RoleType,
     Sale,
     Stock,
+    TransactionStatus,
     User,
 )
 from apps.purchases import record_wholesale_purchase
 from apps.payments import collect_client_debt
-from apps.sales import record_wholesale_sale
+from apps.sales import record_wholesale_sale, reverse_unpaid_wholesale_sale
+from apps.wholesale_reports import build_wholesale_daily_report
 
 
 def setup_wholesale(session, suffix=1):
@@ -118,6 +121,77 @@ def test_wholesale_cash_pays_old_debt_before_current_sale(session):
     assert second.debt_amount == Decimal("3.00")
     assert CashInflow.query.filter_by(sale_id=first.id).one().amount == Decimal("5.00")
     assert CashInflow.query.filter_by(sale_id=second.id).one().amount == Decimal("2.00")
+    event = PaymentEvent.query.one()
+    assert event.amount == Decimal("7.00")
+    assert event.source_sale_id == second.id
+    assert {allocation.sale_id for allocation in event.allocations} == {
+        first.id,
+        second.id,
+    }
+
+
+def test_unpaid_wholesale_sale_reversal_restores_exact_inventory(session):
+    owner, business, client, _ = setup_wholesale(session, suffix=21)
+    stock = Stock.query.filter_by(
+        business_id=business.id, network=NetworkType.AIRTEL
+    ).one()
+    original_balance = stock.balance
+    original_value = stock.inventory_value
+    sale = record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=500,
+        cash_received=0,
+        sale_date=date.today(),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    session.flush()
+
+    reverse_unpaid_wholesale_sale(
+        sale=sale,
+        business=business,
+        reversed_by=owner,
+        reason="Quantité incorrecte",
+    )
+    session.flush()
+
+    assert sale.status == TransactionStatus.REVERSED
+    assert sale.reversal_reason == "Quantité incorrecte"
+    assert sale.reversed_by_id == owner.id
+    assert stock.balance == original_balance
+    assert stock.inventory_value == original_value
+    report = build_wholesale_daily_report(
+        business=business, target_date=date.today()
+    )
+    assert report["totals"]["sold"] == 0
+    assert report["totals"]["remaining_debt"] == 0
+
+
+def test_paid_wholesale_sale_must_not_be_reversed(session):
+    owner, business, client, _ = setup_wholesale(session, suffix=22)
+    sale = record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=500,
+        cash_received=Decimal("1.00"),
+        sale_date=date.today(),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    session.flush()
+
+    with pytest.raises(ValueError, match="paiement"):
+        reverse_unpaid_wholesale_sale(
+            sale=sale,
+            business=business,
+            reversed_by=owner,
+            reason="Quantité incorrecte",
+        )
+
+    assert sale.status == TransactionStatus.ACTIVE
 
 
 def test_wholesale_sale_rejects_another_business_client(session):
