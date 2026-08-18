@@ -61,6 +61,46 @@ def allocate_registered_client_payment(
     return remaining
 
 
+def allocate_adhoc_customer_payment(
+    *, customer_key: str, vendeur_id: int, business_id: int | None,
+    amount: Decimal, recorded_by, payment_date: date, exclude_sale_id=None,
+    description=None, payment_event=None,
+) -> Decimal:
+    """Pay only debts belonging to one explicitly selected ad-hoc identity."""
+    remaining = Decimal(amount)
+    query = Sale.query.filter(
+        Sale.vendeur_id == vendeur_id,
+        Sale.business_id == business_id,
+        Sale.client_id.is_(None),
+        Sale.adhoc_customer_key == customer_key,
+        Sale.status == TransactionStatus.ACTIVE,
+        Sale.debt_amount > Decimal("0.00"),
+    )
+    if exclude_sale_id is not None:
+        query = query.filter(Sale.id != exclude_sale_id)
+    for old_sale in query.order_by(Sale.sale_date, Sale.created_at).with_for_update().all():
+        if remaining <= 0:
+            break
+        paid = min(remaining, old_sale.debt_amount)
+        old_sale.cash_paid += paid
+        old_sale.debt_amount -= paid
+        old_sale.updated_at = datetime.now(timezone.utc)
+        db.session.add(CashInflow(
+            amount=paid,
+            category=CashInflowCategory.SALE_COLLECTION,
+            allocation_kind=PaymentAllocationKind.PRIOR_DEBT,
+            description=description or "Paiement appliqué automatiquement à l'ancienne dette",
+            recorded_by=recorded_by,
+            vendeur_id=vendeur_id,
+            business_id=business_id,
+            payment_event=payment_event,
+            sale=old_sale,
+            payment_date=payment_date,
+        ))
+        remaining -= paid
+    return remaining
+
+
 def apply_payment_to_sale(
     *, sale: Sale, amount: Decimal, recorded_by, payment_date: date
 ) -> Decimal:
@@ -75,6 +115,17 @@ def apply_payment_to_sale(
             Sale.id != sale.id,
             Sale.debt_amount > 0,
             Sale.status == TransactionStatus.ACTIVE,
+        ).scalar() or Decimal("0.00")
+        maximum += old_debt
+    elif sale.adhoc_customer_key:
+        old_debt = db.session.query(db.func.sum(Sale.debt_amount)).filter(
+            Sale.vendeur_id == sale.vendeur_id,
+            Sale.business_id == sale.business_id,
+            Sale.client_id.is_(None),
+            Sale.adhoc_customer_key == sale.adhoc_customer_key,
+            Sale.id != sale.id,
+            Sale.status == TransactionStatus.ACTIVE,
+            Sale.debt_amount > 0,
         ).scalar() or Decimal("0.00")
         maximum += old_debt
     if amount > maximum:
@@ -99,6 +150,17 @@ def apply_payment_to_sale(
     if sale.client_id is not None:
         remaining = allocate_registered_client_payment(
             client_id=sale.client_id,
+            vendeur_id=sale.vendeur_id,
+            business_id=sale.business_id,
+            amount=remaining,
+            recorded_by=recorded_by,
+            payment_date=payment_date,
+            exclude_sale_id=sale.id,
+            payment_event=payment_event,
+        )
+    elif sale.adhoc_customer_key:
+        remaining = allocate_adhoc_customer_payment(
+            customer_key=sale.adhoc_customer_key,
             vendeur_id=sale.vendeur_id,
             business_id=sale.business_id,
             amount=remaining,
@@ -204,6 +266,17 @@ def apply_additional_payment_to_sale(
             Sale.debt_amount > 0,
         ).scalar() or Decimal("0.00")
         maximum += old_debt
+    elif sale.adhoc_customer_key:
+        old_debt = db.session.query(db.func.sum(Sale.debt_amount)).filter(
+            Sale.vendeur_id == sale.vendeur_id,
+            Sale.business_id == sale.business_id,
+            Sale.client_id.is_(None),
+            Sale.adhoc_customer_key == sale.adhoc_customer_key,
+            Sale.id != sale.id,
+            Sale.status == TransactionStatus.ACTIVE,
+            Sale.debt_amount > 0,
+        ).scalar() or Decimal("0.00")
+        maximum += old_debt
     if amount > maximum:
         raise ValueError("Le paiement dépasse la dette totale du client.")
 
@@ -222,6 +295,17 @@ def apply_additional_payment_to_sale(
     if sale.client_id is not None:
         remaining = allocate_registered_client_payment(
             client_id=sale.client_id,
+            vendeur_id=sale.vendeur_id,
+            business_id=sale.business_id,
+            amount=remaining,
+            recorded_by=recorded_by,
+            payment_date=payment_date,
+            exclude_sale_id=sale.id,
+            payment_event=event,
+        )
+    elif sale.adhoc_customer_key:
+        remaining = allocate_adhoc_customer_payment(
+            customer_key=sale.adhoc_customer_key,
             vendeur_id=sale.vendeur_id,
             business_id=sale.business_id,
             amount=remaining,

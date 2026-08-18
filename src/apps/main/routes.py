@@ -48,7 +48,8 @@ from apps.decorators import (
 
 from apps import db
 from decimal import Decimal, InvalidOperation
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from uuid import uuid4
 import pytz
 from apps.models import (
     User,
@@ -1577,6 +1578,29 @@ def vente_stock():
     client_choices = [("", "Sélectionnez un client existant")]
     client_choices.extend([(str(c.id), c.name) for c in clients])
     form.existing_client_id.choices = client_choices
+    adhoc_sales = Sale.query.filter(
+        Sale.business_id == business.id,
+        Sale.client_id.is_(None),
+        Sale.adhoc_customer_key.isnot(None),
+        Sale.status == TransactionStatus.ACTIVE,
+    ).order_by(Sale.created_at.desc()).all()
+    adhoc_groups = {}
+    for prior_sale in adhoc_sales:
+        group = adhoc_groups.setdefault(prior_sale.adhoc_customer_key, {
+            "name": prior_sale.client_display_name,
+            "debt": Decimal("0.00"),
+            "last_sale": prior_sale,
+        })
+        group["debt"] += prior_sale.debt_amount
+    form.adhoc_customer_key.choices = [("", "Nouvelle personne")]
+    form.adhoc_customer_key.choices.extend(
+        (
+            key,
+            f"Même client : {data['name']} — dette {data['debt']:,.2f} FC",
+        )
+        for key, data in adhoc_groups.items()
+        if data["debt"] > 0 or data["last_sale"].sale_date == date.today()
+    )
 
     # Pre-fill empty rows for the FieldList on GET
     if request.method == "GET":
@@ -1593,6 +1617,7 @@ def vente_stock():
             # A. Resolve Client
             client = None
             client_name_adhoc = None
+            adhoc_customer_key = None
 
             if form.client_choice.data == "existing":
                 client_id = form.existing_client_id.data
@@ -1607,10 +1632,23 @@ def vente_stock():
                     raise ValueError("Client sélectionné invalide.")
 
             elif form.client_choice.data == "new":
-                client_name_adhoc = form.new_client_name.data
-                if not client_name_adhoc:
-                    raise ValueError(
-                        "Veuillez entrer le nom du nouveau client.")
+                selected_key = (form.adhoc_customer_key.data or "").strip()
+                if selected_key:
+                    prior_identity = Sale.query.filter(
+                        Sale.business_id == business.id,
+                        Sale.client_id.is_(None),
+                        Sale.adhoc_customer_key == selected_key,
+                        Sale.status == TransactionStatus.ACTIVE,
+                    ).order_by(Sale.created_at.desc()).first()
+                    if not prior_identity:
+                        raise ValueError("Client ad-hoc sélectionné invalide.")
+                    client_name_adhoc = prior_identity.client_display_name
+                    adhoc_customer_key = selected_key
+                else:
+                    client_name_adhoc = (form.new_client_name.data or "").strip()
+                    if not client_name_adhoc:
+                        raise ValueError("Veuillez entrer le nom du nouveau client.")
+                    adhoc_customer_key = uuid4().hex
 
             # B. Process Sale Items
             raw_subtotals = []
@@ -1698,6 +1736,7 @@ def vente_stock():
                 business_id=business.id,
                 client=client,
                 client_name_adhoc=client_name_adhoc,
+                adhoc_customer_key=adhoc_customer_key,
                 total_amount_due=total_amount_due,
                 cash_paid=Decimal("0.00"),
                 debt_amount=total_amount_due,
@@ -2117,8 +2156,7 @@ def encaisser_dette():
             if amount_paid <= Decimal("0.00"):
                 raise ValueError("Le montant payé doit être positif.")
 
-            # Registered-client debt spans all dates. An ad-hoc key identifies
-            # one sale, because two people may legitimately share a name.
+            # A key represents an explicit identity, never merely a display name.
             unpaid_q = Sale.query.filter(
                 Sale.debt_amount > 0,
                 Sale.business_id == business.id,
@@ -2128,9 +2166,10 @@ def encaisser_dette():
             if client_key.startswith("c:"):
                 unpaid_q = unpaid_q.filter(Sale.client_id == int(client_key[2:]))
             elif client_key.startswith("a:"):
+                adhoc_key = client_key[2:]
                 unpaid_q = unpaid_q.filter(
-                    Sale.id == int(client_key[2:]),
                     Sale.client_id.is_(None),
+                    Sale.adhoc_customer_key == adhoc_key,
                 )
             else:
                 raise ValueError("Clé client invalide.")
@@ -2176,22 +2215,29 @@ def encaisser_dette():
                     description=description,
                 )
                 db.session.add(payment_event)
-                sale.cash_paid += amount_paid
-                sale.debt_amount -= amount_paid
-                sale.updated_at = datetime.now(timezone.utc)
-                db.session.add(CashInflow(
-                    amount=amount_paid,
-                    category=CashInflowCategory.SALE_COLLECTION,
-                    allocation_kind=PaymentAllocationKind.PRIOR_DEBT,
-                    description=description,
-                    recorded_by=current_user,
-                    vendeur_id=current_user.business_vendeur_id,
-                    business_id=business.id,
-                    payment_event=payment_event,
-                    sale=sale,
-                    payment_date=payment_date,
-                ))
-                paid_count = 1
+                remaining = amount_paid
+                paid_count = 0
+                for debt_sale in unpaid_sales:
+                    if remaining <= 0:
+                        break
+                    allocation = min(remaining, debt_sale.debt_amount)
+                    debt_sale.cash_paid += allocation
+                    debt_sale.debt_amount -= allocation
+                    debt_sale.updated_at = datetime.now(timezone.utc)
+                    db.session.add(CashInflow(
+                        amount=allocation,
+                        category=CashInflowCategory.SALE_COLLECTION,
+                        allocation_kind=PaymentAllocationKind.PRIOR_DEBT,
+                        description=description,
+                        recorded_by=current_user,
+                        vendeur_id=current_user.business_vendeur_id,
+                        business_id=business.id,
+                        payment_event=payment_event,
+                        sale=debt_sale,
+                        payment_date=payment_date,
+                    ))
+                    remaining -= allocation
+                    paid_count += 1
 
             db.session.commit()
             client_name = unpaid_sales[0].client_display_name
@@ -2435,7 +2481,7 @@ def rapports():
 
     debt_map: dict = {}
     for sale in debts_q.order_by(Sale.created_at.asc()).all():
-        key = sale.client_id if sale.client_id else f"adhoc::{sale.client_name_adhoc}"
+        key = sale.customer_group_key
         if key not in debt_map:
             debt_map[key] = {
                 "name": sale.client_display_name,

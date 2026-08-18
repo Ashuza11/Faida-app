@@ -6,6 +6,7 @@ from flask import jsonify, request, current_app
 from flask_login import login_required, current_user
 from decimal import Decimal, InvalidOperation
 from datetime import date
+from uuid import uuid4
 
 from apps.api import api_bp
 from apps import db
@@ -18,6 +19,7 @@ from apps.models import (
     SaleItem,
     CashOutflow,
     Client,
+    TransactionStatus,
 )
 from apps.businesses import get_current_business, resolve_business_for_user
 from apps.main.utils import custom_round_up, calculate_sale_total
@@ -100,6 +102,7 @@ def create_sale():
         # ── Resolve client ───────────────────────────────────────────────────
         client = None
         client_name_adhoc = None
+        adhoc_customer_key = None
         client_choice = payload.get("client_choice", "new")
 
         if client_choice == "existing":
@@ -111,7 +114,21 @@ def create_sale():
                 if not client:
                     return jsonify({"error": "Client introuvable ou inaccessible"}), 400
         else:
-            client_name_adhoc = payload.get("new_client_name") or "Client inconnu"
+            selected_key = (payload.get("adhoc_customer_key") or "").strip()
+            if selected_key:
+                prior_identity = Sale.query.filter(
+                    Sale.business_id == business.id,
+                    Sale.client_id.is_(None),
+                    Sale.adhoc_customer_key == selected_key,
+                    Sale.status == TransactionStatus.ACTIVE,
+                ).order_by(Sale.created_at.desc()).first()
+                if not prior_identity:
+                    return jsonify({"error": "Client ad-hoc introuvable ou inaccessible"}), 400
+                client_name_adhoc = prior_identity.client_display_name
+                adhoc_customer_key = selected_key
+            else:
+                client_name_adhoc = payload.get("new_client_name") or "Client inconnu"
+                adhoc_customer_key = uuid4().hex
 
         # ── Process sale items ───────────────────────────────────────────────
         items_payload = payload.get("sale_items", [])
@@ -192,6 +209,7 @@ def create_sale():
             business_id=business.id,
             client=client,
             client_name_adhoc=client_name_adhoc,
+            adhoc_customer_key=adhoc_customer_key,
             total_amount_due=total_amount_due,
             cash_paid=Decimal("0.00"),
             debt_amount=total_amount_due,
@@ -525,6 +543,7 @@ def _sms_create_sale(parsed, business, vendeur_id: int, authed_user):
         business_id=business.id,
         client=client,
         client_name_adhoc=client_name_adhoc,
+        adhoc_customer_key=uuid4().hex if client is None else None,
         sale_date=date.today(),
         total_amount_due=subtotal,
         cash_paid=subtotal,    # assume cash received; vendor edits if credit

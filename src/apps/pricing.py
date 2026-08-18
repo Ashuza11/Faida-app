@@ -37,6 +37,10 @@ def seed_default_price_presets(business: Business) -> list[PricePreset]:
             operation=PriceOperation.PURCHASE,
             label=f"Standard {network.value.capitalize()}",
             unit_price=value,
+            # Keep the short negotiated price visible, while the exact
+            # purchase total follows the supplier's $100 / 10,650 reference.
+            ratio_amount=Decimal("100"),
+            ratio_units=Decimal("10650"),
             is_default=True,
         ))
 

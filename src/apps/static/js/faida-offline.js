@@ -339,6 +339,7 @@
       client_choice: clientChoice,
       existing_client_id: fd.get('existing_client_id') || null,
       new_client_name: fd.get('new_client_name') || null,
+      adhoc_customer_key: fd.get('adhoc_customer_key') || null,
       _display_client: clientName,          // local display only
       cash_paid: parseFloat(fd.get('cash_paid')) || 0,
       sale_items: items,

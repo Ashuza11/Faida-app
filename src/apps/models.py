@@ -918,6 +918,11 @@ class Sale(db.Model):
     client_name_adhoc: so.Mapped[Optional[str]] = so.mapped_column(
         sa.String(128), nullable=True
     )
+    # Stable identity chosen by the seller. Names are labels, not identities:
+    # two ad-hoc customers may share a name, while one customer may buy twice.
+    adhoc_customer_key: so.Mapped[Optional[str]] = so.mapped_column(
+        sa.String(64), nullable=True, index=True
+    )
 
     # Financial details
     total_amount_due: so.Mapped[Decimal] = so.mapped_column(
@@ -963,6 +968,13 @@ class Sale(db.Model):
         if self.client:
             return self.client.name
         return self.client_name_adhoc or "Client inconnu"
+
+    @property
+    def customer_group_key(self) -> str:
+        """Return the explicit customer identity used by debt/report grouping."""
+        if self.client_id is not None:
+            return f"c:{self.client_id}"
+        return f"a:{self.adhoc_customer_key or f'legacy-sale-{self.id}'}"
 
     @property
     def is_fully_paid(self) -> bool:

@@ -24,7 +24,7 @@ def make_vendeur(session, suffix="1"):
 
 def make_sale(
     session, vendeur, *, client=None, adhoc=None, total="1000", debt=None,
-    days_ago=0, business_id=None,
+    days_ago=0, business_id=None, adhoc_key=None,
 ):
     total = Decimal(total)
     debt = total if debt is None else Decimal(debt)
@@ -34,6 +34,7 @@ def make_sale(
         business_id=business_id,
         client=client,
         client_name_adhoc=adhoc,
+        adhoc_customer_key=adhoc_key,
         sale_date=date.today() - timedelta(days=days_ago),
         total_amount_due=total,
         cash_paid=total - debt,
@@ -109,6 +110,48 @@ def test_ad_hoc_payment_never_uses_another_same_name_sale(session):
     assert second_cris.debt_amount == Decimal("3000")
 
 
+def test_reused_ad_hoc_identity_pays_oldest_debt_first(session):
+    vendeur = make_vendeur(session)
+    first = make_sale(
+        session, vendeur, adhoc="Deric", adhoc_key="deric-one",
+        total="3000", days_ago=1,
+    )
+    current = make_sale(
+        session, vendeur, adhoc="Deric", adhoc_key="deric-one", total="5000",
+    )
+
+    apply_payment_to_sale(
+        sale=current,
+        amount=Decimal("4000"),
+        recorded_by=vendeur,
+        payment_date=date.today(),
+    )
+
+    assert first.debt_amount == Decimal("0")
+    assert current.cash_paid == Decimal("1000")
+    assert current.debt_amount == Decimal("4000")
+
+
+def test_equal_names_with_different_adhoc_identities_stay_separate(session):
+    vendeur = make_vendeur(session)
+    first = make_sale(
+        session, vendeur, adhoc="Deric", adhoc_key="deric-one", total="3000"
+    )
+    second = make_sale(
+        session, vendeur, adhoc="Deric", adhoc_key="deric-two", total="5000"
+    )
+
+    apply_payment_to_sale(
+        sale=second,
+        amount=Decimal("2000"),
+        recorded_by=vendeur,
+        payment_date=date.today(),
+    )
+
+    assert first.debt_amount == Decimal("3000")
+    assert second.debt_amount == Decimal("3000")
+
+
 def test_payment_never_settles_debt_from_another_business(session):
     vendeur = make_vendeur(session, "9")
     retail = create_business(
@@ -157,8 +200,23 @@ def test_same_name_ad_hoc_debts_have_distinct_selection_keys(session):
 
     choices = get_clients_with_debt(vendeur_id=vendeur.id)
 
-    assert {key for key, _ in choices} == {f"a:{first.id}", f"a:{second.id}"}
+    assert {key for key, _ in choices} == {
+        f"a:legacy-sale-{first.id}", f"a:legacy-sale-{second.id}"
+    }
     assert len(choices) == 2
+
+
+def test_reused_adhoc_identity_has_one_combined_debt_choice(session):
+    vendeur = make_vendeur(session)
+    make_sale(session, vendeur, adhoc="Deric", adhoc_key="deric-one", total="3000")
+    make_sale(session, vendeur, adhoc="Deric", adhoc_key="deric-one", total="5000")
+
+    choices = get_clients_with_debt(vendeur_id=vendeur.id)
+
+    assert len(choices) == 1
+    assert choices[0][0] == "a:deric-one"
+    assert "8,000.00 FC" in choices[0][1]
+    assert "2 ventes" in choices[0][1]
 
 
 def test_registered_clients_with_same_name_remain_distinct(session):

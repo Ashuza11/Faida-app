@@ -314,6 +314,7 @@ def test_equal_name_adhoc_payment_and_cancellation_stay_sale_scoped(app, session
         vendeur_id=owner.id,
         business_id=retail.id,
         client_name_adhoc="Kiosque",
+        adhoc_customer_key="kiosque-one",
         sale_date=date.today(),
         total_amount_due=Decimal("50"),
         cash_paid=Decimal("0"),
@@ -324,6 +325,7 @@ def test_equal_name_adhoc_payment_and_cancellation_stay_sale_scoped(app, session
         vendeur_id=owner.id,
         business_id=retail.id,
         client_name_adhoc="Kiosque",
+        adhoc_customer_key="kiosque-two",
         sale_date=date.today(),
         total_amount_due=Decimal("50"),
         cash_paid=Decimal("0"),
@@ -337,7 +339,7 @@ def test_equal_name_adhoc_payment_and_cancellation_stay_sale_scoped(app, session
     payment_response = client.post(
         "/sorties_cash/encaisser_dette",
         data={
-            "client_key": f"a:{first.id}",
+            "client_key": "a:kiosque-one",
             "amount_paid": "20.00",
             "payment_date": date.today().isoformat(),
             "description": "Ad-hoc payment",

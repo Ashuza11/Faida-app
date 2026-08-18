@@ -370,6 +370,12 @@ class SaleForm(FlaskForm):
             ),
         ],
     )
+    adhoc_customer_key = SelectField(
+        "Ce client a-t-il déjà acheté ?",
+        coerce=str,
+        validators=[Optional()],
+        render_kw={"class": "form-control"},
+    )
     sale_items = FieldList(
         FormField(SaleItemForm), min_entries=1
     )  # Ensure at least one item
@@ -402,7 +408,7 @@ class SaleForm(FlaskForm):
                 self.existing_client_id.errors = errors
                 return False
         elif self.client_choice.data == "new":
-            if not self.new_client_name.data:
+            if not self.new_client_name.data and not self.adhoc_customer_key.data:
                 errors = list(self.new_client_name.errors)
                 errors.append("Veuillez entrer le nom du nouveau client.")
                 self.new_client_name.errors = errors
@@ -434,9 +440,7 @@ def get_clients_with_debt(vendeur_id=None, business_id=None, sale_date=None):
             name = s.client.name if s.client else f"Client #{s.client_id}"
         else:
             adhoc = (s.client_name_adhoc or "Inconnu").strip()
-            # A display name is not a customer identity. Equal-name ad-hoc
-            # customers must remain separate.
-            key = f"a:{s.id}"
+            key = s.customer_group_key
             name = adhoc
 
         if key not in client_map:

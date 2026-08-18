@@ -80,6 +80,29 @@ def test_orange_ratio_preserves_exact_reference_cost(session):
     assert purchase.stock_item.inventory_value == Decimal("150.000000000000")
 
 
+def test_standard_airtel_purchase_stores_exact_reference_total(session):
+    owner = make_owner(session, 31)
+    business = approved_wholesale(session, owner, "Exact Airtel")
+    preset = next(
+        candidate for candidate in business.price_presets
+        if candidate.network == NetworkType.AIRTEL
+        and candidate.operation == PriceOperation.PURCHASE
+    )
+
+    purchase = record_wholesale_purchase(
+        business=business,
+        purchased_by=owner,
+        network=NetworkType.AIRTEL,
+        quantity=10650,
+        preset=preset,
+    )
+    session.flush()
+
+    assert preset.unit_price == Decimal("0.009350000000")
+    assert purchase.actual_total_cost == Decimal("100.000000000000")
+    assert purchase.stock_item.inventory_value == Decimal("100.000000000000")
+
+
 def test_custom_cost_updates_wholesale_weighted_inventory(session):
     owner = make_owner(session, 2)
     business = approved_wholesale(session, owner, "Custom Cost")
