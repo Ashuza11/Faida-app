@@ -1,6 +1,7 @@
 """Business-scoped stock purchase transactions."""
 
 from decimal import Decimal
+from datetime import date
 
 from apps import db
 from apps.inventory import record_purchase, reverse_purchase
@@ -27,6 +28,7 @@ def record_wholesale_purchase(
     quantity,
     preset: PricePreset | None = None,
     custom_unit_cost=None,
+    purchase_date: date | None = None,
 ) -> StockPurchase:
     """Record one exact USD purchase without crossing business boundaries."""
     if business.business_type != BusinessType.WHOLESALE:
@@ -91,6 +93,7 @@ def record_wholesale_purchase(
         selling_price_at_purchase=stock.selling_price_per_unit,
         actual_total_cost=total_cost,
         amount_purchased=int(quantity),
+        purchase_date=purchase_date or date.today(),
     )
     db.session.add(purchase)
     return purchase
@@ -119,6 +122,7 @@ def record_retail_purchase(
     quantity,
     unit_cost,
     intended_selling_price,
+    purchase_date: date | None = None,
 ) -> StockPurchase:
     """Create a retail purchase inside exactly one business ledger."""
     _validate_retail_owner(business=business, user=purchased_by)
@@ -145,6 +149,7 @@ def record_retail_purchase(
         buying_price_at_purchase=unit_cost,
         selling_price_at_purchase=intended_selling_price,
         actual_total_cost=total_cost,
+        purchase_date=purchase_date or date.today(),
     )
     db.session.add(purchase)
     return purchase

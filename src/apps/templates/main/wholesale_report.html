@@ -1,0 +1,31 @@
+{% extends "layouts/base.html" %}
+{% block title %}Rapport grossiste{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div><h1>Rapport journalier · {{ business.name }}</h1><span class="badge badge-secondary">USD</span></div>
+    <div><a class="btn btn-success" href="{{ url_for('pdf_bp.download_wholesale_report_pdf', date=report.date.isoformat()) }}">Exporter PDF</a> <a class="btn btn-outline-primary" href="{{ url_for('main_bp.wholesale_dashboard') }}">Tableau de bord</a></div>
+  </div>
+  <form method="get" class="form-inline mb-4"><label class="mr-2" for="reportDate">Date</label><input id="reportDate" class="form-control mr-2" type="date" name="date" value="{{ report.date.isoformat() }}"><button class="btn btn-primary" type="submit">Afficher</button></form>
+  <div class="row">
+    <div class="col-md-3"><div class="card shadow"><div class="card-body"><small>Ventes du jour</small><div class="h2">${{ "{:.2f}".format(report.totals.revenue) }}</div></div></div></div>
+    <div class="col-md-3"><div class="card shadow"><div class="card-body"><small>Marge sur ventes</small><div class="h2 text-success">${{ "{:.2f}".format(report.totals.sales_margin) }}</div></div></div></div>
+    <div class="col-md-3"><div class="card shadow"><div class="card-body"><small>Cash encaissé</small><div class="h2 text-info">${{ "{:.2f}".format(report.totals.cash_collected) }}</div></div></div></div>
+    <div class="col-md-3"><div class="card shadow"><div class="card-body"><small>Marge du cash encaissé</small><div class="h2 text-primary">${{ "{:.2f}".format(report.totals.collected_margin) }}</div></div></div></div>
+  </div>
+  <div class="card shadow mb-4"><div class="card-header"><h3 class="mb-0">Mouvements de stock</h3></div><div class="table-responsive"><table class="table">
+    <thead><tr><th>Réseau</th><th>Ouverture</th><th>Acheté</th><th>Coût achat</th><th>Vendu</th><th>Clôture</th><th>Revenu</th><th>Marge</th></tr></thead><tbody>
+    {% for row in report.networks.values() %}<tr><td>{{ row.network.value.capitalize() }}</td><td>{{ "{:,.0f}".format(row.opening) }}</td><td>{{ "{:,.0f}".format(row.purchased) }}</td><td>${{ "{:.2f}".format(row.purchase_cost) }}</td><td>{{ "{:,.0f}".format(row.sold) }}</td><td>{{ "{:,.0f}".format(row.closing) }}</td><td>${{ "{:.2f}".format(row.revenue) }}</td><td class="text-success">${{ "{:.2f}".format(row.margin) }}</td></tr>{% endfor %}
+    </tbody></table></div></div>
+  <div class="row">
+    <div class="col-lg-7"><div class="card shadow"><div class="card-header"><h3 class="mb-0">Marge par prix de vente</h3></div><div class="table-responsive"><table class="table"><thead><tr><th>Réseau</th><th>Prix</th><th>Unités</th><th>Revenu</th><th>Coût</th><th>Marge</th></tr></thead><tbody>
+      {% for group in report.price_groups %}<tr><td>{{ group.network.value.capitalize() }}</td><td>${{ "{:.5f}".format(group.price_per_unit_applied) }}</td><td>{{ group.quantity }}</td><td>${{ "{:.2f}".format(group.revenue) }}</td><td>${{ "{:.2f}".format(group.cost) }}</td><td class="text-success">${{ "{:.2f}".format(group.margin) }}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Aucune vente pour cette date.</td></tr>{% endfor %}
+    </tbody></table></div></div></div>
+    <div class="col-lg-5"><div class="card shadow"><div class="card-header"><h3 class="mb-0">Dettes et encaissements</h3></div><div class="card-body">
+      <div class="d-flex justify-content-between py-2"><span>Nouvelle dette créée</span><strong>${{ "{:.2f}".format(report.totals.new_debt) }}</strong></div>
+      <div class="d-flex justify-content-between py-2"><span>Anciennes dettes encaissées</span><strong class="text-success">${{ "{:.2f}".format(report.totals.old_debt_collected) }}</strong></div>
+      <div class="d-flex justify-content-between border-top py-3"><span>Dette restante à cette date</span><strong class="text-danger">${{ "{:.2f}".format(report.totals.remaining_debt) }}</strong></div>
+    </div></div></div>
+  </div>
+</div>
+{% endblock %}

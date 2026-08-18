@@ -4,7 +4,14 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from apps import db
-from apps.models import Business, CashInflow, CashInflowCategory, Client, Sale
+from apps.models import (
+    Business,
+    CashInflow,
+    CashInflowCategory,
+    Client,
+    PaymentAllocationKind,
+    Sale,
+)
 
 
 def allocate_registered_client_payment(
@@ -38,6 +45,7 @@ def allocate_registered_client_payment(
         db.session.add(CashInflow(
             amount=paid,
             category=CashInflowCategory.SALE_COLLECTION,
+            allocation_kind=PaymentAllocationKind.PRIOR_DEBT,
             description=description or "Paiement appliqué automatiquement à l'ancienne dette",
             recorded_by=recorded_by,
             vendeur_id=vendeur_id,
@@ -82,11 +90,13 @@ def apply_payment_to_sale(
         )
     current_paid = min(remaining, sale.total_amount_due)
     sale.cash_paid = current_paid
+    sale.initial_cash_paid = current_paid
     sale.debt_amount = sale.total_amount_due - current_paid
     if current_paid > 0:
         db.session.add(CashInflow(
             amount=current_paid,
             category=CashInflowCategory.SALE_COLLECTION,
+            allocation_kind=PaymentAllocationKind.CURRENT_SALE,
             description="Paiement de la vente",
             recorded_by=recorded_by,
             vendeur_id=sale.vendeur_id,

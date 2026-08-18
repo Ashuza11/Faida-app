@@ -152,6 +152,7 @@ def test_wholesale_purchase_route_records_selected_preset(app, session):
         data={
             "network": NetworkType.ORANGE.name,
             "quantity": "10650",
+            "purchase_date": "2026-08-18",
             "price_choice": f"preset:{preset.id}",
         },
     )

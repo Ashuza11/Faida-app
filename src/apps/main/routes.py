@@ -100,6 +100,7 @@ from apps.purchases import (
     replace_retail_purchase,
 )
 from apps.sales import record_wholesale_sale
+from apps.wholesale_reports import build_wholesale_daily_report
 
 
 # Define the timezone for the application
@@ -115,6 +116,7 @@ _WHOLESALE_SAFE_ENDPOINTS = {
     "main_bp.wholesale_sales",
     "main_bp.wholesale_clients",
     "main_bp.wholesale_client_detail",
+    "main_bp.wholesale_report",
     "main_bp.profile",
     "main_bp.health",
 }
@@ -259,6 +261,8 @@ def wholesale_purchases():
         (f"preset:{preset.id}", f"{preset.network.value.capitalize()} — {preset.label}")
         for preset in presets
     ] + [("custom", "Prix personnalisé")]
+    if request.method == "GET":
+        form.purchase_date.data = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
 
     if form.validate_on_submit():
         try:
@@ -277,6 +281,7 @@ def wholesale_purchases():
                 quantity=form.quantity.data,
                 preset=selected_preset,
                 custom_unit_cost=custom_unit_cost,
+                purchase_date=form.purchase_date.data,
             )
             db.session.commit()
             flash("Achat grossiste enregistré avec succès.", "success")
@@ -547,6 +552,36 @@ def wholesale_client_detail(client_id):
         total_purchased=total_purchased,
         total_paid=total_paid,
         total_debt=total_debt,
+        segment="businesses",
+    )
+
+
+@bp.route("/businesses/wholesale/report")
+@login_required
+@vendeur_required
+def wholesale_report():
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    if business.owner_user_id != current_user.id:
+        abort(403)
+    date_text = request.args.get("date", "").strip()
+    try:
+        target_date = (
+            datetime.strptime(date_text, "%Y-%m-%d").date()
+            if date_text
+            else datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
+        )
+    except ValueError:
+        flash("La date du rapport n'est pas valide.", "danger")
+        return redirect(url_for("main_bp.wholesale_report"))
+    report = build_wholesale_daily_report(
+        business=business, target_date=target_date
+    )
+    return render_template(
+        "main/wholesale_report.html",
+        business=business,
+        report=report,
         segment="businesses",
     )
 

@@ -74,6 +74,11 @@ class PriceOperation(PyEnum):
     SALE = "sale"
 
 
+class PaymentAllocationKind(PyEnum):
+    CURRENT_SALE = "current_sale"
+    PRIOR_DEBT = "prior_debt"
+
+
 class CashOutflowCategory(PyEnum):
     """Categories for cash outflows."""
     PURCHASE_AIRTIME = "Achat Stock"
@@ -753,6 +758,10 @@ class StockPurchase(db.Model):
     amount_purchased: so.Mapped[int] = so.mapped_column(
         sa.Integer, nullable=False)
 
+    purchase_date: so.Mapped[date] = so.mapped_column(
+        sa.Date, nullable=False, default=date.today, index=True
+    )
+
     created_at: so.Mapped[datetime] = so.mapped_column(
         sa.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc)
@@ -901,6 +910,9 @@ class Sale(db.Model):
         sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
     debt_amount: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
+    initial_cash_paid: so.Mapped[Decimal] = so.mapped_column(
         sa.Numeric(12, 2), nullable=False, default=Decimal("0.00")
     )
 
@@ -1133,6 +1145,9 @@ class CashInflow(db.Model):
         sa.Enum(CashInflowCategory),
         nullable=False,
         default=CashInflowCategory.SALE_COLLECTION,
+    )
+    allocation_kind: so.Mapped[Optional[PaymentAllocationKind]] = so.mapped_column(
+        sa.Enum(PaymentAllocationKind), nullable=True
     )
     description: so.Mapped[Optional[str]] = so.mapped_column(
         sa.String(255), nullable=True

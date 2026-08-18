@@ -2,7 +2,7 @@
 # PDF DOWNLOAD ROUTE
 # ============================================================
 
-from flask import Blueprint, send_file, redirect, url_for, flash, current_app
+from flask import Blueprint, send_file, redirect, url_for, flash, current_app, request, abort
 from flask_login import login_required, current_user
 from decimal import Decimal
 
@@ -12,6 +12,7 @@ from apps.main.utils import (
     get_daily_report_data,
     get_stock_purchase_history_query,
     get_sales_history_query,
+    get_local_timezone_datetime_info,
 )
 from apps.models import (
     NetworkType, DailyOverallReport, DailyStockReport,
@@ -20,9 +21,42 @@ from apps.models import (
 from apps.main.pdf_utils import generate_daily_report_pdf
 from apps import db
 from sqlalchemy import func
+from datetime import datetime
+from apps.businesses import get_current_business
+from apps.models import BusinessType
+from apps.wholesale_pdf import generate_wholesale_report_pdf
+from apps.wholesale_reports import build_wholesale_daily_report
 
 # Create a NEW blueprint for PDF routes
 pdf_bp = Blueprint('pdf_bp', __name__)
+
+
+@pdf_bp.route("/businesses/wholesale/report.pdf")
+@login_required
+@vendeur_required
+def download_wholesale_report_pdf():
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    if business.owner_user_id != current_user.id:
+        abort(403)
+    date_text = request.args.get("date", "").strip()
+    try:
+        target_date = (
+            datetime.strptime(date_text, "%Y-%m-%d").date()
+            if date_text else get_local_timezone_datetime_info()[1]
+        )
+    except ValueError:
+        return redirect(url_for("main_bp.wholesale_report"))
+    report = build_wholesale_daily_report(
+        business=business, target_date=target_date
+    )
+    return send_file(
+        generate_wholesale_report_pdf(business=business, report=report),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"rapport-grossiste-{target_date.isoformat()}.pdf",
+    )
 
 
 @pdf_bp.route("/rapports/download", methods=["GET"])

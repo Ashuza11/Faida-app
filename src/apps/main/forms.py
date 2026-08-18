@@ -610,6 +610,11 @@ class WholesalePurchaseForm(FlaskForm):
         validators=[DataRequired(), NumberRange(min=1)],
         render_kw={"placeholder": "Ex: 10650", "min": "1"},
     )
+    purchase_date = DateField(
+        "Date de l'achat",
+        validators=[DataRequired()],
+        format="%Y-%m-%d",
+    )
     price_choice = SelectField(
         "Prix d'achat",
         validators=[DataRequired()],
