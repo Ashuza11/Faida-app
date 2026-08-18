@@ -9,6 +9,7 @@ from sqlalchemy import func
 from jinja2 import TemplateNotFound
 from apps.main.utils import (
     custom_round_up,
+    calculate_sale_total,
     get_paginated_results,
     get_daily_report_data,
     get_local_timezone_datetime_info,
@@ -19,6 +20,7 @@ from apps.main.utils import (
     get_sales_history_query,
     update_daily_reports,
 )
+from apps.main.payments import apply_payment_to_sale
 
 from apps.decorators import (
     platform_admin_required,
@@ -1083,7 +1085,7 @@ def vente_stock():
                         "Veuillez entrer le nom du nouveau client.")
 
             # B. Process Sale Items
-            total_amount_due = Decimal("0.00")
+            raw_subtotals = []
             sale_items_to_add = []
 
             # Check if list is empty
@@ -1131,7 +1133,7 @@ def vente_stock():
 
                 # Calculate Line Totals
                 subtotal_raw = quantity * final_unit_price
-                subtotal = custom_round_up(subtotal_raw)
+                subtotal = subtotal_raw.quantize(Decimal("0.01"))
 
                 # Prepare Object
                 new_item = SaleItem(
@@ -1146,20 +1148,15 @@ def vente_stock():
                 db.session.add(stock_item)
 
                 sale_items_to_add.append(new_item)
-                total_amount_due += subtotal
+                raw_subtotals.append(subtotal)
 
             if not sale_items_to_add:
                 raise ValueError(
                     "Veuillez ajouter au moins un article valide.")
 
             # C. Finalize Financials
-            cash_paid = form.cash_paid.data if form.cash_paid.data is not None else Decimal(
-                "0.00")
-            debt_amount = total_amount_due - cash_paid
-
-            if debt_amount < 0:
-                raise ValueError(
-                    "Le montant payé ne peut pas dépasser le total dû.")
+            total_amount_due = calculate_sale_total(raw_subtotals)
+            cash_received = form.cash_paid.data or Decimal("0.00")
 
             # D. Save Sale
             new_sale = Sale(
@@ -1168,13 +1165,20 @@ def vente_stock():
                 client=client,
                 client_name_adhoc=client_name_adhoc,
                 total_amount_due=total_amount_due,
-                cash_paid=cash_paid,
-                debt_amount=debt_amount,
+                cash_paid=Decimal("0.00"),
+                debt_amount=total_amount_due,
                 sale_date=form.sale_date.data,
             )
             new_sale.sale_items.extend(sale_items_to_add)
 
             db.session.add(new_sale)
+            db.session.flush()
+            apply_payment_to_sale(
+                sale=new_sale,
+                amount=cash_received,
+                recorded_by=current_user,
+                payment_date=form.sale_date.data,
+            )
             db.session.commit()
 
             flash("Vente enregistrée avec succès!", "success")
@@ -1375,7 +1379,7 @@ def edit_sale(sale_id):
             sale.sale_date = form.sale_date.data
             sale.updated_at = datetime.now(timezone.utc)
 
-            total_amount_due = Decimal("0.00")
+            raw_subtotals = []
             sale_items_to_add = []
             errors_during_sale = []
 
@@ -1457,7 +1461,7 @@ def edit_sale(sale_id):
                     )
                     continue
                 item_subtotal_unrounded = quantity * price_per_unit_applied
-                subtotal = custom_round_up(amount=item_subtotal_unrounded)
+                subtotal = item_subtotal_unrounded.quantize(Decimal("0.01"))
 
                 new_sale_item = SaleItem(
                     network=network_type,
@@ -1467,7 +1471,7 @@ def edit_sale(sale_id):
                     sale=sale,
                 )
                 sale_items_to_add.append(new_sale_item)
-                total_amount_due += subtotal
+                raw_subtotals.append(subtotal)
 
                 # Update stock balance for new items
                 stock_item.balance -= quantity
@@ -1502,6 +1506,7 @@ def edit_sale(sale_id):
                 db.session.add(item)
 
             # 5. Update total_amount_due, cash_paid, debt_amount on the Sale
+            total_amount_due = calculate_sale_total(raw_subtotals)
             sale.total_amount_due = total_amount_due
             cash_paid = form.cash_paid.data
             if cash_paid is None:
@@ -1789,10 +1794,11 @@ def encaisser_dette():
     _vendeur_id = get_current_vendeur_id()
 
     form = DebtCollectionForm()
-    # One entry per client (aggregated across all their unpaid sales on the date)
+    # Always show the complete client balance: old debt must not disappear just
+    # because it originated on another business date.
     form.client_key.choices = get_clients_with_debt(
         vendeur_id=_vendeur_id,
-        sale_date=filter_date,
+        sale_date=None,
     )
 
     if request.method == "GET" and not form.payment_date.data:
@@ -1808,10 +1814,10 @@ def encaisser_dette():
             if amount_paid <= Decimal("0.00"):
                 raise ValueError("Le montant payé doit être positif.")
 
-            # Resolve all unpaid sales for this client on the selected date
+            # Registered-client debt spans all dates. An ad-hoc key identifies
+            # one sale, because two people may legitimately share a name.
             unpaid_q = Sale.query.filter(
                 Sale.debt_amount > 0,
-                Sale.sale_date == filter_date,
             )
             if _vendeur_id:
                 unpaid_q = unpaid_q.filter(Sale.vendeur_id == _vendeur_id)
@@ -1819,11 +1825,14 @@ def encaisser_dette():
             if client_key.startswith("c:"):
                 unpaid_q = unpaid_q.filter(Sale.client_id == int(client_key[2:]))
             elif client_key.startswith("a:"):
-                unpaid_q = unpaid_q.filter(Sale.client_name_adhoc == client_key[2:])
+                unpaid_q = unpaid_q.filter(
+                    Sale.id == int(client_key[2:]),
+                    Sale.client_id.is_(None),
+                )
             else:
                 raise ValueError("Clé client invalide.")
 
-            unpaid_sales = unpaid_q.order_by(Sale.created_at.asc()).all()
+            unpaid_sales = unpaid_q.order_by(Sale.sale_date.asc(), Sale.created_at.asc()).all()
             if not unpaid_sales:
                 raise ValueError("Aucune vente impayée trouvée pour ce client.")
 

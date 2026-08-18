@@ -415,7 +415,7 @@ def get_clients_with_debt(vendeur_id=None, sale_date=None):
 
     Each client appears at most once, with their combined outstanding debt.
     client_key format: "c:{client_id}" for registered clients,
-                       "a:{client_name_adhoc}" for ad-hoc names.
+                       "a:{sale_id}" for one ad-hoc debt.
     If sale_date is given, restrict to sales made on that date.
     """
     query = Sale.query.filter(Sale.debt_amount > Decimal("0.00"))
@@ -432,7 +432,9 @@ def get_clients_with_debt(vendeur_id=None, sale_date=None):
             name = s.client.name if s.client else f"Client #{s.client_id}"
         else:
             adhoc = (s.client_name_adhoc or "Inconnu").strip()
-            key = f"a:{adhoc}"
+            # A display name is not a customer identity. Equal-name ad-hoc
+            # customers must remain separate.
+            key = f"a:{s.id}"
             name = adhoc
 
         if key not in client_map:

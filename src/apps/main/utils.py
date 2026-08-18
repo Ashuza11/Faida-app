@@ -57,6 +57,10 @@ def custom_round_up(amount: Decimal) -> Decimal:
     if not isinstance(amount, Decimal):
         amount = Decimal(str(amount))
 
+    # Work in whole francs before applying the business rounding bands.  The
+    # previous implementation left gaps for values such as 6950.50.
+    amount = amount.quantize(Decimal("1"))
+
     # Calculate the remainder when divided by 100
     remainder = amount % 100
 
@@ -74,6 +78,11 @@ def custom_round_up(amount: Decimal) -> Decimal:
     else:
         # This case should ideally not be reached if remainder is always 0-99
         return amount
+
+
+def calculate_sale_total(raw_subtotals) -> Decimal:
+    """Round a sale once, after adding its unrounded line subtotals."""
+    return custom_round_up(sum(raw_subtotals, Decimal("0.00")))
 
 
 # Define the application's timezone once

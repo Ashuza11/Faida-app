@@ -1,52 +1,19 @@
 import pytest
-from sqlalchemy.orm import scoped_session, sessionmaker
 
-from backend import create_app
-from backend import db as _db
-
-
-@pytest.fixture(scope="session")
-def app(request):
-    """Session-wide test `Flask` application."""
-    _app = create_app({"WTF_CSRF_ENABLED": False})
-
-    # Establish an application context before running the tests.
-    ctx = _app.app_context()
-    ctx.push()
-
-    def teardown():
-        ctx.pop()
-
-    request.addfinalizer(teardown)
-    return _app
+from apps import create_app, db
+from apps.config import TestingConfig
 
 
-@pytest.fixture(scope="session")
-def db(app, request):
-    """Session-wide test database."""
-
-    def teardown():
-        _db.drop_all()
-
-    _db.app = app
-    _db.create_all()
-
-    request.addfinalizer(teardown)
-    return _db
-
-
-@pytest.fixture(scope="function")
-def session(db, request):
-    """Creates a new database session for a test."""
-    connection = db.engine.connect()
-    transaction = connection.begin()
-
-    db.session = scoped_session(session_factory=sessionmaker(bind=connection))
-
-    def teardown():
-        transaction.rollback()
-        connection.close()
+@pytest.fixture()
+def app():
+    app = create_app(TestingConfig)
+    with app.app_context():
+        db.create_all()
+        yield app
         db.session.remove()
+        db.drop_all()
 
-    request.addfinalizer(teardown)
+
+@pytest.fixture()
+def session(app):
     return db.session

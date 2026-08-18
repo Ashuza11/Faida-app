@@ -19,7 +19,8 @@ from apps.models import (
     CashOutflow,
     Client,
 )
-from apps.main.utils import custom_round_up
+from apps.main.utils import custom_round_up, calculate_sale_total
+from apps.main.payments import apply_payment_to_sale
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
@@ -100,7 +101,7 @@ def create_sale():
         if not items_payload:
             return jsonify({"error": "Aucun article de vente fourni"}), 400
 
-        total_amount_due = Decimal("0.00")
+        raw_subtotals = []
         sale_items_to_add = []
 
         for item in items_payload:
@@ -141,7 +142,7 @@ def create_sale():
                              "Définissez un prix dans le stock ou entrez-le manuellement."
                 }), 400
 
-            subtotal = custom_round_up(quantity * final_unit_price)
+            subtotal = (Decimal(quantity) * final_unit_price).quantize(Decimal("0.01"))
             stock_item.balance -= quantity
             db.session.add(stock_item)
 
@@ -151,17 +152,15 @@ def create_sale():
                 price_per_unit_applied=final_unit_price,
                 subtotal=subtotal,
             ))
-            total_amount_due += subtotal
+            raw_subtotals.append(subtotal)
+
+        total_amount_due = calculate_sale_total(raw_subtotals)
 
         # ── Financials ───────────────────────────────────────────────────────
         try:
             cash_paid = Decimal(str(payload.get("cash_paid", "0")))
         except InvalidOperation:
             cash_paid = Decimal("0.00")
-
-        debt_amount = total_amount_due - cash_paid
-        if debt_amount < 0:
-            return jsonify({"error": "Le montant payé dépasse le total dû"}), 400
 
         # ── Save ─────────────────────────────────────────────────────────────
         new_sale = Sale(
@@ -170,11 +169,18 @@ def create_sale():
             client=client,
             client_name_adhoc=client_name_adhoc,
             total_amount_due=total_amount_due,
-            cash_paid=cash_paid,
-            debt_amount=debt_amount,
+            cash_paid=Decimal("0.00"),
+            debt_amount=total_amount_due,
         )
         new_sale.sale_items.extend(sale_items_to_add)
         db.session.add(new_sale)
+        db.session.flush()
+        apply_payment_to_sale(
+            sale=new_sale,
+            amount=cash_paid,
+            recorded_by=current_user,
+            payment_date=new_sale.sale_date,
+        )
         db.session.commit()
 
         return jsonify({
@@ -512,6 +518,13 @@ def _sms_create_sale(parsed, vendeur_id: int, authed_user):
     )
     new_sale.sale_items.append(sale_item)
     db.session.add(new_sale)
+    db.session.flush()
+    apply_payment_to_sale(
+        sale=new_sale,
+        amount=subtotal,
+        recorded_by=authed_user,
+        payment_date=new_sale.sale_date,
+    )
     db.session.commit()
 
     current_app.logger.info(
