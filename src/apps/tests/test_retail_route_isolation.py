@@ -6,6 +6,8 @@ from apps.models import (
     BusinessApprovalStatus,
     BusinessMembership,
     BusinessType,
+    CashInflow,
+    CashInflowCategory,
     CashOutflow,
     CashOutflowCategory,
     Client,
@@ -364,3 +366,45 @@ def test_equal_name_adhoc_payment_and_cancellation_stay_sale_scoped(app, session
     assert first.debt_amount == Decimal("50.00")
     assert second.debt_amount == Decimal("50.00")
     assert event.status == TransactionStatus.REVERSED
+
+
+def test_legacy_payment_is_visible_but_cannot_be_guessed_or_cancelled(app, session):
+    owner, retail, _, retail_client, _ = setup_ledgers(session)
+    sale = Sale.query.filter_by(client_id=retail_client.id).one()
+    sale.cash_paid = Decimal("25")
+    sale.debt_amount = Decimal("75")
+    legacy_allocation = CashInflow(
+        amount=Decimal("25"),
+        category=CashInflowCategory.SALE_COLLECTION,
+        description="Ancien paiement",
+        recorded_by=owner,
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        payment_event_id=None,
+        sale=sale,
+        payment_date=date.today(),
+    )
+    session.add(legacy_allocation)
+    session.commit()
+    client = app.test_client()
+    login_to_business(client, owner, retail)
+
+    details = client.get(f"/view_sale_details/{sale.id}")
+
+    assert details.status_code == 200
+    assert b"Paiements historiques en lecture seule" in details.data
+    assert b"Ancien paiement" in details.data
+    assert f"/payments/".encode() not in details.data
+
+    cancellation = client.post(
+        f"/delete_sale/{sale.id}",
+        data={"reason": "Correction historique"},
+        follow_redirects=True,
+    )
+
+    assert cancellation.status_code == 200
+    assert "réconciliation administrateur".encode() in cancellation.data
+    session.refresh(sale)
+    assert sale.status == TransactionStatus.ACTIVE
+    assert sale.cash_paid == Decimal("25.00")
+    assert sale.debt_amount == Decimal("75.00")

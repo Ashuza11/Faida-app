@@ -127,10 +127,21 @@ def reverse_unpaid_sale(
         raise PermissionError("Cette vente appartient à une autre entreprise.")
     if sale.status != TransactionStatus.ACTIVE:
         raise ValueError("Cette vente est déjà annulée.")
-    has_active_payment = any(
-        inflow.status == TransactionStatus.ACTIVE for inflow in sale.cash_inflows
+    has_legacy_payment = any(
+        inflow.status == TransactionStatus.ACTIVE
+        and inflow.payment_event_id is None
+        for inflow in sale.cash_inflows
     )
-    if has_active_payment or sale.cash_paid > 0:
+    if has_legacy_payment:
+        raise ValueError(
+            "Cette vente contient un paiement historique non groupé; "
+            "une réconciliation administrateur est nécessaire."
+        )
+    has_grouped_payment = any(
+        inflow.status == TransactionStatus.ACTIVE
+        for inflow in sale.cash_inflows
+    )
+    if has_grouped_payment or sale.cash_paid > 0:
         raise ValueError(
             "Cette vente a déjà reçu un paiement; annulez d'abord le paiement."
         )

@@ -1910,10 +1910,21 @@ def view_sale_details(sale_id):
         .order_by(PaymentEvent.payment_date.desc(), PaymentEvent.created_at.desc())
         .all()
     )
+    legacy_allocations = (
+        CashInflow.query.filter(
+            CashInflow.sale_id == sale.id,
+            CashInflow.business_id == sale.business_id,
+            CashInflow.payment_event_id.is_(None),
+            CashInflow.status == TransactionStatus.ACTIVE,
+        )
+        .order_by(CashInflow.payment_date.desc(), CashInflow.created_at.desc())
+        .all()
+    )
     return render_template(
         "main/sale_details.html",
         sale=sale,
         payment_events=payment_events,
+        legacy_allocations=legacy_allocations,
         reversal_form=TransactionReversalForm(),
         segment="stock",
         sub_segment="vente_stock",

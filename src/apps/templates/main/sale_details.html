@@ -80,6 +80,18 @@
                   </div>
                 {% else %}<p class="text-muted">Aucun paiement audité lié.</p>{% endfor %}
 
+                {% if legacy_allocations %}
+                  <div class="alert alert-warning mt-3">
+                    <strong>Paiements historiques en lecture seule</strong><br>
+                    Ces lignes précèdent le regroupement des reçus. Elles restent incluses dans les soldes et rapports, mais ne peuvent pas être annulées automatiquement.
+                  </div>
+                  {% for allocation in legacy_allocations %}
+                    <div class="border rounded p-2 mb-2 text-muted">
+                      {{ allocation.payment_date.strftime('%d/%m/%Y') }} — {{ "{:,.2f}".format(allocation.amount) }} FC — {{ allocation.description or 'Paiement historique' }}
+                    </div>
+                  {% endfor %}
+                {% endif %}
+
             </div>
           </div>
         </div>
