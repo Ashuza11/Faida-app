@@ -63,7 +63,7 @@ def upgrade():
     op.execute(sa.text("""
         INSERT INTO business_memberships
             (business_id, user_id, role, is_active, created_at)
-        SELECT b.id, b.owner_user_id, 'OWNER', 1, CURRENT_TIMESTAMP
+        SELECT b.id, b.owner_user_id, 'OWNER', TRUE, CURRENT_TIMESTAMP
         FROM businesses b
     """))
 

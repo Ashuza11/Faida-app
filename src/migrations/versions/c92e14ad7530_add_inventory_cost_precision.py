@@ -94,7 +94,7 @@ def upgrade():
                  AND st.network = sale_items.network
                 WHERE s.id = sale_items.sale_id
             ), 0),
-            is_cost_estimated = 1
+            is_cost_estimated = TRUE
     """))
 
 
