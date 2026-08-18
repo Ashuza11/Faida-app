@@ -849,8 +849,8 @@ class StockOpeningBalance(db.Model):
 
     __table_args__ = (
         sa.UniqueConstraint(
-            "vendeur_id", "network", "balance_date",
-            name="_opening_balance_vendeur_network_date_uc"
+            "business_id", "network", "balance_date",
+            name="_opening_balance_business_network_date_uc"
         ),
     )
 
@@ -1297,8 +1297,10 @@ class DailyStockReport(db.Model):
     )
 
     __table_args__ = (
-        sa.UniqueConstraint("vendeur_id", "report_date",
-                            "network", name="_vendeur_report_date_network_uc"),
+        sa.UniqueConstraint(
+            "business_id", "report_date", "network",
+            name="_business_report_date_network_uc",
+        ),
     )
 
     def __repr__(self) -> str:
@@ -1343,8 +1345,9 @@ class DailyOverallReport(db.Model):
     )
 
     __table_args__ = (
-        sa.UniqueConstraint("vendeur_id", "report_date",
-                            name="_vendeur_report_date_uc"),
+        sa.UniqueConstraint(
+            "business_id", "report_date", name="_business_report_date_uc"
+        ),
     )
 
     def __repr__(self) -> str:

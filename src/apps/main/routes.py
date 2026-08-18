@@ -1434,6 +1434,8 @@ def stock_ouverture():
     Also provides a "copy from yesterday" helper endpoint.
     """
     vendeur_id = get_current_vendeur_id()
+    business = get_current_business()
+    business_id = business.id if business is not None else None
     form = StockOpeningBalanceForm()
 
     # Default to today
@@ -1443,7 +1445,7 @@ def stock_ouverture():
         # Pre-fill with any existing entry for today
         if vendeur_id:
             existing = StockOpeningBalance.query.filter_by(
-                vendeur_id=vendeur_id,
+                business_id=business_id,
                 balance_date=form.balance_date.data,
             ).all()
             existing_map = {ob.network.name.lower(): ob.quantity for ob in existing}
@@ -1477,7 +1479,7 @@ def stock_ouverture():
 
                 # Upsert the StockOpeningBalance anchor
                 entry = StockOpeningBalance.query.filter_by(
-                    vendeur_id=vendeur_id,
+                    business_id=business_id,
                     network=network,
                     balance_date=balance_date,
                 ).first()
@@ -1487,6 +1489,7 @@ def stock_ouverture():
                 else:
                     entry = StockOpeningBalance(
                         vendeur_id=vendeur_id,
+                        business_id=business_id,
                         network=network,
                         balance_date=balance_date,
                         quantity=opening_qty,
@@ -1501,7 +1504,8 @@ def stock_ouverture():
                         func.coalesce(func.sum(SaleItem.quantity), 0)
                     ).join(Sale).filter(
                         Sale.sale_date == today_local,
-                        Sale.vendeur_id == vendeur_id,
+                        Sale.business_id == business_id,
+                        Sale.status == TransactionStatus.ACTIVE,
                         SaleItem.network == network,
                     ).scalar()
 
@@ -1509,21 +1513,23 @@ def stock_ouverture():
                     purchased_today = db.session.query(
                         func.coalesce(func.sum(StockPurchase.amount_purchased), 0)
                     ).join(Stock, StockPurchase.stock_item_id == Stock.id).filter(
-                        Stock.vendeur_id == vendeur_id,
+                        Stock.business_id == business_id,
                         StockPurchase.network == network,
+                        StockPurchase.status == TransactionStatus.ACTIVE,
                         StockPurchase.created_at >= day_start_utc,
                         StockPurchase.created_at <= day_end_utc,
                     ).scalar()
 
                     new_balance = opening_qty - Decimal(str(sold_today)) + Decimal(str(purchased_today))
                     stock_item = Stock.query.filter_by(
-                        vendeur_id=vendeur_id, network=network
+                        business_id=business_id, network=network
                     ).first()
                     if stock_item:
                         stock_item.balance = max(new_balance, Decimal("0.00"))
                     else:
                         stock_item = Stock(
                             vendeur_id=vendeur_id,
+                            business_id=business_id,
                             network=network,
                             balance=max(new_balance, Decimal("0.00")),
                             buying_price_per_unit=Decimal("0.94"),
@@ -1548,20 +1554,22 @@ def stock_ouverture():
     yesterday_map = {}
     if vendeur_id:
         prev_reports = DailyStockReport.query.filter_by(
-            report_date=yesterday, vendeur_id=vendeur_id
+            report_date=yesterday, business_id=business_id
         ).all()
         if prev_reports:
             yesterday_map = {r.network.name.lower(): int(r.final_stock_balance or 0)
                              for r in prev_reports}
         else:
             # Fall back to live Stock.balance if no archive
-            live_stocks = Stock.query.filter_by(vendeur_id=vendeur_id).all()
+            live_stocks = Stock.query.filter_by(business_id=business_id).all()
             yesterday_map = {s.network.name.lower(): int(s.balance or 0)
                              for s in live_stocks}
 
     # Existing entries (all dates) for the history table
-    history_q = StockOpeningBalance.query.filter_by(vendeur_id=vendeur_id) if vendeur_id \
-        else StockOpeningBalance.query
+    history_q = (
+        StockOpeningBalance.query.filter_by(business_id=business_id)
+        if business_id is not None else StockOpeningBalance.query
+    )
     history = history_q.order_by(
         StockOpeningBalance.balance_date.desc()
     ).limit(30).all()
@@ -2479,6 +2487,8 @@ def rapports():
     ctx = get_date_context()
     target_date = ctx['selected_date']
     vendeur_id = get_current_vendeur_id()
+    business = get_current_business()
+    business_id = business.id if business is not None else None
 
     current_app.logger.debug(f"Report requested for: {target_date}")
 
@@ -2506,6 +2516,7 @@ def rapports():
             start_of_utc_range=ctx['start_utc'],
             end_of_utc_range=ctx['end_utc'],
             vendeur_id=vendeur_id,
+            business_id=business_id,
         )
         for network_name, data in calculated_data.items():
             report_data[network_name].update({
@@ -2523,7 +2534,9 @@ def rapports():
         grand_totals["total_debts"] = total_live_debts or zero_money()
     else:
         overall_report_q = DailyOverallReport.query.filter_by(report_date=target_date)
-        if vendeur_id:
+        if business_id is not None:
+            overall_report_q = overall_report_q.filter_by(business_id=business_id)
+        elif vendeur_id:
             overall_report_q = overall_report_q.filter_by(vendeur_id=vendeur_id)
         overall_report = overall_report_q.first()
         if overall_report:
@@ -2536,7 +2549,9 @@ def rapports():
                 "total_debts": overall_report.total_debts,
             })
             net_reports_q = DailyStockReport.query.filter_by(report_date=target_date)
-            if vendeur_id:
+            if business_id is not None:
+                net_reports_q = net_reports_q.filter_by(business_id=business_id)
+            elif vendeur_id:
                 net_reports_q = net_reports_q.filter_by(vendeur_id=vendeur_id)
             for r in net_reports_q.all():
                 if r.network.name in report_data:
@@ -2560,7 +2575,12 @@ def rapports():
     # ── Live financial queries (always from transactions, keyed on sale_date) ──
 
     # Buying prices per network for cost/profit calculation
-    stock_items = Stock.query.filter_by(vendeur_id=vendeur_id).all() if vendeur_id else []
+    stock_query = Stock.query
+    if business_id is not None:
+        stock_query = stock_query.filter_by(business_id=business_id)
+    elif vendeur_id:
+        stock_query = stock_query.filter_by(vendeur_id=vendeur_id)
+    stock_items = stock_query.all()
     buying_price_map = {s.network: s.buying_price_per_unit for s in stock_items}
 
     # Price breakdown: per network × selling price → qty + revenue
@@ -2574,9 +2594,14 @@ def rapports():
             func.sum(SaleItem.margin_amount).label('margin'),
         )
         .join(Sale)
-        .filter(Sale.sale_date == target_date)
+        .filter(
+            Sale.sale_date == target_date,
+            Sale.status == TransactionStatus.ACTIVE,
+        )
     )
-    if vendeur_id:
+    if business_id is not None:
+        pb_q = pb_q.filter(Sale.business_id == business_id)
+    elif vendeur_id:
         pb_q = pb_q.filter(Sale.vendeur_id == vendeur_id)
     price_breakdown_rows = pb_q.group_by(
         SaleItem.network, SaleItem.price_per_unit_applied
@@ -2629,8 +2654,13 @@ def rapports():
         func.sum(Sale.debt_amount).label('credit'),
         func.sum(Sale.total_amount_due).label('total'),
         func.count(Sale.id).label('count'),
-    ).filter(Sale.sale_date == target_date)
-    if vendeur_id:
+    ).filter(
+        Sale.sale_date == target_date,
+        Sale.status == TransactionStatus.ACTIVE,
+    )
+    if business_id is not None:
+        cash_q = cash_q.filter(Sale.business_id == business_id)
+    elif vendeur_id:
         cash_q = cash_q.filter(Sale.vendeur_id == vendeur_id)
     cash_row = cash_q.first()
     cash_summary = {
@@ -2644,8 +2674,11 @@ def rapports():
     debts_q = Sale.query.filter(
         Sale.sale_date == target_date,
         Sale.debt_amount > 0,
+        Sale.status == TransactionStatus.ACTIVE,
     )
-    if vendeur_id:
+    if business_id is not None:
+        debts_q = debts_q.filter(Sale.business_id == business_id)
+    elif vendeur_id:
         debts_q = debts_q.filter(Sale.vendeur_id == vendeur_id)
 
     debt_map: dict = {}
@@ -2727,6 +2760,8 @@ def archive_daily_report():
 
         # 2. Get the vendeur_id for multi-tenant filtering
         vendeur_id = get_current_vendeur_id()
+        business = get_current_business()
+        business_id = business.id if business is not None else None
 
         if not vendeur_id:
             flash("Impossible de déterminer le vendeur.", "danger")
@@ -2736,7 +2771,8 @@ def archive_daily_report():
         update_daily_reports(
             current_app._get_current_object(),
             report_date_to_update=report_date,
-            vendeur_id=vendeur_id  # ← ADD THIS
+            vendeur_id=vendeur_id,
+            business_id=business_id,
         )
 
         flash(

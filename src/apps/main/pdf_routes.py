@@ -16,7 +16,7 @@ from apps.main.utils import (
 )
 from apps.models import (
     NetworkType, DailyOverallReport, DailyStockReport,
-    Stock, Sale, SaleItem, Client,
+    Stock, Sale, SaleItem, Client, TransactionStatus,
 )
 from apps.main.pdf_utils import generate_daily_report_pdf
 from apps import db
@@ -70,10 +70,14 @@ def download_report_pdf():
 
     # --- 1. Get Date Context ---
     ctx = get_date_context()
+    business = get_current_business()
+    business_id = business.id if business is not None else None
 
     # --- 2. Get Business Name ---
     if current_user.is_platform_admin:
         business_name = "Faida App - Rapport Global"
+    elif business is not None:
+        business_name = business.name
     else:
         business_name = current_user.username
 
@@ -116,6 +120,7 @@ def download_report_pdf():
             start_of_utc_range=ctx['start_utc'],
             end_of_utc_range=ctx['end_utc'],
             vendeur_id=vendeur_id,
+            business_id=business_id,
         )
         for network_name, data in calculated_data.items():
             report_data[network_name].update({
@@ -134,7 +139,9 @@ def download_report_pdf():
         grand_totals["total_debts"] = total_live_debts or zero_money()
     else:
         query_filter = {"report_date": target_date}
-        if vendeur_id:
+        if business_id is not None:
+            query_filter["business_id"] = business_id
+        elif vendeur_id:
             query_filter["vendeur_id"] = vendeur_id
 
         overall_report = DailyOverallReport.query.filter_by(**query_filter).first()
@@ -165,7 +172,12 @@ def download_report_pdf():
     )
 
     # --- 6. Profit / Price-breakdown data ---
-    stock_items = Stock.query.filter_by(vendeur_id=vendeur_id).all() if vendeur_id else []
+    stock_query = Stock.query
+    if business_id is not None:
+        stock_query = stock_query.filter_by(business_id=business_id)
+    elif vendeur_id:
+        stock_query = stock_query.filter_by(vendeur_id=vendeur_id)
+    stock_items = stock_query.all()
     buying_price_map = {s.network: s.buying_price_per_unit for s in stock_items}
 
     pb_q = (
@@ -178,9 +190,14 @@ def download_report_pdf():
             func.sum(SaleItem.margin_amount).label('margin'),
         )
         .join(Sale)
-        .filter(Sale.sale_date == target_date)
+        .filter(
+            Sale.sale_date == target_date,
+            Sale.status == TransactionStatus.ACTIVE,
+        )
     )
-    if vendeur_id:
+    if business_id is not None:
+        pb_q = pb_q.filter(Sale.business_id == business_id)
+    elif vendeur_id:
         pb_q = pb_q.filter(Sale.vendeur_id == vendeur_id)
     price_breakdown_rows = pb_q.group_by(
         SaleItem.network, SaleItem.price_per_unit_applied
@@ -231,8 +248,13 @@ def download_report_pdf():
         func.sum(Sale.debt_amount).label('credit'),
         func.sum(Sale.total_amount_due).label('total'),
         func.count(Sale.id).label('count'),
-    ).filter(Sale.sale_date == target_date)
-    if vendeur_id:
+    ).filter(
+        Sale.sale_date == target_date,
+        Sale.status == TransactionStatus.ACTIVE,
+    )
+    if business_id is not None:
+        cash_q = cash_q.filter(Sale.business_id == business_id)
+    elif vendeur_id:
         cash_q = cash_q.filter(Sale.vendeur_id == vendeur_id)
     cash_row = cash_q.first()
     cash_summary = {
@@ -243,8 +265,14 @@ def download_report_pdf():
     }
 
     # --- 8. Debts today ---
-    debts_q = Sale.query.filter(Sale.sale_date == target_date, Sale.debt_amount > 0)
-    if vendeur_id:
+    debts_q = Sale.query.filter(
+        Sale.sale_date == target_date,
+        Sale.debt_amount > 0,
+        Sale.status == TransactionStatus.ACTIVE,
+    )
+    if business_id is not None:
+        debts_q = debts_q.filter(Sale.business_id == business_id)
+    elif vendeur_id:
         debts_q = debts_q.filter(Sale.vendeur_id == vendeur_id)
     debts_today = debts_q.order_by(Sale.debt_amount.desc()).all()
 

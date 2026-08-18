@@ -14,6 +14,7 @@ from apps.models import (
     Sale,
     SaleItem,
     DailyOverallReport,
+    TransactionStatus,
 )
 from datetime import date, datetime, timedelta, time
 import pytz
@@ -304,7 +305,12 @@ def get_sales_history_query(date_filter=True, date_arg_key='date'):
 
     # Start with the base query for the Sale model, ordered by creation date (desc)
     base_query = Sale.query.order_by(Sale.created_at.desc())
-    filtered_query = filter_by_vendeur(base_query, Sale)
+    from apps.businesses import get_current_business
+    business = get_current_business()
+    if business is not None:
+        filtered_query = base_query.filter(Sale.business_id == business.id)
+    else:
+        filtered_query = filter_by_vendeur(base_query, Sale)
     # sales = filtered_query.all()
     # query = Sale.query.order_by(Sale.created_at.desc())
 
@@ -329,11 +335,13 @@ def get_daily_report_data(
     start_of_utc_range: datetime,
     end_of_utc_range: datetime,
     vendeur_id: int = None,
+    business_id: int = None,
 ):
     """
     Calculates comprehensive report data for a single target date based on live transactions.
     It includes the critical fix for the 'Initial Stock' calculation when no prior report exists.
-    vendeur_id must be provided to scope all queries to a single business.
+    business_id is the authoritative tenant scope. vendeur_id remains as a
+    legacy/admin fallback when there is no active business context.
     """
 
     # Use the passed UTC ranges directly as they are correctly calculated by the caller (rapports)
@@ -352,7 +360,9 @@ def get_daily_report_data(
 
     # 2. Pre-fetch Live Data (Current State and Pricing) — scoped to this vendeur
     stock_query = Stock.query
-    if vendeur_id is not None:
+    if business_id is not None:
+        stock_query = stock_query.filter_by(business_id=business_id)
+    elif vendeur_id is not None:
         stock_query = stock_query.filter_by(vendeur_id=vendeur_id)
     live_stock_items = stock_query.all()
     live_stock_map = {s.network: s for s in live_stock_items}
@@ -366,9 +376,15 @@ def get_daily_report_data(
             func.sum(StockPurchase.amount_purchased).label("total")
         )
         .join(Stock, StockPurchase.stock_item_id == Stock.id)
-        .filter(StockPurchase.created_at >= filter_start_dt, StockPurchase.created_at < filter_end_dt)
+        .filter(
+            StockPurchase.created_at >= filter_start_dt,
+            StockPurchase.created_at < filter_end_dt,
+            StockPurchase.status == TransactionStatus.ACTIVE,
+        )
     )
-    if vendeur_id is not None:
+    if business_id is not None:
+        purchases_query = purchases_query.filter(Stock.business_id == business_id)
+    elif vendeur_id is not None:
         purchases_query = purchases_query.filter(
             Stock.vendeur_id == vendeur_id)
     daily_purchases = purchases_query.group_by(StockPurchase.network).all()
@@ -383,9 +399,14 @@ def get_daily_report_data(
             func.sum(SaleItem.subtotal).label("val")
         )
         .join(Sale)
-        .filter(Sale.sale_date == target_date)
+        .filter(
+            Sale.sale_date == target_date,
+            Sale.status == TransactionStatus.ACTIVE,
+        )
     )
-    if vendeur_id is not None:
+    if business_id is not None:
+        sales_query = sales_query.filter(Sale.business_id == business_id)
+    elif vendeur_id is not None:
         sales_query = sales_query.filter(Sale.vendeur_id == vendeur_id)
     daily_sales = sales_query.group_by(SaleItem.network).all()
     sales_qty_map = {s.network: Decimal(str(s.qty or 0)) for s in daily_sales}
@@ -393,7 +414,9 @@ def get_daily_report_data(
 
     # 4a. Check for manually set opening balance for target_date (highest priority)
     opening_q = StockOpeningBalance.query.filter_by(balance_date=target_date)
-    if vendeur_id is not None:
+    if business_id is not None:
+        opening_q = opening_q.filter_by(business_id=business_id)
+    elif vendeur_id is not None:
         opening_q = opening_q.filter_by(vendeur_id=vendeur_id)
     manual_opening_map = {ob.network: Decimal(str(ob.quantity)) for ob in opening_q.all()}
 
@@ -401,7 +424,9 @@ def get_daily_report_data(
     previous_day = target_date - timedelta(days=1)
     prev_reports_query = DailyStockReport.query.filter_by(
         report_date=previous_day)
-    if vendeur_id is not None:
+    if business_id is not None:
+        prev_reports_query = prev_reports_query.filter_by(business_id=business_id)
+    elif vendeur_id is not None:
         prev_reports_query = prev_reports_query.filter_by(
             vendeur_id=vendeur_id)
     previous_day_reports = prev_reports_query.all()
@@ -416,9 +441,12 @@ def get_daily_report_data(
         .filter(
             Sale.debt_amount > 0,
             Sale.sale_date <= target_date,
+            Sale.status == TransactionStatus.ACTIVE,
         )
     )
-    if vendeur_id is not None:
+    if business_id is not None:
+        debt_query = debt_query.filter(Sale.business_id == business_id)
+    elif vendeur_id is not None:
         debt_query = debt_query.filter(Sale.vendeur_id == vendeur_id)
     total_debts_overall = debt_query.scalar() or Decimal("0.00")
 
@@ -490,7 +518,9 @@ def get_daily_report_data(
     )
 
 
-def update_daily_reports(app, report_date_to_update=None, vendeur_id=None):
+def update_daily_reports(
+    app, report_date_to_update=None, vendeur_id=None, business_id=None
+):
     """
     Calculates and updates DailyStockReport and DailyOverallReport for a given date.
     """
@@ -513,7 +543,8 @@ def update_daily_reports(app, report_date_to_update=None, vendeur_id=None):
                     report_date_to_update,
                     start_utc,
                     end_utc,
-                    vendeur_id=vendeur_id  # ← ADD THIS if your function supports it
+                    vendeur_id=vendeur_id,
+                    business_id=business_id,
                 )
             )
 
@@ -530,7 +561,8 @@ def update_daily_reports(app, report_date_to_update=None, vendeur_id=None):
                 daily_report = DailyStockReport.query.filter_by(
                     network=network,
                     report_date=report_date_to_update,
-                    vendeur_id=vendeur_id  # ← ADD THIS
+                    vendeur_id=vendeur_id,
+                    business_id=business_id,
                 ).first()
 
                 if not daily_report:
@@ -538,7 +570,8 @@ def update_daily_reports(app, report_date_to_update=None, vendeur_id=None):
                     daily_report = DailyStockReport(
                         network=network,
                         report_date=report_date_to_update,
-                        vendeur_id=vendeur_id  # ← ADD THIS
+                        vendeur_id=vendeur_id,
+                        business_id=business_id,
                     )
                     db.session.add(daily_report)
                     app.logger.debug(
@@ -566,12 +599,14 @@ def update_daily_reports(app, report_date_to_update=None, vendeur_id=None):
             overall_report = DailyOverallReport.query.filter_by(
                 report_date=report_date_to_update,
                 vendeur_id=vendeur_id,
+                business_id=business_id,
             ).first()
 
             if not overall_report:
                 overall_report = DailyOverallReport(
                     report_date=report_date_to_update,
-                    vendeur_id=vendeur_id
+                    vendeur_id=vendeur_id,
+                    business_id=business_id,
                 )
                 db.session.add(overall_report)
                 app.logger.debug(
