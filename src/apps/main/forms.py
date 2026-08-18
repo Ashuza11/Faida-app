@@ -410,7 +410,7 @@ class SaleForm(FlaskForm):
         return True
 
 
-def get_clients_with_debt(vendeur_id=None, sale_date=None):
+def get_clients_with_debt(vendeur_id=None, business_id=None, sale_date=None):
     """Return (client_key, label) choices grouped by client.
 
     Each client appears at most once, with their combined outstanding debt.
@@ -419,7 +419,9 @@ def get_clients_with_debt(vendeur_id=None, sale_date=None):
     If sale_date is given, restrict to sales made on that date.
     """
     query = Sale.query.filter(Sale.debt_amount > Decimal("0.00"))
-    if vendeur_id is not None:
+    if business_id is not None:
+        query = query.filter(Sale.business_id == business_id)
+    elif vendeur_id is not None:
         query = query.filter(Sale.vendeur_id == vendeur_id)
     if sale_date is not None:
         query = query.filter(Sale.sale_date == sale_date)

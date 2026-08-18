@@ -183,6 +183,75 @@ def collect_client_debt(
     return amount
 
 
+def apply_additional_payment_to_sale(
+    *, sale: Sale, amount: Decimal, recorded_by, payment_date: date
+) -> Decimal:
+    """Record new cash from an existing sale screen without rewriting history."""
+    amount = Decimal(amount)
+    if amount <= 0:
+        raise ValueError("Le nouveau paiement doit être positif.")
+    if sale.status != TransactionStatus.ACTIVE:
+        raise ValueError("Une vente annulée ne peut pas recevoir de paiement.")
+
+    maximum = sale.debt_amount
+    if sale.client_id is not None:
+        old_debt = db.session.query(db.func.sum(Sale.debt_amount)).filter(
+            Sale.vendeur_id == sale.vendeur_id,
+            Sale.business_id == sale.business_id,
+            Sale.client_id == sale.client_id,
+            Sale.id != sale.id,
+            Sale.status == TransactionStatus.ACTIVE,
+            Sale.debt_amount > 0,
+        ).scalar() or Decimal("0.00")
+        maximum += old_debt
+    if amount > maximum:
+        raise ValueError("Le paiement dépasse la dette totale du client.")
+
+    event = None
+    if sale.client_id is not None:
+        event = PaymentEvent(
+            business_id=sale.business_id,
+            client_id=sale.client_id,
+            source_sale_id=sale.id,
+            recorded_by_id=recorded_by.id,
+            amount=amount,
+            payment_date=payment_date,
+            description="Paiement supplémentaire",
+        )
+        db.session.add(event)
+
+    remaining = amount
+    if sale.client_id is not None:
+        remaining = allocate_registered_client_payment(
+            client_id=sale.client_id,
+            vendeur_id=sale.vendeur_id,
+            business_id=sale.business_id,
+            amount=remaining,
+            recorded_by=recorded_by,
+            payment_date=payment_date,
+            exclude_sale_id=sale.id,
+            payment_event=event,
+        )
+    paid_here = min(remaining, sale.debt_amount)
+    if paid_here > 0:
+        sale.cash_paid += paid_here
+        sale.debt_amount -= paid_here
+        sale.updated_at = datetime.now(timezone.utc)
+        db.session.add(CashInflow(
+            amount=paid_here,
+            category=CashInflowCategory.SALE_COLLECTION,
+            allocation_kind=PaymentAllocationKind.CURRENT_SALE,
+            description="Paiement supplémentaire",
+            recorded_by=recorded_by,
+            vendeur_id=sale.vendeur_id,
+            business_id=sale.business_id,
+            payment_event=event,
+            sale=sale,
+            payment_date=payment_date,
+        ))
+    return amount
+
+
 def reverse_payment_event(
     *, payment_event: PaymentEvent, business: Business, reversed_by, reason: str
 ) -> None:

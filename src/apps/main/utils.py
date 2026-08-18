@@ -222,7 +222,7 @@ def get_paginated_results(base_query, endpoint_name, per_page_config_key, **extr
 
     # 3. Perform pagination
     pagination = db.paginate(
-        base_query,
+        base_query.statement,
         page=page,
         per_page=per_page,
         error_out=False,

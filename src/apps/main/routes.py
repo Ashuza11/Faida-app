@@ -30,6 +30,7 @@ from apps.main.utils import (
     update_daily_reports,
 )
 from apps.payments import (
+    apply_additional_payment_to_sale,
     apply_payment_to_sale,
     collect_client_debt,
     reverse_payment_event,
@@ -72,6 +73,7 @@ from apps.models import (
     PriceOperation,
     PricePreset,
     PaymentEvent,
+    PaymentAllocationKind,
     TransactionStatus,
 )
 
@@ -95,6 +97,7 @@ from apps.main.forms import (
     TransactionReversalForm,
 )
 from apps.businesses import (
+    add_stockeur,
     businesses_for_user,
     create_business,
     get_current_business,
@@ -858,6 +861,7 @@ def stocker_management():
     """
     stocker_form = StockeurForm()
     user_edit_form = UserEditForm()
+    business = get_current_business()
 
     # --- Handle POST: Create new stockeur ---
     if stocker_form.validate_on_submit():
@@ -902,6 +906,7 @@ def stocker_management():
             new_stockeur.set_password(stocker_form.password.data)
 
             db.session.add(new_stockeur)
+            add_stockeur(business=business, stockeur=new_stockeur)
             db.session.commit()
 
             flash(
@@ -1057,6 +1062,7 @@ def user_toggle_active(user_id):
 def client_management():
     client_form = ClientForm()
     client_edit_form = ClientEditForm()
+    business = get_current_business()
 
     if client_form.validate_on_submit():
         gps_lat = request.form.get("gps_lat")
@@ -1072,7 +1078,7 @@ def client_management():
 
         existing_client = Client.query.filter_by(
             name=client_form.name.data,
-            vendeur_id=current_user.business_vendeur_id
+            business_id=business.id,
         ).first()
 
         if existing_client:
@@ -1089,6 +1095,7 @@ def client_management():
                 gps_lat=gps_lat,
                 gps_long=gps_long,
                 vendeur_id=current_user.business_vendeur_id,  # ← FIXED
+                business_id=business.id,
             )
             db.session.add(new_client)
             db.session.commit()
@@ -1096,9 +1103,8 @@ def client_management():
             return redirect(url_for("main_bp.client_management"))
 
     # FIX: Use the helper instead of role check
-    vendeur_id = get_current_vendeur_id()
-    if vendeur_id:
-        clients = Client.query.filter_by(vendeur_id=vendeur_id).all()
+    if business is not None:
+        clients = Client.query.filter_by(business_id=business.id).all()
     else:
         clients = Client.query.all()  # Platform admin sees all
 
@@ -1119,12 +1125,9 @@ def client_edit(client_id):
     """
     Handles editing of client information.
     """
-    client = Client.query.get_or_404(client_id)
+    client = db.get_or_404(Client, client_id)
 
-    # Authorization check: Vendeur can only edit their own clients
-    if not current_user.can_access_vendeur_data(client.vendeur_id):
-        flash("Vous n'êtes pas autorisé à modifier ce client.", "danger")
-        return redirect(url_for("main_bp.client_management"))
+    ensure_access(client)
 
     client_edit_form = ClientEditForm()
     if client_edit_form.validate_on_submit():
@@ -1156,12 +1159,9 @@ def client_toggle_active(client_id):
     """
     Toggles the active status of a client.
     """
-    client = Client.query.get_or_404(client_id)
+    client = db.get_or_404(Client, client_id)
 
-    # Authorization check: Vendeur can only toggle their own clients
-    if not current_user.can_access_vendeur_data(client.vendeur_id):
-        flash("Vous n'êtes pas autorisé à modifier ce client.", "danger")
-        return redirect(url_for("main_bp.client_management"))
+    ensure_access(client)
 
     client.is_active = not client.is_active
     db.session.commit()
@@ -1591,14 +1591,14 @@ def stock_ouverture():
 @business_member_required
 def vente_stock():
     form = SaleForm()
+    business = get_current_business()
 
     # --- 1. SETUP FORM DATA ---
     # Populate client choices dynamically
     # NEW
-    vendeur_id = get_current_vendeur_id()
-    if vendeur_id:
+    if business is not None:
         clients = Client.query.filter_by(
-            vendeur_id=vendeur_id, is_active=True).order_by(Client.name).all()
+            business_id=business.id, is_active=True).order_by(Client.name).all()
     else:
         clients = Client.query.filter_by(
             is_active=True).order_by(Client.name).all()
@@ -1630,7 +1630,7 @@ def vente_stock():
                         "Veuillez sélectionner un client existant.")
                 client = Client.query.filter_by(
                     id=int(client_id),
-                    vendeur_id=get_current_vendeur_id()
+                    business_id=business.id,
                 ).first()
                 if not client:
                     raise ValueError("Client sélectionné invalide.")
@@ -1664,7 +1664,7 @@ def vente_stock():
                 # Check Stock Availability
                 vendeur_id = current_user.business_vendeur_id
                 stock_item = Stock.query.filter_by(
-                    vendeur_id=vendeur_id, network=network_type).first()
+                    business_id=business.id, network=network_type).first()
 
                 if not stock_item:
                     raise ValueError(
@@ -1724,6 +1724,7 @@ def vente_stock():
             new_sale = Sale(
                 seller_id=current_user.id,
                 vendeur_id=current_user.business_vendeur_id,
+                business_id=business.id,
                 client=client,
                 client_name_adhoc=client_name_adhoc,
                 total_amount_due=total_amount_due,
@@ -1790,7 +1791,7 @@ def vente_stock():
 @login_required
 @business_member_required
 def update_sale_cash(sale_id):
-    sale = Sale.query.get_or_404(sale_id)
+    sale = db.get_or_404(Sale, sale_id)
     ensure_access(sale)
     try:
         # new_cash is directly from the input named 'new_cash'
@@ -1803,18 +1804,19 @@ def update_sale_cash(sale_id):
         flash("Le paiement ne peut pas être négatif.", "danger")
         return redirect(url_for("main_bp.vente_stock"))
 
-    # Calculate new debt
-    new_debt = sale.total_amount_due - new_cash
-
-    if new_debt < 0:
-        flash("Le paiement ne peut pas dépasser le montant total dû.", "danger")
+    if new_cash < sale.cash_paid:
+        flash("Annulez d'abord le paiement à corriger; une diminution directe est interdite.", "danger")
         return redirect(url_for("main_bp.vente_stock"))
 
-    sale.cash_paid = new_cash
-    sale.debt_amount = new_debt
-    sale.updated_at = datetime.now(timezone.utc)
-
     try:
+        additional_cash = new_cash - sale.cash_paid
+        if additional_cash > 0:
+            apply_additional_payment_to_sale(
+                sale=sale,
+                amount=additional_cash,
+                recorded_by=current_user,
+                payment_date=datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date(),
+            )
         db.session.commit()
         flash("Paiement mis à jour avec succès!", "success")
     except Exception as e:
@@ -1829,15 +1831,15 @@ def update_sale_cash(sale_id):
 @login_required
 @business_member_required
 def edit_sale(sale_id):
-    sale = Sale.query.get_or_404(sale_id)
+    sale = db.get_or_404(Sale, sale_id)
     ensure_access(sale)
     form = SaleForm()
+    business = get_current_business()
 
     # Populate client choices
-    vendeur_id = get_current_vendeur_id()
-    if vendeur_id:
+    if business is not None:
         clients = Client.query.filter_by(
-            vendeur_id=vendeur_id, is_active=True).order_by(Client.name).all()
+            business_id=business.id, is_active=True).order_by(Client.name).all()
     else:
         clients = Client.query.filter_by(
             is_active=True).order_by(Client.name).all()
@@ -1884,6 +1886,7 @@ def edit_sale(sale_id):
                 db.session.add(SaleItemHistory(
                     sale_id=sale.id,
                     vendeur_id=sale.vendeur_id,
+                    business_id=sale.business_id,
                     changed_by_id=current_user.id,
                     action='edit',
                     network=item.network,
@@ -1903,7 +1906,7 @@ def edit_sale(sale_id):
                 raise ValueError("Impossible de déterminer le vendeur pour la restauration du stock.")
             for network, quantity, cost_total in old_costs:
                 stock_item = Stock.query.filter_by(
-                    vendeur_id=revert_vendeur_id, network=network).first()
+                    business_id=business.id, network=network).first()
                 if not stock_item:
                     raise ValueError(
                         f"Stock introuvable pour {network.value} lors de la restauration. Annulation."
@@ -1925,7 +1928,7 @@ def edit_sale(sale_id):
                 if client_id:
                     client = Client.query.filter_by(
                         id=int(client_id),
-                        vendeur_id=get_current_vendeur_id()
+                        business_id=business.id,
                     ).first()
                     if not client:
                         raise ValueError(
@@ -1972,7 +1975,7 @@ def edit_sale(sale_id):
 
                 vendeur_id = current_user.business_vendeur_id
                 stock_item = Stock.query.filter_by(
-                    vendeur_id=vendeur_id, network=network_type).first()
+                    business_id=business.id, network=network_type).first()
 
                 if not stock_item:
                     errors_during_sale.append(
@@ -2129,8 +2132,9 @@ def edit_sale(sale_id):
 @login_required
 @business_member_required
 def delete_sale(sale_id):
-    sale = Sale.query.get_or_404(sale_id)
+    sale = db.get_or_404(Sale, sale_id)
     ensure_access(sale)
+    business = get_current_business()
     confirm_form = DeleteConfirmForm()
 
     if request.method == "POST":
@@ -2143,6 +2147,7 @@ def delete_sale(sale_id):
                 db.session.add(SaleItemHistory(
                     sale_id=sale.id,
                     vendeur_id=sale.vendeur_id,
+                    business_id=sale.business_id,
                     changed_by_id=current_user.id,
                     action='delete',
                     network=sale_item.network,
@@ -2153,7 +2158,7 @@ def delete_sale(sale_id):
 
             for sale_item in sale.sale_items:
                 stock_item = Stock.query.filter_by(
-                    vendeur_id=current_user.business_vendeur_id,
+                    business_id=business.id,
                     network=sale_item.network).first()
                 if not stock_item:
                     raise ValueError(
@@ -2204,7 +2209,7 @@ def delete_sale(sale_id):
 @login_required
 @business_member_required
 def view_sale_details(sale_id):
-    sale = Sale.query.get_or_404(sale_id)
+    sale = db.get_or_404(Sale, sale_id)
     ensure_access(sale)
     return render_template(
         "main/sale_details.html",
@@ -2233,6 +2238,8 @@ def sorties_cash():
 
     # --- 2. Get Vendeur Context ---
     vendeur_id = get_current_vendeur_id()
+    business = get_current_business()
+    business_id = business.id if business is not None else None
 
     # --- 3. Build Queries with Date + Vendeur Filtering ---
 
@@ -2242,7 +2249,8 @@ def sorties_cash():
     )
 
     inflow_query = CashInflow.query.filter(
-        CashInflow.payment_date == ctx['selected_date']
+        CashInflow.payment_date == ctx['selected_date'],
+        CashInflow.status == TransactionStatus.ACTIVE,
     )
 
     sales_cash_query = db.session.query(db.func.sum(Sale.cash_paid)).filter(
@@ -2250,7 +2258,11 @@ def sorties_cash():
     )
 
     # Apply vendeur filter if not platform admin
-    if vendeur_id:
+    if business_id is not None:
+        outflow_query = outflow_query.filter(CashOutflow.business_id == business_id)
+        inflow_query = inflow_query.filter(CashInflow.business_id == business_id)
+        sales_cash_query = sales_cash_query.filter(Sale.business_id == business_id)
+    elif vendeur_id:
         outflow_query = outflow_query.filter(
             CashOutflow.vendeur_id == vendeur_id)
         inflow_query = inflow_query.filter(CashInflow.vendeur_id == vendeur_id)
@@ -2311,6 +2323,7 @@ def enregistrer_sortie():
     form = CashOutflowForm(request.form)
     page_title = "Gestion Cash"
     sub_page_title = "Enregistrer Sortie"
+    business = get_current_business()
 
     # Default expense_date to today in local timezone on GET
     if request.method == "GET" and not form.expense_date.data:
@@ -2325,6 +2338,7 @@ def enregistrer_sortie():
                     description=form.description.data,
                     recorded_by=current_user,
                     vendeur_id=current_user.business_vendeur_id,
+                    business_id=business.id,
                     expense_date=form.expense_date.data,
                 )
                 db.session.add(new_outflow)
@@ -2366,12 +2380,14 @@ def encaisser_dette():
     filter_date = ctx['selected_date']
     filter_date_str = ctx['date_str']
     _vendeur_id = get_current_vendeur_id()
+    business = get_current_business()
 
     form = DebtCollectionForm()
     # Always show the complete client balance: old debt must not disappear just
     # because it originated on another business date.
     form.client_key.choices = get_clients_with_debt(
         vendeur_id=_vendeur_id,
+        business_id=business.id,
         sale_date=None,
     )
 
@@ -2392,9 +2408,9 @@ def encaisser_dette():
             # one sale, because two people may legitimately share a name.
             unpaid_q = Sale.query.filter(
                 Sale.debt_amount > 0,
+                Sale.business_id == business.id,
+                Sale.status == TransactionStatus.ACTIVE,
             )
-            if _vendeur_id:
-                unpaid_q = unpaid_q.filter(Sale.vendeur_id == _vendeur_id)
 
             if client_key.startswith("c:"):
                 unpaid_q = unpaid_q.filter(Sale.client_id == int(client_key[2:]))
@@ -2419,27 +2435,39 @@ def encaisser_dette():
                 )
                 amount_paid = total_debt
 
-            # Waterfall: pay oldest sales first until the money runs out
-            remaining = amount_paid
-            paid_count = 0
-            for sale in unpaid_sales:
-                if remaining <= Decimal("0.00"):
-                    break
-                pay = min(remaining, sale.debt_amount)
-                sale.cash_paid += pay
-                sale.debt_amount -= pay
+            if unpaid_sales[0].client is not None:
+                remaining_for_count = amount_paid
+                paid_count = 0
+                for sale in unpaid_sales:
+                    if remaining_for_count <= 0:
+                        break
+                    remaining_for_count -= min(remaining_for_count, sale.debt_amount)
+                    paid_count += 1
+                collect_client_debt(
+                    business=business,
+                    client=unpaid_sales[0].client,
+                    amount=amount_paid,
+                    recorded_by=current_user,
+                    payment_date=payment_date,
+                    description=description,
+                )
+            else:
+                sale = unpaid_sales[0]
+                sale.cash_paid += amount_paid
+                sale.debt_amount -= amount_paid
                 sale.updated_at = datetime.now(timezone.utc)
                 db.session.add(CashInflow(
-                    amount=pay,
+                    amount=amount_paid,
                     category=CashInflowCategory.SALE_COLLECTION,
+                    allocation_kind=PaymentAllocationKind.PRIOR_DEBT,
                     description=description,
                     recorded_by=current_user,
                     vendeur_id=current_user.business_vendeur_id,
+                    business_id=business.id,
                     sale=sale,
                     payment_date=payment_date,
                 ))
-                remaining -= pay
-                paid_count += 1
+                paid_count = 1
 
             db.session.commit()
             client_name = unpaid_sales[0].client_display_name
