@@ -303,3 +303,64 @@ def test_sale_cash_update_pays_older_retail_debt_first(app, session):
     session.refresh(event)
     assert oldest.debt_amount == Decimal("100.00")
     assert event.status == TransactionStatus.REVERSED
+
+
+def test_equal_name_adhoc_payment_and_cancellation_stay_sale_scoped(app, session):
+    owner, retail, _, _, _ = setup_ledgers(session)
+    first = Sale(
+        seller_id=owner.id,
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        client_name_adhoc="Kiosque",
+        sale_date=date.today(),
+        total_amount_due=Decimal("50"),
+        cash_paid=Decimal("0"),
+        debt_amount=Decimal("50"),
+    )
+    second = Sale(
+        seller_id=owner.id,
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        client_name_adhoc="Kiosque",
+        sale_date=date.today(),
+        total_amount_due=Decimal("50"),
+        cash_paid=Decimal("0"),
+        debt_amount=Decimal("50"),
+    )
+    session.add_all([first, second])
+    session.commit()
+    client = app.test_client()
+    login_to_business(client, owner, retail)
+
+    payment_response = client.post(
+        "/sorties_cash/encaisser_dette",
+        data={
+            "client_key": f"a:{first.id}",
+            "amount_paid": "20.00",
+            "payment_date": date.today().isoformat(),
+            "description": "Ad-hoc payment",
+            "submit": "Payer",
+        },
+    )
+
+    assert payment_response.status_code == 302
+    session.refresh(first)
+    session.refresh(second)
+    assert first.debt_amount == Decimal("30.00")
+    assert second.debt_amount == Decimal("50.00")
+    event = PaymentEvent.query.one()
+    assert event.client_id is None
+    assert event.source_sale_id == first.id
+    assert {allocation.sale_id for allocation in event.allocations} == {first.id}
+
+    cancellation_response = client.post(
+        f"/payments/{event.id}/reverse",
+        data={"reason": "Montant incorrect"},
+    )
+
+    assert cancellation_response.status_code == 302
+    session.refresh(first)
+    session.refresh(second)
+    assert first.debt_amount == Decimal("50.00")
+    assert second.debt_amount == Decimal("50.00")
+    assert event.status == TransactionStatus.REVERSED

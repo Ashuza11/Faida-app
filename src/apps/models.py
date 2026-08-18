@@ -1148,8 +1148,8 @@ class PaymentEvent(db.Model):
     business_id: so.Mapped[Optional[int]] = so.mapped_column(
         sa.ForeignKey("businesses.id"), nullable=True, index=True
     )
-    client_id: so.Mapped[int] = so.mapped_column(
-        sa.ForeignKey("clients.id"), nullable=False, index=True
+    client_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("clients.id"), nullable=True, index=True
     )
     source_sale_id: so.Mapped[Optional[int]] = so.mapped_column(
         sa.ForeignKey("sales.id"), nullable=True, index=True

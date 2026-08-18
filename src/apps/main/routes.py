@@ -2187,6 +2187,16 @@ def encaisser_dette():
                 )
             else:
                 sale = unpaid_sales[0]
+                payment_event = PaymentEvent(
+                    business_id=business.id,
+                    client_id=None,
+                    source_sale_id=sale.id,
+                    recorded_by_id=current_user.id,
+                    amount=amount_paid,
+                    payment_date=payment_date,
+                    description=description,
+                )
+                db.session.add(payment_event)
                 sale.cash_paid += amount_paid
                 sale.debt_amount -= amount_paid
                 sale.updated_at = datetime.now(timezone.utc)
@@ -2198,6 +2208,7 @@ def encaisser_dette():
                     recorded_by=current_user,
                     vendeur_id=current_user.business_vendeur_id,
                     business_id=business.id,
+                    payment_event=payment_event,
                     sale=sale,
                     payment_date=payment_date,
                 ))

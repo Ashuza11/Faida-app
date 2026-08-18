@@ -83,7 +83,7 @@ def apply_payment_to_sale(
         )
 
     payment_event = None
-    if amount > 0 and sale.client_id is not None:
+    if amount > 0:
         payment_event = PaymentEvent(
             business_id=sale.business_id,
             client_id=sale.client_id,
@@ -207,18 +207,16 @@ def apply_additional_payment_to_sale(
     if amount > maximum:
         raise ValueError("Le paiement dépasse la dette totale du client.")
 
-    event = None
-    if sale.client_id is not None:
-        event = PaymentEvent(
-            business_id=sale.business_id,
-            client_id=sale.client_id,
-            source_sale_id=sale.id,
-            recorded_by_id=recorded_by.id,
-            amount=amount,
-            payment_date=payment_date,
-            description="Paiement supplémentaire",
-        )
-        db.session.add(event)
+    event = PaymentEvent(
+        business_id=sale.business_id,
+        client_id=sale.client_id,
+        source_sale_id=sale.id,
+        recorded_by_id=recorded_by.id,
+        amount=amount,
+        payment_date=payment_date,
+        description="Paiement supplémentaire",
+    )
+    db.session.add(event)
 
     remaining = amount
     if sale.client_id is not None:
