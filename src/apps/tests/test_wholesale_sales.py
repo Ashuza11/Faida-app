@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -17,6 +17,7 @@ from apps.models import (
     User,
 )
 from apps.purchases import record_wholesale_purchase
+from apps.payments import collect_client_debt
 from apps.sales import record_wholesale_sale
 
 
@@ -174,3 +175,122 @@ def test_wholesale_sales_page_records_new_retailer(app, session):
     assert page.status_code == 200
     assert b"Marge du jour par prix" in page.data
     assert b"$0.40" in page.data
+
+
+def test_debt_collection_is_oldest_first_and_keeps_payment_date(session):
+    owner, business, client, _ = setup_wholesale(session, suffix=6)
+    oldest = record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=500,
+        cash_received=0,
+        sale_date=date.today() - timedelta(days=2),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    newer = record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=500,
+        cash_received=0,
+        sale_date=date.today() - timedelta(days=1),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    selected_payment_date = date.today() - timedelta(days=3)
+
+    collect_client_debt(
+        business=business,
+        client=client,
+        amount=Decimal("7.00"),
+        recorded_by=owner,
+        payment_date=selected_payment_date,
+        description="Paiement test",
+    )
+    session.flush()
+
+    assert oldest.debt_amount == 0
+    assert newer.debt_amount == Decimal("3.00")
+    payments = CashInflow.query.order_by(CashInflow.id).all()
+    assert [payment.amount for payment in payments] == [Decimal("5.00"), Decimal("2.00")]
+    assert {payment.payment_date for payment in payments} == {selected_payment_date}
+    assert {payment.description for payment in payments} == {"Paiement test"}
+
+
+def test_debt_collection_rejects_excess_and_cross_business_client(session):
+    owner, business, client, _ = setup_wholesale(session, suffix=7)
+    record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=500,
+        cash_received=0,
+        sale_date=date.today(),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    _, other_business, other_client, _ = setup_wholesale(session, suffix=8)
+
+    with pytest.raises(ValueError, match="dépasse"):
+        collect_client_debt(
+            business=business,
+            client=client,
+            amount=Decimal("5.01"),
+            recorded_by=owner,
+            payment_date=date.today(),
+        )
+    with pytest.raises(PermissionError, match="autre entreprise"):
+        collect_client_debt(
+            business=business,
+            client=other_client,
+            amount=Decimal("1.00"),
+            recorded_by=owner,
+            payment_date=date.today(),
+        )
+    assert other_business.id != business.id
+
+
+def test_duplicate_retailer_names_have_distinct_debt_pages(app, session):
+    owner, business, first_client, _ = setup_wholesale(session, suffix=9)
+    second_client = Client(
+        name=first_client.name,
+        vendeur_id=owner.id,
+        business_id=business.id,
+    )
+    session.add(second_client)
+    record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=first_client,
+        network=NetworkType.AIRTEL,
+        quantity=500,
+        cash_received=0,
+        sale_date=date.today(),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    session.commit()
+    client = app.test_client()
+    with client.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    listing = client.get("/businesses/wholesale/clients")
+    assert listing.status_code == 200
+    assert listing.data.count(first_client.name.encode()) == 2
+    assert f"Client #{first_client.id}".encode() in listing.data
+    assert f"Client #{second_client.id}".encode() in listing.data
+
+    payment = client.post(
+        f"/businesses/wholesale/clients/{first_client.id}",
+        data={
+            "amount": "2.00",
+            "payment_date": date.today().isoformat(),
+            "description": "Partial",
+        },
+    )
+    assert payment.status_code == 302
+    assert Sale.query.filter_by(client_id=first_client.id).one().debt_amount == Decimal("3.00")
+    assert Sale.query.filter_by(client_id=second_client.id).count() == 0

@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from apps import db
-from apps.models import CashInflow, CashInflowCategory, Sale
+from apps.models import Business, CashInflow, CashInflowCategory, Client, Sale
 
 
 def allocate_registered_client_payment(
@@ -23,7 +23,11 @@ def allocate_registered_client_payment(
     if exclude_sale_id is not None:
         query = query.filter(Sale.id != exclude_sale_id)
 
-    unpaid_sales = query.order_by(Sale.sale_date, Sale.created_at).all()
+    unpaid_sales = (
+        query.order_by(Sale.sale_date, Sale.created_at)
+        .with_for_update()
+        .all()
+    )
     for sale in unpaid_sales:
         if remaining <= 0:
             break
@@ -91,3 +95,48 @@ def apply_payment_to_sale(
             payment_date=payment_date,
         ))
     return amount - remaining
+
+
+def collect_client_debt(
+    *,
+    business: Business,
+    client: Client,
+    amount: Decimal,
+    recorded_by,
+    payment_date: date,
+    description=None,
+) -> Decimal:
+    """Collect a registered client's debt within exactly one business."""
+    if client.business_id != business.id:
+        raise PermissionError("Ce client appartient à une autre entreprise.")
+    if not any(
+        membership.user_id == recorded_by.id and membership.is_active
+        for membership in business.memberships
+    ):
+        raise PermissionError("Vous n'avez pas accès à cette entreprise.")
+
+    amount = Decimal(amount)
+    if amount <= 0:
+        raise ValueError("Le montant payé doit être positif.")
+    total_debt = db.session.query(db.func.sum(Sale.debt_amount)).filter(
+        Sale.business_id == business.id,
+        Sale.client_id == client.id,
+        Sale.debt_amount > 0,
+    ).scalar() or Decimal("0.00")
+    if total_debt <= 0:
+        raise ValueError("Ce client n'a aucune dette impayée.")
+    if amount > total_debt:
+        raise ValueError("Le montant payé dépasse la dette totale du client.")
+
+    remaining = allocate_registered_client_payment(
+        client_id=client.id,
+        vendeur_id=business.owner_user_id,
+        business_id=business.id,
+        amount=amount,
+        recorded_by=recorded_by,
+        payment_date=payment_date,
+        description=description,
+    )
+    if remaining != 0:
+        raise RuntimeError("Le paiement n'a pas été entièrement alloué.")
+    return amount

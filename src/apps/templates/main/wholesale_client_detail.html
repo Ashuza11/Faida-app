@@ -1,0 +1,37 @@
+{% extends "layouts/base.html" %}
+{% block title %}{{ client.name }} · Grossiste{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div><h1>{{ client.name }}</h1><span class="text-muted">Client #{{ client.id }} · {{ business.name }}</span></div>
+    <a class="btn btn-outline-primary" href="{{ url_for('main_bp.wholesale_clients') }}">Tous les détaillants</a>
+  </div>
+  <div class="row mb-4">
+    <div class="col-md-4"><div class="card shadow"><div class="card-body"><small>Total acheté</small><div class="h2">${{ "{:.2f}".format(total_purchased) }}</div></div></div></div>
+    <div class="col-md-4"><div class="card shadow"><div class="card-body"><small>Total payé</small><div class="h2 text-success">${{ "{:.2f}".format(total_paid) }}</div></div></div></div>
+    <div class="col-md-4"><div class="card shadow"><div class="card-body"><small>Dette restante</small><div class="h2 text-danger">${{ "{:.2f}".format(total_debt) }}</div></div></div></div>
+  </div>
+  <div class="row">
+    <div class="col-lg-4 mb-4"><div class="card shadow"><div class="card-header"><h3 class="mb-0">Encaisser une dette</h3></div><div class="card-body">
+      {% if total_debt > 0 %}<form method="post">{{ form.hidden_tag() }}
+        <div class="form-group">{{ form.amount.label }}{{ form.amount(class="form-control") }}</div>
+        <div class="form-group">{{ form.payment_date.label }}{{ form.payment_date(class="form-control") }}</div>
+        <div class="form-group">{{ form.description.label }}{{ form.description(class="form-control") }}</div>
+        {% for field, errors in form.errors.items() %}{% for error in errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}{% endfor %}
+        {{ form.submit(class="btn btn-success btn-block") }}
+      </form>{% else %}<div class="alert alert-success mb-0">Ce client n'a aucune dette impayée.</div>{% endif %}
+      <small class="text-muted d-block mt-3">Le paiement est automatiquement appliqué aux ventes impayées les plus anciennes.</small>
+    </div></div></div>
+    <div class="col-lg-8">
+      <div class="card shadow mb-4"><div class="card-header"><h3 class="mb-0">Historique des ventes</h3></div><div class="table-responsive"><table class="table">
+        <thead><tr><th>Date</th><th>Total</th><th>Payé</th><th>Dette</th></tr></thead><tbody>
+        {% for sale in sales %}<tr><td>{{ sale.sale_date.strftime('%d/%m/%Y') }}</td><td>${{ "{:.2f}".format(sale.total_amount_due) }}</td><td>${{ "{:.2f}".format(sale.cash_paid) }}</td><td>${{ "{:.2f}".format(sale.debt_amount) }}</td></tr>{% else %}<tr><td colspan="4" class="text-center text-muted">Aucune vente.</td></tr>{% endfor %}
+        </tbody></table></div></div>
+      <div class="card shadow"><div class="card-header"><h3 class="mb-0">Historique des paiements</h3></div><div class="table-responsive"><table class="table">
+        <thead><tr><th>Date</th><th>Montant</th><th>Vente</th><th>Note</th></tr></thead><tbody>
+        {% for payment in payments %}<tr><td>{{ payment.payment_date.strftime('%d/%m/%Y') }}</td><td class="text-success">${{ "{:.2f}".format(payment.amount) }}</td><td>#{{ payment.sale_id }}</td><td>{{ payment.description or '—' }}</td></tr>{% else %}<tr><td colspan="4" class="text-center text-muted">Aucun paiement.</td></tr>{% endfor %}
+        </tbody></table></div></div>
+    </div>
+  </div>
+</div>
+{% endblock %}

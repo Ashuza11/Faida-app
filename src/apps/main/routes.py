@@ -29,7 +29,7 @@ from apps.main.utils import (
     get_sales_history_query,
     update_daily_reports,
 )
-from apps.payments import apply_payment_to_sale
+from apps.payments import apply_payment_to_sale, collect_client_debt
 from apps.inventory import consume_stock, restore_sale_cost
 
 from apps.decorators import (
@@ -85,6 +85,7 @@ from apps.main.forms import (
     WholesaleBusinessForm,
     WholesalePurchaseForm,
     WholesaleSaleForm,
+    WholesaleDebtPaymentForm,
 )
 from apps.businesses import (
     businesses_for_user,
@@ -112,6 +113,8 @@ _WHOLESALE_SAFE_ENDPOINTS = {
     "main_bp.wholesale_dashboard",
     "main_bp.wholesale_purchases",
     "main_bp.wholesale_sales",
+    "main_bp.wholesale_clients",
+    "main_bp.wholesale_client_detail",
     "main_bp.profile",
     "main_bp.health",
 }
@@ -440,6 +443,110 @@ def wholesale_sales():
         sales_margin=sales_margin,
         collected_margin=collected_margin,
         preset_data=preset_data,
+        segment="businesses",
+    )
+
+
+@bp.route("/businesses/wholesale/clients")
+@login_required
+@vendeur_required
+def wholesale_clients():
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    if business.owner_user_id != current_user.id:
+        abort(403)
+
+    clients = (
+        Client.query.filter_by(business_id=business.id)
+        .order_by(Client.name, Client.id)
+        .all()
+    )
+    totals = {
+        row.client_id: row
+        for row in db.session.query(
+            Sale.client_id,
+            func.count(Sale.id).label("sale_count"),
+            func.sum(Sale.total_amount_due).label("purchased"),
+            func.sum(Sale.cash_paid).label("paid"),
+            func.sum(Sale.debt_amount).label("debt"),
+        )
+        .filter(Sale.business_id == business.id, Sale.client_id.isnot(None))
+        .group_by(Sale.client_id)
+        .all()
+    }
+    return render_template(
+        "main/wholesale_clients.html",
+        business=business,
+        clients=clients,
+        totals=totals,
+        segment="businesses",
+    )
+
+
+@bp.route("/businesses/wholesale/clients/<int:client_id>", methods=["GET", "POST"])
+@login_required
+@vendeur_required
+def wholesale_client_detail(client_id):
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    if business.owner_user_id != current_user.id:
+        abort(403)
+    client = db.get_or_404(Client, client_id)
+    if client.business_id != business.id:
+        abort(403)
+
+    form = WholesaleDebtPaymentForm()
+    if request.method == "GET":
+        form.payment_date.data = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
+    if form.validate_on_submit():
+        try:
+            collect_client_debt(
+                business=business,
+                client=client,
+                amount=form.amount.data,
+                recorded_by=current_user,
+                payment_date=form.payment_date.data,
+                description=form.description.data,
+            )
+            db.session.commit()
+            flash("Paiement appliqué aux plus anciennes dettes.", "success")
+            return redirect(
+                url_for("main_bp.wholesale_client_detail", client_id=client.id)
+            )
+        except (ValueError, PermissionError) as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+
+    sales = (
+        Sale.query.filter_by(business_id=business.id, client_id=client.id)
+        .order_by(Sale.sale_date.desc(), Sale.created_at.desc())
+        .all()
+    )
+    payments = (
+        CashInflow.query.join(Sale)
+        .filter(
+            CashInflow.business_id == business.id,
+            Sale.client_id == client.id,
+            CashInflow.category == CashInflowCategory.SALE_COLLECTION,
+        )
+        .order_by(CashInflow.payment_date.desc(), CashInflow.created_at.desc())
+        .all()
+    )
+    total_purchased = sum((sale.total_amount_due for sale in sales), Decimal("0"))
+    total_paid = sum((sale.cash_paid for sale in sales), Decimal("0"))
+    total_debt = sum((sale.debt_amount for sale in sales), Decimal("0"))
+    return render_template(
+        "main/wholesale_client_detail.html",
+        business=business,
+        client=client,
+        form=form,
+        sales=sales,
+        payments=payments,
+        total_purchased=total_purchased,
+        total_paid=total_paid,
+        total_debt=total_debt,
         segment="businesses",
     )
 

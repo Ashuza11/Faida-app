@@ -661,6 +661,25 @@ class WholesaleSaleForm(FlaskForm):
     submit = SubmitField("Enregistrer la vente")
 
 
+class WholesaleDebtPaymentForm(FlaskForm):
+    amount = DecimalField(
+        "Montant reçu ($)",
+        validators=[DataRequired(), NumberRange(min=Decimal("0.01"))],
+        places=2,
+        render_kw={"placeholder": "0.00", "step": "0.01"},
+    )
+    payment_date = DateField(
+        "Date du paiement",
+        validators=[DataRequired()],
+        format="%Y-%m-%d",
+    )
+    description = StringField(
+        "Note (facultative)",
+        validators=[Optional(), Length(max=255)],
+    )
+    submit = SubmitField("Enregistrer le paiement")
+
+
 # Form for confirming deletion of a sale
 class DeleteConfirmForm(FlaskForm):
     submit = SubmitField("Oui, Supprimer", validators=[DataRequired()])

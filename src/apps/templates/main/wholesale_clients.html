@@ -1,0 +1,23 @@
+{% extends "layouts/base.html" %}
+{% block title %}Détaillants grossiste{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div><h1>Détaillants · {{ business.name }}</h1><span class="badge badge-secondary">USD</span></div>
+    <a class="btn btn-outline-primary" href="{{ url_for('main_bp.wholesale_dashboard') }}">Tableau de bord</a>
+  </div>
+  <div class="card shadow"><div class="card-header"><h3 class="mb-0">Clients détaillants</h3></div><div class="table-responsive">
+    <table class="table align-items-center">
+      <thead><tr><th>Client</th><th>Ventes</th><th>Total acheté</th><th>Total payé</th><th>Dette</th><th></th></tr></thead>
+      <tbody>{% for client in clients %}{% set total = totals.get(client.id) %}<tr>
+        <td><strong>{{ client.name }}</strong><br><small class="text-muted">Client #{{ client.id }}</small></td>
+        <td>{{ total.sale_count if total else 0 }}</td>
+        <td>${{ "{:.2f}".format(total.purchased if total else 0) }}</td>
+        <td>${{ "{:.2f}".format(total.paid if total else 0) }}</td>
+        <td class="{% if total and total.debt > 0 %}text-danger font-weight-bold{% endif %}">${{ "{:.2f}".format(total.debt if total else 0) }}</td>
+        <td><a class="btn btn-sm btn-primary" href="{{ url_for('main_bp.wholesale_client_detail', client_id=client.id) }}">Voir</a></td>
+      </tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Aucun détaillant enregistré.</td></tr>{% endfor %}</tbody>
+    </table>
+  </div></div>
+</div>
+{% endblock %}
