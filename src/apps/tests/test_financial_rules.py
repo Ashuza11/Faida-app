@@ -3,7 +3,8 @@ from decimal import Decimal
 
 import pytest
 
-from apps.models import Client, RoleType, Sale, User
+from apps.businesses import create_business
+from apps.models import BusinessType, Client, RoleType, Sale, User
 from apps.main.forms import get_clients_with_debt
 from apps.main.payments import apply_payment_to_sale
 from apps.main.utils import calculate_sale_total, custom_round_up
@@ -21,12 +22,16 @@ def make_vendeur(session, suffix="1"):
     return user
 
 
-def make_sale(session, vendeur, *, client=None, adhoc=None, total="1000", debt=None, days_ago=0):
+def make_sale(
+    session, vendeur, *, client=None, adhoc=None, total="1000", debt=None,
+    days_ago=0, business_id=None,
+):
     total = Decimal(total)
     debt = total if debt is None else Decimal(debt)
     sale = Sale(
         seller_id=vendeur.id,
         vendeur_id=vendeur.id,
+        business_id=business_id,
         client=client,
         client_name_adhoc=adhoc,
         sale_date=date.today() - timedelta(days=days_ago),
@@ -102,6 +107,47 @@ def test_ad_hoc_payment_never_uses_another_same_name_sale(session):
 
     assert first_cris.debt_amount == Decimal("3000")
     assert second_cris.debt_amount == Decimal("3000")
+
+
+def test_payment_never_settles_debt_from_another_business(session):
+    vendeur = make_vendeur(session, "9")
+    retail = create_business(
+        owner=vendeur, name="Retail One", business_type=BusinessType.RETAIL
+    )
+    second_retail = create_business(
+        owner=vendeur, name="Retail Two", business_type=BusinessType.RETAIL
+    )
+    session.flush()
+    client = Client(
+        name="Shared Client", vendeur_id=vendeur.id, business_id=retail.id
+    )
+    session.add(client)
+    session.flush()
+    other_debt = make_sale(
+        session,
+        vendeur,
+        client=client,
+        total="3000",
+        days_ago=1,
+        business_id=second_retail.id,
+    )
+    current = make_sale(
+        session,
+        vendeur,
+        client=client,
+        total="5000",
+        business_id=retail.id,
+    )
+
+    apply_payment_to_sale(
+        sale=current,
+        amount=Decimal("2000"),
+        recorded_by=vendeur,
+        payment_date=date.today(),
+    )
+
+    assert other_debt.debt_amount == Decimal("3000")
+    assert current.debt_amount == Decimal("3000")
 
 
 def test_same_name_ad_hoc_debts_have_distinct_selection_keys(session):

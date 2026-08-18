@@ -30,7 +30,7 @@ from apps.main.utils import (
     update_daily_reports,
 )
 from apps.main.payments import apply_payment_to_sale
-from apps.inventory import consume_stock, record_purchase, restore_sale_cost, reverse_purchase
+from apps.inventory import consume_stock, restore_sale_cost
 
 from apps.decorators import (
     platform_admin_required,
@@ -91,7 +91,12 @@ from apps.businesses import (
     get_current_business,
     resolve_business_for_user,
 )
-from apps.purchases import record_wholesale_purchase
+from apps.purchases import (
+    delete_retail_purchase,
+    record_retail_purchase,
+    record_wholesale_purchase,
+    replace_retail_purchase,
+)
 
 
 # Define the timezone for the application
@@ -821,44 +826,14 @@ def achat_stock():
                 raise ValueError(
                     "Veuillez sélectionner ou entrer un prix d'achat et un prix de vente.")
 
-            # F. Database Operations
-            stock_item = Stock.query.filter_by(
-                business_id=active_business.id, network=network_enum
-            ).first()
-
-            if not stock_item:
-                stock_item = Stock(
-                    vendeur_id=current_user.business_vendeur_id,
-                    business_id=active_business.id,
-                    network=network_enum,
-                    balance=Decimal("0.00"),
-                    buying_price_per_unit=buying_price_to_record,
-                    selling_price_per_unit=selling_price_to_record,
-                )
-                db.session.add(stock_item)
-
-            actual_total_cost = Decimal(amount_purchased) * buying_price_to_record
-            record_purchase(
-                stock=stock_item,
-                quantity=amount_purchased,
-                actual_total_cost=actual_total_cost,
-                quoted_unit_cost=buying_price_to_record,
-            )
-            stock_item.selling_price_per_unit = selling_price_to_record
-
-            # Flush to get IDs if needed, though commit handles it
-            db.session.flush()
-
-            new_purchase = StockPurchase(
-                stock_item_id=stock_item.id,
-                network=network_enum,
-                amount_purchased=amount_purchased,
-                buying_price_at_purchase=buying_price_to_record,
-                selling_price_at_purchase=selling_price_to_record,
-                actual_total_cost=actual_total_cost,
+            record_retail_purchase(
+                business=active_business,
                 purchased_by=current_user,
+                network=network_enum,
+                quantity=amount_purchased,
+                unit_cost=buying_price_to_record,
+                intended_selling_price=selling_price_to_record,
             )
-            db.session.add(new_purchase)
             db.session.commit()
 
             flash("Achat de stock enregistré avec succès!", "success")
@@ -942,13 +917,6 @@ def edit_stock_purchase(purchase_id):
 
     if form.validate_on_submit():
         try:
-            old_amount_purchased = purchase.amount_purchased
-            old_actual_total_cost = (
-                purchase.actual_total_cost
-                or Decimal(old_amount_purchased) * purchase.buying_price_at_purchase
-            )
-            old_network = purchase.network
-
             network_type_string_from_form = form.network.data
             try:
                 network_enum = NetworkType(
@@ -999,49 +967,15 @@ def edit_stock_purchase(purchase_id):
                     sub_segment="achat_stock",
                 )
 
-            # Update the StockPurchase record itself
-            purchase.network = network_enum
-            purchase.amount_purchased = amount_purchased
-            purchase.buying_price_at_purchase = buying_price_to_record
-            purchase.selling_price_at_purchase = selling_price_to_record
-            purchase.actual_total_cost = Decimal(amount_purchased) * buying_price_to_record
-
-            # --- Adjust Stock Balance and Buying/Selling Prices on Stock model ---
-            # Step 1: Revert old amount from old network's stock
-            old_stock_item = purchase.stock_item
-            if not old_stock_item:
-                raise ValueError(
-                    f"Stock introuvable pour {old_network.value} lors de la restauration. Annulation."
-                )
-            reverse_purchase(
-                stock=old_stock_item,
-                quantity=old_amount_purchased,
-                actual_total_cost=old_actual_total_cost,
-            )
-            db.session.add(old_stock_item)
-
-            # Step 2: Apply new amount to new network's stock, and update its current prices
-            new_stock_item = Stock.query.filter_by(
-                business_id=active_business.id, network=network_enum
-            ).first()
-            if not new_stock_item:
-                new_stock_item = Stock(
-                    vendeur_id=current_user.business_vendeur_id,
-                    business_id=active_business.id,
-                    network=network_enum,
-                    balance=Decimal("0.00"),
-                    buying_price_per_unit=buying_price_to_record,
-                    selling_price_per_unit=selling_price_to_record,
-                )
-                db.session.add(new_stock_item)
-            record_purchase(
-                stock=new_stock_item,
+            replace_retail_purchase(
+                purchase=purchase,
+                business=active_business,
+                updated_by=current_user,
+                network=network_enum,
                 quantity=amount_purchased,
-                actual_total_cost=purchase.actual_total_cost,
-                quoted_unit_cost=buying_price_to_record,
+                unit_cost=buying_price_to_record,
+                intended_selling_price=selling_price_to_record,
             )
-            new_stock_item.selling_price_per_unit = selling_price_to_record
-
             db.session.commit()
             flash("Achat de stock mis à jour avec succès!", "success")
             return redirect(url_for("main_bp.achat_stock"))
@@ -1074,26 +1008,11 @@ def delete_stock_purchase(purchase_id):
 
     if request.method == "POST":
         try:
-            # Revert the stock balance
-            stock_item = purchase.stock_item
-            if stock_item:
-                reverse_purchase(
-                    stock=stock_item,
-                    quantity=purchase.amount_purchased,
-                    actual_total_cost=(
-                        purchase.actual_total_cost
-                        or Decimal(purchase.amount_purchased) * purchase.buying_price_at_purchase
-                    ),
-                )
-                db.session.add(stock_item)
-            else:
-                flash(
-                    "Erreur: L'article de stock correspondant est introuvable.",
-                    "danger",
-                )
-                return redirect(url_for("main_bp.achat_stock"))
-
-            db.session.delete(purchase)
+            delete_retail_purchase(
+                purchase=purchase,
+                business=get_current_business(),
+                deleted_by=current_user,
+            )
             db.session.commit()
             flash(
                 f"Achat de stock #{purchase_id} supprimé avec succès!", "success")

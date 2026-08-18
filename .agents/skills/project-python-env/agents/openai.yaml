@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Python Environment"
+  short_description: "Run Python dependency work in the project env"
+  default_prompt: "Use the Faida project virtual environment for Python commands and dependency changes."

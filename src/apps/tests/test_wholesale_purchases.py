@@ -13,7 +13,12 @@ from apps.models import (
     StockPurchase,
     User,
 )
-from apps.purchases import record_wholesale_purchase
+from apps.purchases import (
+    delete_retail_purchase,
+    record_retail_purchase,
+    record_wholesale_purchase,
+    replace_retail_purchase,
+)
 
 
 def make_owner(session, suffix):
@@ -160,3 +165,49 @@ def test_wholesale_purchase_route_records_selected_preset(app, session):
     ).one()
     assert stock.balance == Decimal("10650")
     assert stock.inventory_value == Decimal("100.000000000000")
+
+
+def test_retail_purchase_replace_and_delete_preserve_inventory(session):
+    owner = make_owner(session, 7)
+    retail = create_business(
+        owner=owner, name="Retail Service", business_type=BusinessType.RETAIL
+    )
+    session.flush()
+    purchase = record_retail_purchase(
+        business=retail,
+        purchased_by=owner,
+        network=NetworkType.AIRTEL,
+        quantity=100,
+        unit_cost=Decimal("20"),
+        intended_selling_price=Decimal("22.5"),
+    )
+    session.flush()
+
+    replace_retail_purchase(
+        purchase=purchase,
+        business=retail,
+        updated_by=owner,
+        network=NetworkType.ORANGE,
+        quantity=200,
+        unit_cost=Decimal("21"),
+        intended_selling_price=Decimal("23"),
+    )
+    session.flush()
+
+    airtel = Stock.query.filter_by(
+        business_id=retail.id, network=NetworkType.AIRTEL
+    ).one()
+    orange = Stock.query.filter_by(
+        business_id=retail.id, network=NetworkType.ORANGE
+    ).one()
+    assert airtel.balance == 0
+    assert orange.balance == 200
+    assert purchase.stock_item_id == orange.id
+    assert purchase.actual_total_cost == Decimal("4200.000000000000")
+
+    delete_retail_purchase(
+        purchase=purchase, business=retail, deleted_by=owner
+    )
+    session.flush()
+    assert orange.balance == 0
+    assert StockPurchase.query.count() == 0

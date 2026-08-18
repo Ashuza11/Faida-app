@@ -10,18 +10,31 @@ from datetime import date
 from apps.api import api_bp
 from apps import db
 from apps.models import (
+    BusinessType,
     NetworkType,
     CashOutflowCategory,
     Stock,
-    StockPurchase,
     Sale,
     SaleItem,
     CashOutflow,
     Client,
 )
+from apps.businesses import get_current_business, resolve_business_for_user
 from apps.main.utils import custom_round_up, calculate_sale_total
 from apps.main.payments import apply_payment_to_sale
-from apps.inventory import consume_stock, record_purchase
+from apps.inventory import consume_stock
+from apps.purchases import record_retail_purchase
+
+
+@api_bp.before_request
+def protect_wholesale_from_legacy_sync_api():
+    """Do not let legacy FC sync endpoints mutate an active USD ledger."""
+    if request.endpoint == "api_bp.health" or not current_user.is_authenticated:
+        return None
+    business = get_current_business()
+    if business is not None and business.business_type == BusinessType.WHOLESALE:
+        return jsonify({"error": "La synchronisation grossiste arrive bientôt."}), 409
+    return None
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
@@ -39,11 +52,11 @@ def get_stock():
     Returns current stock levels for the authenticated user's business.
     Cached by faida-offline.js for use when offline.
     """
-    vendeur_id = current_user.business_vendeur_id
-    if vendeur_id is None:
+    business = get_current_business()
+    if business is None or current_user.business_vendeur_id is None:
         return jsonify({"error": "Platform admins have no single stock view"}), 400
 
-    stocks = Stock.query.filter_by(vendeur_id=vendeur_id).all()
+    stocks = Stock.query.filter_by(business_id=business.id).all()
     data = [
         {
             "network":                  s.network.value,
@@ -78,8 +91,9 @@ def create_sale():
 
     local_id = payload.get("local_id")
     vendeur_id = current_user.business_vendeur_id
+    business = get_current_business()
 
-    if vendeur_id is None:
+    if vendeur_id is None or business is None:
         return jsonify({"error": "Platform admins cannot submit sales via API"}), 403
 
     try:
@@ -91,7 +105,9 @@ def create_sale():
         if client_choice == "existing":
             cid = payload.get("existing_client_id")
             if cid:
-                client = Client.query.filter_by(id=int(cid), vendeur_id=vendeur_id).first()
+                client = Client.query.filter_by(
+                    id=int(cid), business_id=business.id
+                ).first()
                 if not client:
                     return jsonify({"error": "Client introuvable ou inaccessible"}), 400
         else:
@@ -117,7 +133,7 @@ def create_sale():
                 return jsonify({"error": "Quantité invalide"}), 400
 
             stock_item = Stock.query.filter_by(
-                vendeur_id=vendeur_id, network=network_enum
+                business_id=business.id, network=network_enum
             ).first()
             if not stock_item:
                 return jsonify({"error": f"Stock '{network_str}' introuvable"}), 400
@@ -173,6 +189,7 @@ def create_sale():
         new_sale = Sale(
             seller_id=current_user.id,
             vendeur_id=vendeur_id,
+            business_id=business.id,
             client=client,
             client_name_adhoc=client_name_adhoc,
             total_amount_due=total_amount_due,
@@ -223,7 +240,8 @@ def create_stock_purchase():
         return jsonify({"error": "Invalid JSON body"}), 400
 
     vendeur_id = current_user.business_vendeur_id
-    if vendeur_id is None:
+    business = get_current_business()
+    if vendeur_id is None or business is None:
         return jsonify({"error": "Platform admins cannot submit purchases via API"}), 403
 
     # Only vendeurs (not stockeurs) can purchase stock — match vendeur_required decorator
@@ -272,42 +290,15 @@ def create_stock_purchase():
             except InvalidOperation:
                 return jsonify({"error": "Prix de vente invalide"}), 400
 
-        # Update or create stock
-        stock_item = Stock.query.filter_by(
-            vendeur_id=vendeur_id, network=network_enum
-        ).first()
-
-        if not stock_item:
-            stock_item = Stock(
-                vendeur_id=vendeur_id,
-                network=network_enum,
-                balance=Decimal("0.00"),
-                buying_price_per_unit=buying_price,
-                selling_price_per_unit=selling_price,
-            )
-            db.session.add(stock_item)
-
-        actual_total_cost = Decimal(amount_purchased) * buying_price
-        record_purchase(
-            stock=stock_item,
-            quantity=amount_purchased,
-            actual_total_cost=actual_total_cost,
-            quoted_unit_cost=buying_price,
-        )
-        stock_item.selling_price_per_unit = selling_price
-
-        db.session.flush()
-
-        new_purchase = StockPurchase(
-            stock_item_id=stock_item.id,
-            network=network_enum,
-            amount_purchased=amount_purchased,
-            buying_price_at_purchase=buying_price,
-            selling_price_at_purchase=selling_price,
-            actual_total_cost=actual_total_cost,
+        new_purchase = record_retail_purchase(
+            business=business,
             purchased_by=current_user,
+            network=network_enum,
+            quantity=amount_purchased,
+            unit_cost=buying_price,
+            intended_selling_price=selling_price,
         )
-        db.session.add(new_purchase)
+        db.session.flush()
         db.session.commit()
 
         return jsonify({
@@ -340,7 +331,8 @@ def create_cash_outflow():
         return jsonify({"error": "Invalid JSON body"}), 400
 
     vendeur_id = current_user.business_vendeur_id
-    if vendeur_id is None:
+    business = get_current_business()
+    if vendeur_id is None or business is None:
         return jsonify({"error": "Platform admins cannot submit outflows via API"}), 403
 
     local_id = payload.get("local_id")
@@ -377,6 +369,7 @@ def create_cash_outflow():
             description=description,
             recorded_by=current_user,
             vendeur_id=vendeur_id,
+            business_id=business.id,
         )
         db.session.add(new_outflow)
         db.session.commit()
@@ -438,7 +431,8 @@ def sms_ingest():
         return jsonify({"error": "sender and body are required"}), 400
 
     vendeur_id = authed_user.business_vendeur_id
-    if vendeur_id is None:
+    business = resolve_business_for_user(user=authed_user)
+    if vendeur_id is None or business is None:
         return jsonify({"error": "Platform admins cannot use SMS ingest"}), 403
 
     from apps.main.sms_parser import parse_sms
@@ -453,16 +447,16 @@ def sms_ingest():
 
     try:
         if parsed.message_type == "sale":
-            return _sms_create_sale(parsed, vendeur_id, authed_user)
+            return _sms_create_sale(parsed, business, vendeur_id, authed_user)
         else:
-            return _sms_create_purchase(parsed, vendeur_id, authed_user)
+            return _sms_create_purchase(parsed, business, vendeur_id, authed_user)
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"[SMS ingest] Unhandled error: {e}", exc_info=True)
         return jsonify({"error": "Erreur serveur lors du traitement SMS"}), 500
 
 
-def _sms_create_sale(parsed, vendeur_id: int, authed_user):
+def _sms_create_sale(parsed, business, vendeur_id: int, authed_user):
     """Create a Sale from a parsed sell SMS."""
     from sqlalchemy import or_
 
@@ -470,7 +464,7 @@ def _sms_create_sale(parsed, vendeur_id: int, authed_user):
     client = None
     if parsed.recipient_phone:
         client = Client.query.filter(
-            Client.vendeur_id == vendeur_id,
+            Client.business_id == business.id,
             or_(
                 Client.phone_airtel == parsed.recipient_phone,
                 Client.phone_africel == parsed.recipient_phone,
@@ -492,7 +486,7 @@ def _sms_create_sale(parsed, vendeur_id: int, authed_user):
 
     # Get stock for this network
     stock_item = Stock.query.filter_by(
-        vendeur_id=vendeur_id, network=parsed.network
+        business_id=business.id, network=parsed.network
     ).first()
     if not stock_item:
         return jsonify({"error": f"Stock {parsed.network.value} introuvable"}), 400
@@ -528,6 +522,7 @@ def _sms_create_sale(parsed, vendeur_id: int, authed_user):
     new_sale = Sale(
         seller_id=authed_user.id,
         vendeur_id=vendeur_id,
+        business_id=business.id,
         client=client,
         client_name_adhoc=client_name_adhoc,
         sale_date=date.today(),
@@ -562,10 +557,10 @@ def _sms_create_sale(parsed, vendeur_id: int, authed_user):
     }), 201
 
 
-def _sms_create_purchase(parsed, vendeur_id: int, authed_user):
+def _sms_create_purchase(parsed, business, vendeur_id: int, authed_user):
     """Create a StockPurchase from a parsed purchase SMS."""
     stock_item = Stock.query.filter_by(
-        vendeur_id=vendeur_id, network=parsed.network
+        business_id=business.id, network=parsed.network
     ).first()
     if not stock_item:
         return jsonify({"error": f"Stock {parsed.network.value} introuvable"}), 400
@@ -573,25 +568,14 @@ def _sms_create_purchase(parsed, vendeur_id: int, authed_user):
     buying_price = stock_item.buying_price_per_unit or Decimal("0.00")
     selling_price = stock_item.selling_price_per_unit or Decimal("1.00")
 
-    actual_total_cost = Decimal(parsed.quantity) * buying_price
-    record_purchase(
-        stock=stock_item,
-        quantity=parsed.quantity,
-        actual_total_cost=actual_total_cost,
-        quoted_unit_cost=buying_price,
-    )
-    db.session.add(stock_item)
-
-    new_purchase = StockPurchase(
-        stock_item_id=stock_item.id,
-        network=parsed.network,
-        amount_purchased=parsed.quantity,
-        buying_price_at_purchase=buying_price,
-        selling_price_at_purchase=selling_price,
-        actual_total_cost=actual_total_cost,
+    new_purchase = record_retail_purchase(
+        business=business,
         purchased_by=authed_user,
+        network=parsed.network,
+        quantity=parsed.quantity,
+        unit_cost=buying_price,
+        intended_selling_price=selling_price,
     )
-    db.session.add(new_purchase)
     db.session.commit()
 
     current_app.logger.info(

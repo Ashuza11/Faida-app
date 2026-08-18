@@ -249,7 +249,7 @@ def toggle_vendeur_status(vendeur_id):
 @platform_admin_required
 def approve_wholesale(business_id):
     """Approve a pending wholesale request for operational access."""
-    business = Business.query.get_or_404(business_id)
+    business = db.get_or_404(Business, business_id)
     if business.business_type != BusinessType.WHOLESALE:
         flash("Cette entreprise n'est pas grossiste.", "warning")
     elif business.approval_status == BusinessApprovalStatus.APPROVED:

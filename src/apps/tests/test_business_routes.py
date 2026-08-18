@@ -138,6 +138,9 @@ def test_wholesale_session_is_kept_out_of_legacy_retail_routes(app, session):
     assert dashboard.status_code == 200
     assert b"Wholesale" in dashboard.data
 
+    api_response = client.get("/api/v1/stock")
+    assert api_response.status_code == 409
+
 
 def test_pending_wholesale_cannot_be_selected(app, session):
     owner = make_user(session, suffix=6)

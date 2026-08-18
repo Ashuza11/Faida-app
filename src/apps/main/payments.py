@@ -8,7 +8,8 @@ from apps.models import CashInflow, CashInflowCategory, Sale
 
 
 def allocate_registered_client_payment(
-    *, client_id: int, vendeur_id: int, amount: Decimal, recorded_by,
+    *, client_id: int, vendeur_id: int, business_id: int | None,
+    amount: Decimal, recorded_by,
     payment_date: date, exclude_sale_id=None, description=None,
 ) -> Decimal:
     """Pay a registered client's oldest debts and return unused cash.
@@ -19,6 +20,7 @@ def allocate_registered_client_payment(
     remaining = Decimal(amount)
     query = Sale.query.filter(
         Sale.vendeur_id == vendeur_id,
+        Sale.business_id == business_id,
         Sale.client_id == client_id,
         Sale.debt_amount > Decimal("0.00"),
     )
@@ -39,6 +41,7 @@ def allocate_registered_client_payment(
             description=description or "Paiement appliqué automatiquement à l'ancienne dette",
             recorded_by=recorded_by,
             vendeur_id=vendeur_id,
+            business_id=business_id,
             sale=sale,
             payment_date=payment_date,
         ))
@@ -53,6 +56,7 @@ def apply_payment_to_sale(*, sale: Sale, amount: Decimal, recorded_by, payment_d
     if sale.client_id is not None:
         old_debt = db.session.query(db.func.sum(Sale.debt_amount)).filter(
             Sale.vendeur_id == sale.vendeur_id,
+            Sale.business_id == sale.business_id,
             Sale.client_id == sale.client_id,
             Sale.id != sale.id,
             Sale.debt_amount > 0,
@@ -66,6 +70,7 @@ def apply_payment_to_sale(*, sale: Sale, amount: Decimal, recorded_by, payment_d
         remaining = allocate_registered_client_payment(
             client_id=sale.client_id,
             vendeur_id=sale.vendeur_id,
+            business_id=sale.business_id,
             amount=remaining,
             recorded_by=recorded_by,
             payment_date=payment_date,
