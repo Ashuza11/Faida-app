@@ -623,6 +623,44 @@ class WholesalePurchaseForm(FlaskForm):
     submit = SubmitField("Enregistrer l'achat")
 
 
+class WholesaleSaleForm(FlaskForm):
+    client_id = SelectField(
+        "Client détaillant",
+        coerce=str,
+        validators=[DataRequired()],
+    )
+    new_client_name = StringField(
+        "Nom du nouveau détaillant",
+        validators=[Optional(), Length(min=2, max=128)],
+        render_kw={"placeholder": "Ex: Boutique Mika"},
+    )
+    network = SelectField(
+        "Réseau",
+        choices=[(network.name, network.value.capitalize()) for network in NetworkType],
+        validators=[DataRequired()],
+    )
+    quantity = IntegerField(
+        "Quantité vendue (unités)",
+        validators=[DataRequired(), NumberRange(min=1)],
+        render_kw={"placeholder": "Ex: 10000", "min": "1"},
+    )
+    price_choice = SelectField("Prix de vente", validators=[DataRequired()])
+    custom_unit_price = DecimalField(
+        "Prix personnalisé par unité ($)",
+        validators=[Optional(), NumberRange(min=Decimal("0.000000000001"))],
+        places=12,
+        render_kw={"placeholder": "Ex: 0.00945", "step": "0.000000000001"},
+    )
+    cash_received = DecimalField(
+        "Montant reçu maintenant ($)",
+        validators=[Optional(), NumberRange(min=0)],
+        places=2,
+        default=Decimal("0.00"),
+        render_kw={"placeholder": "0.00", "step": "0.01"},
+    )
+    submit = SubmitField("Enregistrer la vente")
+
+
 # Form for confirming deletion of a sale
 class DeleteConfirmForm(FlaskForm):
     submit = SubmitField("Oui, Supprimer", validators=[DataRequired()])

@@ -1,0 +1,78 @@
+{% extends "layouts/base.html" %}
+{% block title %}Ventes grossiste{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div><h1>Ventes · {{ business.name }}</h1><span class="badge badge-secondary">USD</span></div>
+    <a class="btn btn-outline-primary" href="{{ url_for('main_bp.wholesale_dashboard') }}">Tableau de bord</a>
+  </div>
+  <div class="row mb-4">
+    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge des ventes du jour</small><div class="h2 text-success">${{ "{:.2f}".format(sales_margin) }}</div></div></div></div>
+    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge correspondant au cash encaissé aujourd'hui</small><div class="h2 text-info">${{ "{:.2f}".format(collected_margin) }}</div></div></div></div>
+  </div>
+  <div class="row">
+    <div class="col-lg-5 mb-4"><div class="card shadow"><div class="card-header"><h3 class="mb-0">Nouvelle vente</h3></div><div class="card-body">
+      <form method="post">
+        {{ form.hidden_tag() }}
+        <div class="form-group">{{ form.client_id.label }}{{ form.client_id(class="form-control", id="saleClient") }}</div>
+        <div class="form-group" id="newClientGroup">{{ form.new_client_name.label }}{{ form.new_client_name(class="form-control") }}</div>
+        <div class="form-group">{{ form.network.label }}{{ form.network(class="form-control", id="saleNetwork") }}</div>
+        <div class="form-group">{{ form.quantity.label }}{{ form.quantity(class="form-control", id="saleQuantity") }}</div>
+        <div class="form-group">{{ form.price_choice.label }}{{ form.price_choice(class="form-control", id="salePrice") }}</div>
+        <div class="form-group" id="customSalePriceGroup">{{ form.custom_unit_price.label }}{{ form.custom_unit_price(class="form-control", id="customSalePrice") }}</div>
+        <div class="form-group">{{ form.cash_received.label }}{{ form.cash_received(class="form-control") }}<small class="text-muted">Les anciennes dettes de ce détaillant sont payées en premier.</small></div>
+        {% for field, errors in form.errors.items() %}{% for error in errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}{% endfor %}
+        <div class="alert alert-light border">Total estimé: <strong id="saleTotalPreview">—</strong></div>
+        {{ form.submit(class="btn btn-success btn-block") }}
+      </form>
+    </div></div></div>
+    <div class="col-lg-7">
+      <div class="card shadow mb-4"><div class="card-header"><h3 class="mb-0">Marge du jour par prix</h3></div><div class="table-responsive"><table class="table">
+        <thead><tr><th>Réseau</th><th>Prix</th><th>Unités</th><th>Ventes</th><th>Marge</th></tr></thead>
+        <tbody>{% for group in price_groups %}<tr><td>{{ group.network.value.capitalize() }}</td><td>${{ "{:.5f}".format(group.price_per_unit_applied) }}</td><td>{{ group.quantity }}</td><td>${{ "{:.2f}".format(group.revenue) }}</td><td class="text-success">${{ "{:.2f}".format(group.margin) }}</td></tr>{% else %}<tr><td colspan="5" class="text-center text-muted">Aucune vente aujourd'hui.</td></tr>{% endfor %}</tbody>
+      </table></div></div>
+      <div class="card shadow"><div class="card-header"><h3 class="mb-0">Ventes récentes</h3></div><div class="table-responsive"><table class="table">
+        <thead><tr><th>Client</th><th>Total</th><th>Payé</th><th>Dette</th><th>Date</th></tr></thead>
+        <tbody>{% for sale in sales %}<tr><td>{{ sale.client_display_name }}</td><td>${{ "{:.2f}".format(sale.total_amount_due) }}</td><td>${{ "{:.2f}".format(sale.cash_paid) }}</td><td>${{ "{:.2f}".format(sale.debt_amount) }}</td><td>{{ sale.created_at.strftime('%d/%m/%Y %H:%M') }}</td></tr>{% else %}<tr><td colspan="5" class="text-center text-muted">Aucune vente enregistrée.</td></tr>{% endfor %}</tbody>
+      </table></div></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block javascripts %}
+{{ super() }}
+<script>
+  const salePresets = {{ preset_data | tojson }};
+  const saleNetwork = document.getElementById('saleNetwork');
+  const salePrice = document.getElementById('salePrice');
+  const saleQuantity = document.getElementById('saleQuantity');
+  const customSalePrice = document.getElementById('customSalePrice');
+  function updateSalePreview() {
+    const custom = salePrice.value === 'custom';
+    document.getElementById('customSalePriceGroup').style.display = custom ? 'block' : 'none';
+    const option = salePrice.options[salePrice.selectedIndex];
+    const unitPrice = Number(custom ? customSalePrice.value : option?.dataset.unitPrice || 0);
+    const total = Number(saleQuantity.value || 0) * unitPrice;
+    document.getElementById('saleTotalPreview').textContent = total ? `$${total.toFixed(2)}` : '—';
+  }
+  function loadSalePrices() {
+    const previous = salePrice.value;
+    salePrice.innerHTML = '';
+    (salePresets[saleNetwork.value] || []).forEach(item => {
+      const option = new Option(item.label, item.value);
+      option.dataset.unitPrice = item.unit_price;
+      salePrice.add(option);
+    });
+    salePrice.add(new Option('Prix personnalisé', 'custom'));
+    if ([...salePrice.options].some(option => option.value === previous)) salePrice.value = previous;
+    updateSalePreview();
+  }
+  function toggleClient() { document.getElementById('newClientGroup').style.display = document.getElementById('saleClient').value === 'new' ? 'block' : 'none'; }
+  saleNetwork.addEventListener('change', loadSalePrices);
+  salePrice.addEventListener('change', updateSalePreview);
+  saleQuantity.addEventListener('input', updateSalePreview);
+  customSalePrice.addEventListener('input', updateSalePreview);
+  document.getElementById('saleClient').addEventListener('change', toggleClient);
+  loadSalePrices(); toggleClient();
+</script>
+{% endblock %}

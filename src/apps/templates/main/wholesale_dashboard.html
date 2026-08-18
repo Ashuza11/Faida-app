@@ -5,6 +5,7 @@
   <div class="d-flex justify-content-between align-items-center mb-4">
     <div><h1>{{ business.name }}</h1><span class="badge badge-info">GROSSISTE</span> <span class="badge badge-secondary">USD</span></div>
     <div>
+      <a class="btn btn-success" href="{{ url_for('main_bp.wholesale_sales') }}">Enregistrer une vente</a>
       <a class="btn btn-primary" href="{{ url_for('main_bp.wholesale_purchases') }}">Enregistrer un achat</a>
       <a class="btn btn-outline-primary" href="{{ url_for('main_bp.businesses') }}">Changer d'entreprise</a>
     </div>

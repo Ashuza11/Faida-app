@@ -6,7 +6,7 @@ import pytest
 from apps.businesses import create_business
 from apps.models import BusinessType, Client, RoleType, Sale, User
 from apps.main.forms import get_clients_with_debt
-from apps.main.payments import apply_payment_to_sale
+from apps.payments import apply_payment_to_sale
 from apps.main.utils import calculate_sale_total, custom_round_up
 
 

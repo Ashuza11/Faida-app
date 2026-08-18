@@ -21,7 +21,7 @@ from apps.models import (
 )
 from apps.businesses import get_current_business, resolve_business_for_user
 from apps.main.utils import custom_round_up, calculate_sale_total
-from apps.main.payments import apply_payment_to_sale
+from apps.payments import apply_payment_to_sale
 from apps.inventory import consume_stock
 from apps.purchases import record_retail_purchase
 

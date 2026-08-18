@@ -29,7 +29,7 @@ from apps.main.utils import (
     get_sales_history_query,
     update_daily_reports,
 )
-from apps.main.payments import apply_payment_to_sale
+from apps.payments import apply_payment_to_sale
 from apps.inventory import consume_stock, restore_sale_cost
 
 from apps.decorators import (
@@ -84,6 +84,7 @@ from apps.main.forms import (
     get_clients_with_debt,
     WholesaleBusinessForm,
     WholesalePurchaseForm,
+    WholesaleSaleForm,
 )
 from apps.businesses import (
     businesses_for_user,
@@ -97,6 +98,7 @@ from apps.purchases import (
     record_wholesale_purchase,
     replace_retail_purchase,
 )
+from apps.sales import record_wholesale_sale
 
 
 # Define the timezone for the application
@@ -109,6 +111,7 @@ _WHOLESALE_SAFE_ENDPOINTS = {
     "main_bp.switch_business",
     "main_bp.wholesale_dashboard",
     "main_bp.wholesale_purchases",
+    "main_bp.wholesale_sales",
     "main_bp.profile",
     "main_bp.health",
 }
@@ -306,6 +309,141 @@ def wholesale_purchases():
     )
 
 
+@bp.route("/businesses/wholesale/sales", methods=["GET", "POST"])
+@login_required
+@vendeur_required
+def wholesale_sales():
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    if business.owner_user_id != current_user.id:
+        abort(403)
+
+    clients = (
+        Client.query.filter_by(business_id=business.id, is_active=True)
+        .order_by(Client.name)
+        .all()
+    )
+    presets = (
+        PricePreset.query.filter_by(
+            business_id=business.id,
+            operation=PriceOperation.SALE,
+            is_active=True,
+        )
+        .order_by(PricePreset.network, PricePreset.display_order, PricePreset.id)
+        .all()
+    )
+    form = WholesaleSaleForm()
+    form.client_id.choices = [("new", "Nouveau détaillant")] + [
+        (str(client.id), client.name) for client in clients
+    ]
+    form.price_choice.choices = [
+        (f"preset:{preset.id}", f"{preset.network.value.capitalize()} — {preset.label}")
+        for preset in presets
+    ] + [("custom", "Prix personnalisé")]
+
+    if form.validate_on_submit():
+        try:
+            if form.client_id.data == "new":
+                name = (form.new_client_name.data or "").strip()
+                if len(name) < 2:
+                    raise ValueError("Saisissez le nom du nouveau détaillant.")
+                client = Client(
+                    name=name,
+                    vendeur_id=current_user.id,
+                    business_id=business.id,
+                )
+                db.session.add(client)
+                db.session.flush()
+            else:
+                client = db.session.get(Client, int(form.client_id.data))
+
+            network = NetworkType[form.network.data]
+            selected_preset = None
+            custom_unit_price = None
+            if form.price_choice.data == "custom":
+                custom_unit_price = form.custom_unit_price.data
+            else:
+                preset_id = int(form.price_choice.data.removeprefix("preset:"))
+                selected_preset = db.session.get(PricePreset, preset_id)
+            record_wholesale_sale(
+                business=business,
+                sold_by=current_user,
+                client=client,
+                network=network,
+                quantity=form.quantity.data,
+                cash_received=form.cash_received.data or Decimal("0"),
+                sale_date=datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date(),
+                preset=selected_preset,
+                custom_unit_price=custom_unit_price,
+            )
+            db.session.commit()
+            flash("Vente grossiste enregistrée avec succès.", "success")
+            return redirect(url_for("main_bp.wholesale_sales"))
+        except (ValueError, PermissionError) as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+
+    today = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
+    sales = (
+        Sale.query.filter_by(business_id=business.id)
+        .order_by(Sale.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    price_groups = (
+        db.session.query(
+            SaleItem.network,
+            SaleItem.price_per_unit_applied,
+            func.sum(SaleItem.quantity).label("quantity"),
+            func.sum(SaleItem.subtotal).label("revenue"),
+            func.sum(SaleItem.cost_total).label("cost"),
+            func.sum(SaleItem.margin_amount).label("margin"),
+        )
+        .join(Sale)
+        .filter(Sale.business_id == business.id, Sale.sale_date == today)
+        .group_by(SaleItem.network, SaleItem.price_per_unit_applied)
+        .order_by(SaleItem.network, SaleItem.price_per_unit_applied)
+        .all()
+    )
+    sales_margin = sum(
+        (Decimal(str(group.margin or 0)) for group in price_groups), Decimal("0")
+    )
+    collected_margin = Decimal("0")
+    inflows = CashInflow.query.filter_by(
+        business_id=business.id,
+        payment_date=today,
+        category=CashInflowCategory.SALE_COLLECTION,
+    ).all()
+    for inflow in inflows:
+        if inflow.sale and inflow.sale.total_amount_due:
+            sale_margin = sum(
+                (item.margin_amount for item in inflow.sale.sale_items), Decimal("0")
+            )
+            collected_margin += (
+                inflow.amount * sale_margin / inflow.sale.total_amount_due
+            )
+
+    preset_data = {network.name: [] for network in NetworkType}
+    for preset in presets:
+        preset_data[preset.network.name].append({
+            "value": f"preset:{preset.id}",
+            "label": preset.label,
+            "unit_price": str(preset.unit_price),
+        })
+    return render_template(
+        "main/wholesale_sales.html",
+        business=business,
+        form=form,
+        sales=sales,
+        price_groups=price_groups,
+        sales_margin=sales_margin,
+        collected_margin=collected_margin,
+        preset_data=preset_data,
+        segment="businesses",
+    )
+
+
 @bp.route("/health")
 def health():
     return {"status": "ok"}, 200
@@ -323,11 +461,12 @@ def index():
     selected_date_str = ctx['date_str']
     is_today = ctx['is_today']
 
-    vendeur_id = get_current_vendeur_id()
+    active_business = get_current_business()
+    business_id = active_business.id if active_business else None
 
     # --- 1. Stock balances — always live (current physical inventory) ---
-    if vendeur_id:
-        current_stocks = Stock.query.filter_by(vendeur_id=vendeur_id).all()
+    if business_id:
+        current_stocks = Stock.query.filter_by(business_id=business_id).all()
     else:
         current_stocks = Stock.query.all()
     total_stocks_data = {s.network.value: s.balance for s in current_stocks}
@@ -337,8 +476,8 @@ def index():
     for i in range(6, -1, -1):
         d = today_local_date - timedelta(days=i)
         q = db.session.query(func.sum(Sale.total_amount_due))
-        if vendeur_id:
-            q = q.filter(Sale.vendeur_id == vendeur_id)
+        if business_id:
+            q = q.filter(Sale.business_id == business_id)
         val = q.filter(Sale.sale_date == d).scalar()
         sales_data_week[d.strftime("%a")] = float(val) if val else 0.0
 
@@ -346,46 +485,42 @@ def index():
     sales_by_network = {}
     for network in NetworkType:
         q = db.session.query(func.sum(SaleItem.subtotal)).join(Sale)
-        if vendeur_id:
-            q = q.filter(Sale.vendeur_id == vendeur_id)
+        if business_id:
+            q = q.filter(Sale.business_id == business_id)
         val = q.filter(SaleItem.network == network, Sale.sale_date == selected_date).scalar()
         sales_by_network[network.value] = float(val) if val else 0.0
 
     # --- 4. KPI cards — scoped to selected_date ---
-    def _sale_q():
-        q = db.session.query
-        return q
-
     # Total sales
     q = db.session.query(func.sum(Sale.total_amount_due))
-    if vendeur_id:
-        q = q.filter(Sale.vendeur_id == vendeur_id)
+    if business_id:
+        q = q.filter(Sale.business_id == business_id)
     total_sales_today = float(q.filter(Sale.sale_date == selected_date).scalar() or 0)
 
     # Debts from sales on selected date
     q = db.session.query(func.sum(Sale.debt_amount)).filter(Sale.debt_amount > 0)
-    if vendeur_id:
-        q = q.filter(Sale.vendeur_id == vendeur_id)
+    if business_id:
+        q = q.filter(Sale.business_id == business_id)
     total_debt = float(q.filter(Sale.sale_date == selected_date).scalar() or 0)
 
     # Cash inflow — sales cash paid on selected date
     q = db.session.query(func.sum(Sale.cash_paid))
-    if vendeur_id:
-        q = q.filter(Sale.vendeur_id == vendeur_id)
+    if business_id:
+        q = q.filter(Sale.business_id == business_id)
     total_cash_inflow_sales = q.filter(Sale.sale_date == selected_date).scalar() or Decimal("0.00")
 
     # Cash inflow — non-sale entries on selected date
     q = db.session.query(func.sum(CashInflow.amount)).filter(CashInflow.sale_id.is_(None))
-    if vendeur_id:
-        q = q.filter(CashInflow.vendeur_id == vendeur_id)
+    if business_id:
+        q = q.filter(CashInflow.business_id == business_id)
     total_cash_inflow_other = q.filter(CashInflow.payment_date == selected_date).scalar() or Decimal("0.00")
 
     total_cash_inflow_today = float(total_cash_inflow_sales + total_cash_inflow_other)
 
     # Cash outflow on selected date
     q = db.session.query(func.sum(CashOutflow.amount))
-    if vendeur_id:
-        q = q.filter(CashOutflow.vendeur_id == vendeur_id)
+    if business_id:
+        q = q.filter(CashOutflow.business_id == business_id)
     total_cash_outflow_today = float(q.filter(CashOutflow.expense_date == selected_date).scalar() or 0)
 
     # --- 5. Recent sales for the selected date ---
@@ -393,15 +528,17 @@ def index():
         db.joinedload(Sale.client),
         db.joinedload(Sale.sale_items),
     ).filter(Sale.sale_date == selected_date).order_by(Sale.created_at.desc())
-    recent_sales = filter_by_vendeur(base_query, Sale).limit(5).all()
+    if business_id:
+        base_query = base_query.filter(Sale.business_id == business_id)
+    recent_sales = base_query.limit(5).all()
 
     # --- 6. Archived daily reports (always yesterday, for the report summary widget) ---
     yesterday_local_date = today_local_date - timedelta(days=1)
-    if vendeur_id:
+    if business_id:
         daily_stock_reports = DailyStockReport.query.filter_by(
-            report_date=yesterday_local_date, vendeur_id=vendeur_id).all()
+            report_date=yesterday_local_date, business_id=business_id).all()
         daily_overall_report = DailyOverallReport.query.filter_by(
-            report_date=yesterday_local_date, vendeur_id=vendeur_id).first()
+            report_date=yesterday_local_date, business_id=business_id).first()
     else:
         daily_stock_reports = DailyStockReport.query.filter_by(report_date=yesterday_local_date).all()
         daily_overall_report = DailyOverallReport.query.filter_by(report_date=yesterday_local_date).first()

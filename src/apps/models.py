@@ -949,6 +949,13 @@ class SaleItem(db.Model):
     )
     sale: so.Mapped[Sale] = so.relationship(back_populates="sale_items")
 
+    price_preset_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("price_presets.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    price_preset: so.Mapped[Optional["PricePreset"]] = so.relationship()
+
     network: so.Mapped[NetworkType] = so.mapped_column(
         sa.Enum(NetworkType), nullable=False
     )
