@@ -195,6 +195,15 @@ def register_cli_commands(app):
             db.session.add(vendeur)
             db.session.flush()  # Get ID
 
+            from apps.businesses import create_business
+            from apps.models import BusinessType, CurrencyCode
+            create_business(
+                owner=vendeur,
+                name=username,
+                business_type=BusinessType.RETAIL,
+                currency_code=CurrencyCode.CDF,
+            )
+
             # Create stock items (one per network, balance 0)
             stocks = create_stock_for_vendeur(vendeur.id)
 

@@ -44,6 +44,24 @@ class RoleType(PyEnum):
     STOCKEUR = "stockeur"
 
 
+class BusinessType(PyEnum):
+    """Operational model for an independently accounted business."""
+    RETAIL = "retail"
+    WHOLESALE = "wholesale"
+
+
+class CurrencyCode(PyEnum):
+    """Supported business ledger currencies."""
+    CDF = "CDF"
+    USD = "USD"
+
+
+class MembershipRole(PyEnum):
+    """A user's authority inside one business."""
+    OWNER = "owner"
+    STOCKEUR = "stockeur"
+
+
 class CashOutflowCategory(PyEnum):
     """Categories for cash outflows."""
     PURCHASE_AIRTIME = "Achat Stock"
@@ -313,6 +331,17 @@ class User(db.Model, UserMixin):
         cascade="all, delete-orphan",
     )
 
+    owned_businesses: so.Mapped[List["Business"]] = so.relationship(
+        back_populates="owner",
+        foreign_keys="[Business.owner_user_id]",
+        cascade="all, delete-orphan",
+    )
+    business_memberships: so.Mapped[List["BusinessMembership"]] = so.relationship(
+        back_populates="user",
+        foreign_keys="[BusinessMembership.user_id]",
+        cascade="all, delete-orphan",
+    )
+
     def set_password(self, password: str) -> None:
         """Hash and set the user's password."""
         self.password_hash = generate_password_hash(password)
@@ -387,6 +416,74 @@ class User(db.Model, UserMixin):
         if self.role == RoleType.PLATFORM_ADMIN:
             return True  # Platform admin can access all
         return self.business_vendeur_id == target_vendeur_id
+
+
+class Business(db.Model):
+    """An independent inventory and accounting ledger owned by a user."""
+    __tablename__ = "businesses"
+
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+    name: so.Mapped[str] = so.mapped_column(sa.String(128), nullable=False)
+    business_type: so.Mapped[BusinessType] = so.mapped_column(
+        sa.Enum(BusinessType), nullable=False, default=BusinessType.RETAIL
+    )
+    currency_code: so.Mapped[CurrencyCode] = so.mapped_column(
+        sa.Enum(CurrencyCode), nullable=False, default=CurrencyCode.CDF
+    )
+    owner_user_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=False, index=True
+    )
+    is_active: so.Mapped[bool] = so.mapped_column(default=True, nullable=False)
+    created_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    owner: so.Mapped[User] = so.relationship(
+        back_populates="owned_businesses", foreign_keys=[owner_user_id]
+    )
+    memberships: so.Mapped[List["BusinessMembership"]] = so.relationship(
+        back_populates="business", cascade="all, delete-orphan"
+    )
+
+    @property
+    def currency_symbol(self) -> str:
+        return "$" if self.currency_code == CurrencyCode.USD else "FC"
+
+    @property
+    def allows_stockeurs(self) -> bool:
+        return self.business_type == BusinessType.RETAIL
+
+
+class BusinessMembership(db.Model):
+    """Explicit access granted by a business owner to a user."""
+    __tablename__ = "business_memberships"
+
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+    business_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    role: so.Mapped[MembershipRole] = so.mapped_column(
+        sa.Enum(MembershipRole), nullable=False
+    )
+    is_active: so.Mapped[bool] = so.mapped_column(default=True, nullable=False)
+    created_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    business: so.Mapped[Business] = so.relationship(back_populates="memberships")
+    user: so.Mapped[User] = so.relationship(back_populates="business_memberships")
+
+    __table_args__ = (
+        sa.UniqueConstraint("business_id", "user_id", name="_business_user_membership_uc"),
+    )
 
 
 # ===========================================

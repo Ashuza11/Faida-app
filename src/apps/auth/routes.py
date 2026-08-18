@@ -25,6 +25,8 @@ from apps.models import (
     create_stock_for_vendeur
 )
 from apps import db
+from apps.businesses import create_business
+from apps.models import BusinessType, CurrencyCode
 
 
 @bp.route("/")
@@ -193,6 +195,13 @@ def register():
 
             db.session.add(new_vendeur)
             db.session.flush()  # Get the new user ID
+
+            create_business(
+                owner=new_vendeur,
+                name=new_vendeur.username,
+                business_type=BusinessType.RETAIL,
+                currency_code=CurrencyCode.CDF,
+            )
 
             # Mark invite code as used
             invite_code.used_by_id = new_vendeur.id
