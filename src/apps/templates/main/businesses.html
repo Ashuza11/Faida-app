@@ -1,0 +1,39 @@
+{% extends "layouts/base.html" %}
+{% block title %}Mes entreprises{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="row">
+    {% for business in businesses %}
+    <div class="col-lg-6 mb-4">
+      <div class="card shadow {% if current_business and current_business.id == business.id %}border-primary{% endif %}">
+        <div class="card-body">
+          <h3>{{ business.name }}</h3>
+          <p><span class="badge badge-info">{{ business.business_type.value | upper }}</span>
+             <span class="badge badge-secondary">{{ business.currency_code.value }}</span></p>
+          {% if current_business and current_business.id == business.id %}
+          <span class="text-success font-weight-bold">Entreprise active</span>
+          {% else %}
+          <form method="post" action="{{ url_for('main_bp.switch_business', business_id=business.id) }}">
+            {{ form.csrf_token }}
+            <button class="btn btn-primary" type="submit">Utiliser cette entreprise</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% if current_user.is_vendeur and not has_wholesale %}
+  <div class="card shadow">
+    <div class="card-header"><h3 class="mb-0">Ajouter une entreprise grossiste</h3></div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('main_bp.create_wholesale_business') }}">
+        {{ form.hidden_tag() }}
+        <div class="form-group">{{ form.name.label }}{{ form.name(class="form-control") }}</div>
+        {{ form.submit(class="btn btn-primary") }}
+      </form>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

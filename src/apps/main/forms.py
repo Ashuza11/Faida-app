@@ -590,6 +590,15 @@ class StockOpeningBalanceForm(FlaskForm):
     submit = SubmitField("Enregistrer Stock Initial")
 
 
+class WholesaleBusinessForm(FlaskForm):
+    name = StringField(
+        "Nom de l'entreprise grossiste",
+        validators=[DataRequired(), Length(min=2, max=128)],
+        render_kw={"placeholder": "Ex: Faida Distribution"},
+    )
+    submit = SubmitField("Créer l'entreprise grossiste")
+
+
 # Form for confirming deletion of a sale
 class DeleteConfirmForm(FlaskForm):
     submit = SubmitField("Oui, Supprimer", validators=[DataRequired()])

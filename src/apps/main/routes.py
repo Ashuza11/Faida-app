@@ -3,7 +3,16 @@
 # ============================================================
 from apps.main import pdf_routes
 from apps.main import bp
-from flask import render_template, request, flash, redirect, url_for, abort, current_app
+from flask import (
+    abort,
+    current_app,
+    flash,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from flask_login import login_required, current_user
 from sqlalchemy import func
 from jinja2 import TemplateNotFound
@@ -53,7 +62,9 @@ from apps.models import (
     DailyStockReport,
     StockOpeningBalance,
     normalize_phone,
-    validate_drc_phone
+    validate_drc_phone,
+    BusinessType,
+    CurrencyCode,
 )
 
 from apps.main.forms import (
@@ -69,11 +80,141 @@ from apps.main.forms import (
     EditProfileForm,
     DeleteConfirmForm,
     get_clients_with_debt,
+    WholesaleBusinessForm,
+)
+from apps.businesses import (
+    businesses_for_user,
+    create_business,
+    get_current_business,
+    resolve_business_for_user,
 )
 
 
 # Define the timezone for the application
 APP_TIMEZONE = pytz.timezone("Africa/Lubumbashi")
+
+
+_WHOLESALE_SAFE_ENDPOINTS = {
+    "main_bp.businesses",
+    "main_bp.create_wholesale_business",
+    "main_bp.switch_business",
+    "main_bp.wholesale_dashboard",
+    "main_bp.profile",
+    "main_bp.health",
+}
+
+
+@bp.before_request
+def protect_unmigrated_wholesale_routes():
+    """Keep wholesale sessions out of legacy retailer-scoped screens."""
+    if not current_user.is_authenticated or current_user.is_platform_admin:
+        return None
+    business = get_current_business()
+    if (
+        business is not None
+        and business.business_type == BusinessType.WHOLESALE
+        and request.endpoint not in _WHOLESALE_SAFE_ENDPOINTS
+    ):
+        flash("Cette fonction grossiste sera activée après sa migration.", "info")
+        return redirect(url_for("main_bp.wholesale_dashboard"))
+    return None
+
+
+@bp.route("/businesses")
+@login_required
+def businesses():
+    available_businesses = businesses_for_user(current_user)
+    return render_template(
+        "main/businesses.html",
+        businesses=available_businesses,
+        has_wholesale=any(
+            business.business_type == BusinessType.WHOLESALE
+            for business in available_businesses
+        ),
+        current_business=get_current_business(),
+        form=WholesaleBusinessForm(),
+        segment="businesses",
+    )
+
+
+@bp.route("/businesses/wholesale/create", methods=["POST"])
+@login_required
+@vendeur_required
+def create_wholesale_business():
+    if not current_user.is_vendeur:
+        abort(403)
+    form = WholesaleBusinessForm()
+    if not form.validate_on_submit():
+        flash("Veuillez saisir un nom valide.", "danger")
+        return redirect(url_for("main_bp.businesses"))
+    if any(
+        business.business_type == BusinessType.WHOLESALE
+        for business in businesses_for_user(current_user)
+    ):
+        flash("Vous possédez déjà une entreprise grossiste.", "warning")
+        return redirect(url_for("main_bp.businesses"))
+
+    business = create_business(
+        owner=current_user,
+        name=form.name.data,
+        business_type=BusinessType.WHOLESALE,
+        currency_code=CurrencyCode.USD,
+    )
+    db.session.flush()
+    for network in NetworkType:
+        db.session.add(
+            Stock(
+                vendeur_id=current_user.id,
+                business_id=business.id,
+                network=network,
+                balance=Decimal("0"),
+                buying_price_per_unit=Decimal("0"),
+                selling_price_per_unit=Decimal("0.00940"),
+                inventory_value=Decimal("0"),
+                average_cost_per_unit=Decimal("0"),
+            )
+        )
+    db.session.commit()
+    session["active_business_id"] = business.id
+    flash("Entreprise grossiste créée avec succès.", "success")
+    return redirect(url_for("main_bp.wholesale_dashboard"))
+
+
+@bp.route("/businesses/<int:business_id>/switch", methods=["POST"])
+@login_required
+def switch_business(business_id):
+    try:
+        business = resolve_business_for_user(
+            user=current_user, business_id=business_id
+        )
+    except PermissionError:
+        abort(403)
+    session["active_business_id"] = business.id
+    destination = (
+        "main_bp.wholesale_dashboard"
+        if business.business_type == BusinessType.WHOLESALE
+        else "main_bp.index"
+    )
+    return redirect(url_for(destination))
+
+
+@bp.route("/businesses/wholesale")
+@login_required
+def wholesale_dashboard():
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    stocks = (
+        Stock.query.filter_by(business_id=business.id)
+        .order_by(Stock.network)
+        .all()
+    )
+    return render_template(
+        "main/wholesale_dashboard.html",
+        business=business,
+        stocks=stocks,
+        segment="businesses",
+    )
 
 
 @bp.route("/health")

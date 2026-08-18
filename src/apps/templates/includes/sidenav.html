@@ -76,6 +76,13 @@
             </a>
           </li>
 
+          <li class="nav-item">
+            <a class="nav-link {% if segment == 'businesses' %}active{% endif %}" href="{{ url_for('main_bp.businesses') }}">
+              <i class="fas fa-store text-primary"></i>
+              <span class="nav-link-text">Mes entreprises</span>
+            </a>
+          </li>
+
           <!-- STOCK -->
           <li class="nav-item">
             <a class="nav-link {% if segment == 'stock' %}active{% endif %}" href="#navbar-stock" data-toggle="collapse" role="button" aria-expanded="{% if segment == 'stock' %}true{% else %}false{% endif %}" data-target="#navbar-stock">

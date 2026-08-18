@@ -1,0 +1,20 @@
+{% extends "layouts/base.html" %}
+{% block title %}Grossiste{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div><h1>{{ business.name }}</h1><span class="badge badge-info">GROSSISTE</span> <span class="badge badge-secondary">USD</span></div>
+    <a class="btn btn-outline-primary" href="{{ url_for('main_bp.businesses') }}">Changer d'entreprise</a>
+  </div>
+  <div class="row">
+    {% for stock in stocks %}
+    <div class="col-md-6 col-xl-3 mb-4"><div class="card shadow"><div class="card-body">
+      <h4>{{ stock.network.value | upper }}</h4>
+      <div class="h2">{{ "{:,.0f}".format(stock.balance) }} U</div>
+      <small class="text-muted">Coût moyen: ${{ "{:.6f}".format(stock.average_cost_per_unit) }}</small>
+    </div></div></div>
+    {% endfor %}
+  </div>
+  <div class="alert alert-info">Le registre grossiste est isolé du commerce de détail. Les transactions USD arrivent dans l'étape suivante.</div>
+</div>
+{% endblock %}
