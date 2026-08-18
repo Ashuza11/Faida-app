@@ -100,6 +100,7 @@ from apps.businesses import (
     businesses_for_user,
     create_business,
     get_current_business,
+    rename_vendor,
     resolve_business_for_user,
 )
 from apps.purchases import (
@@ -2548,7 +2549,10 @@ def profile():
     if form.validate_on_submit():
         # Handle form submission for username, email, phone
         if current_user.username != form.username.data:
-            current_user.username = form.username.data
+            if current_user.is_vendeur:
+                rename_vendor(vendor=current_user, name=form.username.data)
+            else:
+                current_user.username = form.username.data
         if current_user.email != form.email.data:
             current_user.email = form.email.data
         if current_user.phone != form.phone.data:

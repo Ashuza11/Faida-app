@@ -478,6 +478,8 @@ def test_duplicate_retailer_names_have_distinct_debt_pages(app, session):
 
     listing = client.get("/businesses/wholesale/clients")
     assert listing.status_code == 200
+    assert f"Grossiste · {business.name}".encode() in listing.data
+    assert "Détaillants ·".encode() not in listing.data
     assert listing.data.count(first_client.name.encode()) == 2
     assert f"Client #{first_client.id}".encode() in listing.data
     assert f"Client #{second_client.id}".encode() in listing.data

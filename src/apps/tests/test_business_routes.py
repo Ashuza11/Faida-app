@@ -100,6 +100,40 @@ def test_owner_switches_between_retail_and_wholesale(app, session):
     assert retail_response.headers["Location"].endswith("/index")
 
 
+def test_profile_rename_syncs_retail_mode_but_preserves_wholesale_name(app, session):
+    owner = make_user(session, suffix=20)
+    owner.email = "owner20@example.com"
+    retail = create_business(
+        owner=owner, name="0970353088", business_type=BusinessType.RETAIL
+    )
+    wholesale = create_business(
+        owner=owner,
+        name="Ets Albin",
+        business_type=BusinessType.WHOLESALE,
+        approval_status=BusinessApprovalStatus.APPROVED,
+    )
+    session.commit()
+    client = app.test_client()
+    login(client, owner)
+
+    response = client.post(
+        "/profile",
+        data={
+            "username": "Ets Ashuza",
+            "email": owner.email,
+            "phone": owner.phone,
+        },
+    )
+
+    assert response.status_code == 302
+    session.refresh(owner)
+    session.refresh(retail)
+    session.refresh(wholesale)
+    assert owner.username == "Ets Ashuza"
+    assert retail.name == "Ets Ashuza"
+    assert wholesale.name == "Ets Albin"
+
+
 def test_stockeur_cannot_switch_to_owners_wholesale_business(app, session):
     owner = make_user(session, suffix=3)
     stockeur = make_user(session, suffix=4, role=RoleType.STOCKEUR)

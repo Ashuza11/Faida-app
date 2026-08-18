@@ -1,6 +1,6 @@
 import pytest
 
-from apps.businesses import add_stockeur, create_business
+from apps.businesses import add_stockeur, create_business, rename_vendor
 from apps.models import (
     BusinessType,
     CurrencyCode,
@@ -75,3 +75,21 @@ def test_stockeur_cannot_own_business(session):
         create_business(
             owner=stockeur, name="Invalid", business_type=BusinessType.RETAIL
         )
+
+
+def test_vendor_rename_updates_retail_name_without_overwriting_wholesale(session):
+    owner = make_user(session, suffix=7, role=RoleType.VENDEUR)
+    retail = create_business(
+        owner=owner, name="0970353088", business_type=BusinessType.RETAIL
+    )
+    wholesale = create_business(
+        owner=owner, name="Ets Albin", business_type=BusinessType.WHOLESALE
+    )
+    session.flush()
+
+    rename_vendor(vendor=owner, name=" Ets Ashuza ")
+    session.flush()
+
+    assert owner.username == "Ets Ashuza"
+    assert retail.name == "Ets Ashuza"
+    assert wholesale.name == "Ets Albin"

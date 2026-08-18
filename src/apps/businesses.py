@@ -110,6 +110,20 @@ def create_business(
     return business
 
 
+def rename_vendor(*, vendor: User, name: str) -> None:
+    """Rename a seller and the retail mode that represents that seller."""
+    if not vendor.is_vendeur:
+        raise ValueError("Seul un vendeur possède un mode détail.")
+    normalized_name = name.strip()
+    if not normalized_name:
+        raise ValueError("Le nom du commerce est requis.")
+
+    vendor.username = normalized_name
+    for business in vendor.owned_businesses:
+        if business.business_type == BusinessType.RETAIL:
+            business.name = normalized_name
+
+
 def approve_wholesale_business(*, business: Business, admin: User) -> None:
     """Authorize a requested wholesale ledger and retain an audit trail."""
     from datetime import datetime, timezone
