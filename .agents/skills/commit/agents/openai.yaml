@@ -1,0 +1,4 @@
+interface:
+  display_name: "Commit"
+  short_description: "Review staged changes and propose a commit"
+  default_prompt: "Use $commit to review my staged changes and propose a commit message."
