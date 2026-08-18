@@ -587,10 +587,16 @@ class Stock(db.Model):
 
     # Each vendeur sets their own prices
     buying_price_per_unit: so.Mapped[Decimal] = so.mapped_column(
-        sa.Numeric(10, 2), nullable=False, default=Decimal("0.94")
+        sa.Numeric(24, 12), nullable=False, default=Decimal("0.94")
     )
     selling_price_per_unit: so.Mapped[Decimal] = so.mapped_column(
-        sa.Numeric(10, 2), nullable=False, default=Decimal("1.00")
+        sa.Numeric(24, 12), nullable=False, default=Decimal("1.00")
+    )
+    inventory_value: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=False, default=Decimal("0.00")
+    )
+    average_cost_per_unit: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=False, default=Decimal("0.00")
     )
 
     updated_at: so.Mapped[datetime] = so.mapped_column(
@@ -657,10 +663,13 @@ class StockPurchase(db.Model):
     )
 
     buying_price_at_purchase: so.Mapped[Decimal] = so.mapped_column(
-        sa.Numeric(precision=10, scale=2), nullable=False, default=Decimal("0.00")
+        sa.Numeric(precision=24, scale=12), nullable=False, default=Decimal("0.00")
     )
     selling_price_at_purchase: so.Mapped[Decimal] = so.mapped_column(
-        sa.Numeric(10, 2), nullable=False
+        sa.Numeric(24, 12), nullable=False
+    )
+    actual_total_cost: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=False, default=Decimal("0.00")
     )
 
     amount_purchased: so.Mapped[int] = so.mapped_column(
@@ -861,10 +870,22 @@ class SaleItem(db.Model):
     )
     quantity: so.Mapped[int] = so.mapped_column(sa.Integer, nullable=False)
     price_per_unit_applied: so.Mapped[Decimal] = so.mapped_column(
-        sa.Numeric(10, 2), nullable=False
+        sa.Numeric(24, 12), nullable=False
     )
     subtotal: so.Mapped[Decimal] = so.mapped_column(
         sa.Numeric(12, 2), nullable=False
+    )
+    cost_per_unit_snapshot: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=False, default=Decimal("0.00")
+    )
+    cost_total: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=False, default=Decimal("0.00")
+    )
+    margin_amount: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=False, default=Decimal("0.00")
+    )
+    is_cost_estimated: so.Mapped[bool] = so.mapped_column(
+        nullable=False, default=False
     )
 
     def __repr__(self) -> str:
@@ -918,7 +939,7 @@ class SaleItemHistory(db.Model):
     )
     quantity: so.Mapped[int] = so.mapped_column(sa.Integer, nullable=False)
     price_per_unit_applied: so.Mapped[Decimal] = so.mapped_column(
-        sa.Numeric(10, 2), nullable=False
+        sa.Numeric(24, 12), nullable=False
     )
     subtotal: so.Mapped[Decimal] = so.mapped_column(
         sa.Numeric(12, 2), nullable=False

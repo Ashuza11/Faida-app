@@ -15,17 +15,12 @@ from apps.models import (
     SaleItem,
     DailyOverallReport,
 )
-from decimal import Decimal, ROUND_UP, getcontext
 from datetime import date, datetime, timedelta, time
 import pytz
 from sqlalchemy import func
 
 # Define the path to your seed data file
 SEED_DATA_PATH = Path(os.getcwd()) / "apps" / "data" / "seed_data.json"
-
-# Set precision for Decimal operations
-getcontext().prec = 10
-
 
 def initialize_stock_items(app):
     """
