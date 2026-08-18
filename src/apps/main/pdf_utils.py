@@ -295,17 +295,19 @@ def generate_daily_report_pdf(
             pb_blocks.append(Paragraph(f"  {nn.upper()}", ParagraphStyle(
                 'PBNet', parent=_make_styles()['cell_bold'],
                 textColor=C_PRIMARY, spaceBefore=4)))
-            pb_headers = ['Prix Unitaire (FC)', 'Quantité', 'Revenu (FC)']
+            pb_headers = ['Prix Unitaire', 'Quantité', 'Coût', 'Revenu', 'Marge']
             pb_rows = [pb_headers]
             for e in entries:
                 pb_rows.append([
                     format_number(e['price']),
                     format_number(e['qty'], 0),
+                    format_number(e.get('cost', 0)),
                     format_number(e['revenue']),
+                    format_number(e.get('margin', 0)),
                 ])
-            pb_col_w = [avail_w * r for r in (0.20, 0.10, 0.20)]
+            pb_col_w = [avail_w * r for r in (0.18, 0.12, 0.18, 0.18, 0.18)]
             pb_t = Table(pb_rows, colWidths=pb_col_w)
-            pb_t.setStyle(_header_style(3))
+            pb_t.setStyle(_header_style(5))
             pb_blocks.append(pb_t)
         story.extend(pb_blocks)
 

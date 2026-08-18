@@ -21,6 +21,7 @@ from apps.main.utils import (
     update_daily_reports,
 )
 from apps.main.payments import apply_payment_to_sale
+from apps.inventory import consume_stock, record_purchase, restore_sale_cost, reverse_purchase
 
 from apps.decorators import (
     platform_admin_required,
@@ -598,19 +599,24 @@ def achat_stock():
             stock_item = Stock.query.filter_by(
                 vendeur_id=current_user.business_vendeur_id, network=network_enum).first()
 
-            if stock_item:
-                stock_item.balance += amount_purchased
-                stock_item.buying_price_per_unit = buying_price_to_record
-                stock_item.selling_price_per_unit = selling_price_to_record
-            else:
+            if not stock_item:
                 stock_item = Stock(
                     vendeur_id=current_user.business_vendeur_id,
                     network=network_enum,
-                    balance=amount_purchased,
+                    balance=Decimal("0.00"),
                     buying_price_per_unit=buying_price_to_record,
                     selling_price_per_unit=selling_price_to_record,
                 )
                 db.session.add(stock_item)
+
+            actual_total_cost = Decimal(amount_purchased) * buying_price_to_record
+            record_purchase(
+                stock=stock_item,
+                quantity=amount_purchased,
+                actual_total_cost=actual_total_cost,
+                quoted_unit_cost=buying_price_to_record,
+            )
+            stock_item.selling_price_per_unit = selling_price_to_record
 
             # Flush to get IDs if needed, though commit handles it
             db.session.flush()
@@ -621,6 +627,7 @@ def achat_stock():
                 amount_purchased=amount_purchased,
                 buying_price_at_purchase=buying_price_to_record,
                 selling_price_at_purchase=selling_price_to_record,
+                actual_total_cost=actual_total_cost,
                 purchased_by=current_user,
             )
             db.session.add(new_purchase)
@@ -709,6 +716,10 @@ def edit_stock_purchase(purchase_id):
     if form.validate_on_submit():
         try:
             old_amount_purchased = purchase.amount_purchased
+            old_actual_total_cost = (
+                purchase.actual_total_cost
+                or Decimal(old_amount_purchased) * purchase.buying_price_at_purchase
+            )
             old_network = purchase.network
 
             network_type_string_from_form = form.network.data
@@ -766,6 +777,7 @@ def edit_stock_purchase(purchase_id):
             purchase.amount_purchased = amount_purchased
             purchase.buying_price_at_purchase = buying_price_to_record
             purchase.selling_price_at_purchase = selling_price_to_record
+            purchase.actual_total_cost = Decimal(amount_purchased) * buying_price_to_record
 
             # --- Adjust Stock Balance and Buying/Selling Prices on Stock model ---
             # Step 1: Revert old amount from old network's stock
@@ -775,30 +787,32 @@ def edit_stock_purchase(purchase_id):
                 raise ValueError(
                     f"Stock introuvable pour {old_network.value} lors de la restauration. Annulation."
                 )
-            old_stock_item.balance -= old_amount_purchased
+            reverse_purchase(
+                stock=old_stock_item,
+                quantity=old_amount_purchased,
+                actual_total_cost=old_actual_total_cost,
+            )
             db.session.add(old_stock_item)
 
             # Step 2: Apply new amount to new network's stock, and update its current prices
             new_stock_item = Stock.query.filter_by(
                 vendeur_id=current_user.business_vendeur_id, network=network_enum).first()
-            if new_stock_item:
-                new_stock_item.balance += amount_purchased
-                # Update the buying_price_per_unit in the Stock table for the new (or same) network
-                new_stock_item.buying_price_per_unit = (
-                    buying_price_to_record  # Corrected here
-                )
-                # Update the selling_price_per_unit in the Stock table for the new (or same) network
-                new_stock_item.selling_price_per_unit = selling_price_to_record  # NEW
-                db.session.add(new_stock_item)
-            else:
+            if not new_stock_item:
                 new_stock_item = Stock(
                     vendeur_id=current_user.business_vendeur_id,
                     network=network_enum,
-                    balance=amount_purchased,
+                    balance=Decimal("0.00"),
                     buying_price_per_unit=buying_price_to_record,
                     selling_price_per_unit=selling_price_to_record,
                 )
                 db.session.add(new_stock_item)
+            record_purchase(
+                stock=new_stock_item,
+                quantity=amount_purchased,
+                actual_total_cost=purchase.actual_total_cost,
+                quoted_unit_cost=buying_price_to_record,
+            )
+            new_stock_item.selling_price_per_unit = selling_price_to_record
 
             db.session.commit()
             flash("Achat de stock mis à jour avec succès!", "success")
@@ -838,9 +852,13 @@ def delete_stock_purchase(purchase_id):
             stock_item = Stock.query.filter_by(
                 vendeur_id=current_user.business_vendeur_id, network=purchase.network).first()
             if stock_item:
-                stock_item.balance = max(
-                    Decimal("0.00"),
-                    stock_item.balance - purchase.amount_purchased
+                reverse_purchase(
+                    stock=stock_item,
+                    quantity=purchase.amount_purchased,
+                    actual_total_cost=(
+                        purchase.actual_total_cost
+                        or Decimal(purchase.amount_purchased) * purchase.buying_price_at_purchase
+                    ),
                 )
                 db.session.add(stock_item)
             else:
@@ -1135,16 +1153,21 @@ def vente_stock():
                 subtotal_raw = quantity * final_unit_price
                 subtotal = subtotal_raw.quantize(Decimal("0.01"))
 
+                cost_per_unit, cost_total = consume_stock(
+                    stock=stock_item, quantity=quantity
+                )
+
                 # Prepare Object
                 new_item = SaleItem(
                     network=network_type,
                     quantity=quantity,
                     price_per_unit_applied=final_unit_price,
-                    subtotal=subtotal
+                    subtotal=subtotal,
+                    cost_per_unit_snapshot=cost_per_unit,
+                    cost_total=cost_total,
+                    margin_amount=subtotal - cost_total,
+                    is_cost_estimated=False,
                 )
-
-                # Deduct Stock Immediately (Optimistic Locking assumed or non-issue for scale)
-                stock_item.balance -= quantity
                 db.session.add(stock_item)
 
                 sale_items_to_add.append(new_item)
@@ -1312,9 +1335,10 @@ def edit_sale(sale_id):
 
         try:
             # Store old quantities per network for precise reversion
-            old_quantities_map = {
-                item.network: item.quantity for item in sale.sale_items
-            }
+            old_costs = [
+                (item.network, item.quantity, item.cost_total)
+                for item in sale.sale_items
+            ]
 
             # 0. Snapshot current items to history before mutating
             for item in sale.sale_items:
@@ -1338,14 +1362,16 @@ def edit_sale(sale_id):
             revert_vendeur_id = current_user.business_vendeur_id
             if not revert_vendeur_id:
                 raise ValueError("Impossible de déterminer le vendeur pour la restauration du stock.")
-            for network, quantity in old_quantities_map.items():
+            for network, quantity, cost_total in old_costs:
                 stock_item = Stock.query.filter_by(
                     vendeur_id=revert_vendeur_id, network=network).first()
                 if not stock_item:
                     raise ValueError(
                         f"Stock introuvable pour {network.value} lors de la restauration. Annulation."
                     )
-                stock_item.balance += quantity
+                restore_sale_cost(
+                    stock=stock_item, quantity=quantity, cost_total=cost_total
+                )
                 db.session.add(stock_item)
                 current_app.logger.info(
                     f"edit_sale: restored {quantity} units of {network.value} "
@@ -1463,18 +1489,23 @@ def edit_sale(sale_id):
                 item_subtotal_unrounded = quantity * price_per_unit_applied
                 subtotal = item_subtotal_unrounded.quantize(Decimal("0.01"))
 
+                cost_per_unit, cost_total = consume_stock(
+                    stock=stock_item, quantity=quantity
+                )
                 new_sale_item = SaleItem(
                     network=network_type,
                     quantity=quantity,
                     price_per_unit_applied=price_per_unit_applied,
                     subtotal=subtotal,
+                    cost_per_unit_snapshot=cost_per_unit,
+                    cost_total=cost_total,
+                    margin_amount=subtotal - cost_total,
+                    is_cost_estimated=False,
                     sale=sale,
                 )
                 sale_items_to_add.append(new_sale_item)
                 raw_subtotals.append(subtotal)
 
-                # Update stock balance for new items
-                stock_item.balance -= quantity
                 db.session.add(stock_item)
 
             if errors_during_sale:
@@ -1589,7 +1620,11 @@ def delete_sale(sale_id):
                     raise ValueError(
                         f"Stock introuvable pour {sale_item.network.value} lors de la suppression. Annulation."
                     )
-                stock_item.balance += sale_item.quantity
+                restore_sale_cost(
+                    stock=stock_item,
+                    quantity=sale_item.quantity,
+                    cost_total=sale_item.cost_total,
+                )
                 db.session.add(stock_item)
                 current_app.logger.info(
                     f"delete_sale: restored {sale_item.quantity} units of {sale_item.network.value}. "
@@ -2004,6 +2039,8 @@ def rapports():
             SaleItem.price_per_unit_applied,
             func.sum(SaleItem.quantity).label('qty'),
             func.sum(SaleItem.subtotal).label('revenue'),
+            func.sum(SaleItem.cost_total).label('cost'),
+            func.sum(SaleItem.margin_amount).label('margin'),
         )
         .join(Sale)
         .filter(Sale.sale_date == target_date)
@@ -2024,6 +2061,8 @@ def rapports():
             "price": Decimal(str(row.price_per_unit_applied)),
             "qty": int(row.qty or 0),
             "revenue": Decimal(str(row.revenue or 0)),
+            "cost": Decimal(str(row.cost or 0)),
+            "margin": Decimal(str(row.margin or 0)),
         })
 
     # Profit per network
@@ -2035,9 +2074,12 @@ def rapports():
         entries = price_breakdown.get(network.name, [])
         total_qty = sum(e["qty"] for e in entries)
         total_revenue = sum(e["revenue"] for e in entries)
-        buying_price = buying_price_map.get(network, Decimal("0.94"))
-        total_cost = Decimal(str(total_qty)) * buying_price
-        profit = total_revenue - total_cost
+        total_cost = sum(e["cost"] for e in entries)
+        profit = sum(e["margin"] for e in entries)
+        buying_price = (
+            total_cost / Decimal(str(total_qty))
+            if total_qty else buying_price_map.get(network, Decimal("0.94"))
+        )
         profit_data[network.name] = {
             "network": network,
             "qty": total_qty,

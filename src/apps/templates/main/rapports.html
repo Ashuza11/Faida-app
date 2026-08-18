@@ -243,7 +243,9 @@
                     <tr>
                       <th>Prix unitaire</th>
                       <th>Quantité</th>
+                      <th>Coût</th>
                       <th>Revenu (FC)</th>
+                      <th>Marge</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -251,7 +253,11 @@
                     <tr>
                       <td>{{ "{:,.2f}".format(entry.price) }} FC</td>
                       <td>{{ "{:,.0f}".format(entry.qty) }}</td>
+                      <td>{{ "{:,.2f}".format(entry.cost) }}</td>
                       <td>{{ "{:,.2f}".format(entry.revenue) }}</td>
+                      <td class="{% if entry.margin >= 0 %}text-success{% else %}text-danger{% endif %} font-weight-bold">
+                        {{ "{:,.2f}".format(entry.margin) }}
+                      </td>
                     </tr>
                     {% endfor %}
                   </tbody>

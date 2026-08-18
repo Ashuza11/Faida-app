@@ -21,6 +21,7 @@ from apps.models import (
 )
 from apps.main.utils import custom_round_up, calculate_sale_total
 from apps.main.payments import apply_payment_to_sale
+from apps.inventory import consume_stock, record_purchase
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
@@ -143,7 +144,9 @@ def create_sale():
                 }), 400
 
             subtotal = (Decimal(quantity) * final_unit_price).quantize(Decimal("0.01"))
-            stock_item.balance -= quantity
+            cost_per_unit, cost_total = consume_stock(
+                stock=stock_item, quantity=quantity
+            )
             db.session.add(stock_item)
 
             sale_items_to_add.append(SaleItem(
@@ -151,6 +154,10 @@ def create_sale():
                 quantity=quantity,
                 price_per_unit_applied=final_unit_price,
                 subtotal=subtotal,
+                cost_per_unit_snapshot=cost_per_unit,
+                cost_total=cost_total,
+                margin_amount=subtotal - cost_total,
+                is_cost_estimated=False,
             ))
             raw_subtotals.append(subtotal)
 
@@ -270,19 +277,24 @@ def create_stock_purchase():
             vendeur_id=vendeur_id, network=network_enum
         ).first()
 
-        if stock_item:
-            stock_item.balance += amount_purchased
-            stock_item.buying_price_per_unit = buying_price
-            stock_item.selling_price_per_unit = selling_price
-        else:
+        if not stock_item:
             stock_item = Stock(
                 vendeur_id=vendeur_id,
                 network=network_enum,
-                balance=amount_purchased,
+                balance=Decimal("0.00"),
                 buying_price_per_unit=buying_price,
                 selling_price_per_unit=selling_price,
             )
             db.session.add(stock_item)
+
+        actual_total_cost = Decimal(amount_purchased) * buying_price
+        record_purchase(
+            stock=stock_item,
+            quantity=amount_purchased,
+            actual_total_cost=actual_total_cost,
+            quoted_unit_cost=buying_price,
+        )
+        stock_item.selling_price_per_unit = selling_price
 
         db.session.flush()
 
@@ -292,6 +304,7 @@ def create_stock_purchase():
             amount_purchased=amount_purchased,
             buying_price_at_purchase=buying_price,
             selling_price_at_purchase=selling_price,
+            actual_total_cost=actual_total_cost,
             purchased_by=current_user,
         )
         db.session.add(new_purchase)
@@ -497,7 +510,9 @@ def _sms_create_sale(parsed, vendeur_id: int, authed_user):
     unit_price = stock_item.selling_price_per_unit or Decimal("1.00")
     subtotal = custom_round_up(Decimal(parsed.quantity) * unit_price)
 
-    stock_item.balance -= parsed.quantity
+    cost_per_unit, cost_total = consume_stock(
+        stock=stock_item, quantity=parsed.quantity
+    )
     db.session.add(stock_item)
 
     sale_item = SaleItem(
@@ -505,6 +520,10 @@ def _sms_create_sale(parsed, vendeur_id: int, authed_user):
         quantity=parsed.quantity,
         price_per_unit_applied=unit_price,
         subtotal=subtotal,
+        cost_per_unit_snapshot=cost_per_unit,
+        cost_total=cost_total,
+        margin_amount=subtotal - cost_total,
+        is_cost_estimated=False,
     )
     new_sale = Sale(
         seller_id=authed_user.id,
@@ -554,7 +573,13 @@ def _sms_create_purchase(parsed, vendeur_id: int, authed_user):
     buying_price = stock_item.buying_price_per_unit or Decimal("0.00")
     selling_price = stock_item.selling_price_per_unit or Decimal("1.00")
 
-    stock_item.balance += parsed.quantity
+    actual_total_cost = Decimal(parsed.quantity) * buying_price
+    record_purchase(
+        stock=stock_item,
+        quantity=parsed.quantity,
+        actual_total_cost=actual_total_cost,
+        quoted_unit_cost=buying_price,
+    )
     db.session.add(stock_item)
 
     new_purchase = StockPurchase(
@@ -563,6 +588,7 @@ def _sms_create_purchase(parsed, vendeur_id: int, authed_user):
         amount_purchased=parsed.quantity,
         buying_price_at_purchase=buying_price,
         selling_price_at_purchase=selling_price,
+        actual_total_cost=actual_total_cost,
         purchased_by=authed_user,
     )
     db.session.add(new_purchase)

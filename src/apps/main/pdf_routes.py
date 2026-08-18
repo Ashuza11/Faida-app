@@ -140,6 +140,8 @@ def download_report_pdf():
             SaleItem.price_per_unit_applied,
             func.sum(SaleItem.quantity).label('qty'),
             func.sum(SaleItem.subtotal).label('revenue'),
+            func.sum(SaleItem.cost_total).label('cost'),
+            func.sum(SaleItem.margin_amount).label('margin'),
         )
         .join(Sale)
         .filter(Sale.sale_date == target_date)
@@ -159,6 +161,8 @@ def download_report_pdf():
             "price": Decimal(str(row.price_per_unit_applied)),
             "qty": int(row.qty or 0),
             "revenue": Decimal(str(row.revenue or 0)),
+            "cost": Decimal(str(row.cost or 0)),
+            "margin": Decimal(str(row.margin or 0)),
         })
 
     profit_data = {}
@@ -169,9 +173,12 @@ def download_report_pdf():
         entries = price_breakdown.get(network.name, [])
         total_qty = sum(e["qty"] for e in entries)
         total_revenue = sum(e["revenue"] for e in entries)
-        buying_price = buying_price_map.get(network, Decimal("0.94"))
-        total_cost = Decimal(str(total_qty)) * buying_price
-        profit = total_revenue - total_cost
+        total_cost = sum(e["cost"] for e in entries)
+        profit = sum(e["margin"] for e in entries)
+        buying_price = (
+            total_cost / Decimal(str(total_qty))
+            if total_qty else buying_price_map.get(network, Decimal("0.94"))
+        )
         profit_data[network.name] = {
             "network": network,
             "qty": total_qty,
