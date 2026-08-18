@@ -7,6 +7,7 @@ import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.faida.twa.MainActivity.Companion.KEY_API_TOKEN
+import com.faida.twa.MainActivity.Companion.KEY_BUSINESS_ID
 import com.faida.twa.MainActivity.Companion.PREFS_NAME
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,14 +38,15 @@ object FaidaApiClient {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    fun postSms(context: Context, sender: String, body: String) {
+    fun postSms(context: Context, sender: String, body: String, receivedAt: Long) {
         scope.launch {
             try {
                 val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 val apiToken = prefs.getString(KEY_API_TOKEN, "").orEmpty()
+                val businessId = prefs.getLong(KEY_BUSINESS_ID, -1L)
 
-                if (apiToken.isEmpty()) {
-                    Log.w(TAG, "API token not configured — skipping SMS")
+                if (apiToken.isEmpty() || businessId <= 0L) {
+                    Log.w(TAG, "API token or business not configured — skipping SMS")
                     return@launch
                 }
 
@@ -53,6 +55,8 @@ object FaidaApiClient {
                 val jsonBody = JSONObject().apply {
                     put("sender", sender)
                     put("body", body)
+                    put("business_id", businessId)
+                    put("received_at", receivedAt)
                 }.toString()
 
                 val request = Request.Builder()
@@ -69,7 +73,11 @@ object FaidaApiClient {
                 val result = runCatching { JSONObject(responseBody) }.getOrElse { JSONObject() }
 
                 val message = when {
-                    !response.isSuccessful -> "Erreur serveur (${response.code}). Vérifiez votre connexion."
+                    !response.isSuccessful -> result.optString(
+                        "error", "Erreur serveur (${response.code}). Vérifiez votre connexion."
+                    )
+                    result.optString("status") == "duplicate" ->
+                        "SMS déjà enregistré — aucun doublon créé"
                     else -> when (result.optString("type")) {
                         "sale" -> {
                             val network = result.optString("network", "").replaceFirstChar { it.uppercase() }

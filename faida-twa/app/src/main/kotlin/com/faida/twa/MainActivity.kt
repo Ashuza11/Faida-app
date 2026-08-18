@@ -21,9 +21,10 @@ class MainActivity : AppCompatActivity() {
 
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         val apiToken = prefs.getString(KEY_API_TOKEN, "").orEmpty().trim()
+        val businessId = prefs.getLong(KEY_BUSINESS_ID, -1L)
 
         // First launch: show setup screen to enter the API token
-        if (apiToken.isEmpty()) {
+        if (apiToken.isEmpty() || businessId <= 0L) {
             startActivity(Intent(this, SetupActivity::class.java))
             finish()
             return
@@ -79,5 +80,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         const val PREFS_NAME    = "faida_prefs"
         const val KEY_API_TOKEN = "api_token"
+        const val KEY_BUSINESS_ID = "business_id"
+        const val KEY_BUSINESS_LABEL = "business_label"
     }
 }

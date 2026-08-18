@@ -44,6 +44,6 @@ class SmsReceiver : BroadcastReceiver() {
         val body = messages.joinToString("") { it.messageBody ?: "" }
 
         Log.d(TAG, "SMS from $sender: ${body.take(80)}")
-        FaidaApiClient.postSms(context, sender, body)
+        FaidaApiClient.postSms(context, sender, body, messages[0].timestampMillis)
     }
 }

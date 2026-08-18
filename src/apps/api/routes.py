@@ -4,14 +4,17 @@ All routes require an active Flask session (login_required).
 """
 from flask import jsonify, request, current_app
 from flask_login import login_required, current_user
+from sqlalchemy.exc import IntegrityError
 from decimal import Decimal, InvalidOperation
 from datetime import date
 from uuid import uuid4
+from hashlib import sha256
 
 from apps.api import api_bp
 from apps import db
 from apps.models import (
     BusinessType,
+    BusinessApprovalStatus,
     NetworkType,
     CashOutflowCategory,
     Stock,
@@ -20,18 +23,29 @@ from apps.models import (
     CashOutflow,
     Client,
     TransactionStatus,
+    PriceOperation,
+    PricePreset,
+    User,
+    SmsIngestion,
 )
-from apps.businesses import get_current_business, resolve_business_for_user
+from apps.businesses import (
+    businesses_for_user,
+    get_current_business,
+    resolve_business_for_user,
+)
 from apps.main.utils import custom_round_up, calculate_sale_total
 from apps.payments import apply_payment_to_sale
 from apps.inventory import consume_stock
-from apps.purchases import record_retail_purchase
+from apps.purchases import record_retail_purchase, record_wholesale_purchase
+from apps.sales import record_wholesale_sale
 
 
 @api_bp.before_request
 def protect_wholesale_from_legacy_sync_api():
     """Do not let legacy FC sync endpoints mutate an active USD ledger."""
-    if request.endpoint == "api_bp.health" or not current_user.is_authenticated:
+    if request.endpoint in {
+        "api_bp.health", "api_bp.android_businesses", "api_bp.sms_ingest"
+    } or not current_user.is_authenticated:
         return None
     business = get_current_business()
     if business is not None and business.business_type == BusinessType.WHOLESALE:
@@ -413,6 +427,40 @@ def sync_status():
 
 
 # ── SMS auto-capture ──────────────────────────────────────────────────────────
+def _authenticate_android_token():
+    """Resolve an active vendor from the personal Android API token."""
+    token = request.headers.get("X-Api-Token", "").strip()
+    if not token:
+        return None
+    return User.query.filter_by(api_token=token, is_active=True).first()
+
+
+@api_bp.route("/android/businesses", methods=["GET"])
+def android_businesses():
+    """List approved owner modes so Android can bind capture explicitly."""
+    user = _authenticate_android_token()
+    if user is None:
+        return jsonify({"error": "Code API invalide ou compte désactivé"}), 401
+    businesses = [
+        business for business in businesses_for_user(user)
+        if business.owner_user_id == user.id
+        and business.approval_status == BusinessApprovalStatus.APPROVED
+    ]
+    return jsonify({"businesses": [
+        {
+            "id": business.id,
+            "name": business.name,
+            "type": business.business_type.value,
+            "label": (
+                f"Mode grossiste — {business.name}"
+                if business.business_type == BusinessType.WHOLESALE
+                else f"Mode détail — {business.name}"
+            ),
+        }
+        for business in businesses
+    ]}), 200
+
+
 @api_bp.route("/sms-ingest", methods=["POST"])
 def sms_ingest():
     """
@@ -428,14 +476,10 @@ def sms_ingest():
       type=unknown  → Sender or pattern not recognized, ignored silently
     """
     # Authenticate: session (browser) or X-Api-Token header (Android)
-    from apps.models import User as _User
     if current_user.is_authenticated:
         authed_user = current_user
     else:
-        token = request.headers.get("X-Api-Token", "").strip()
-        if not token:
-            return jsonify({"error": "Authentication required"}), 401
-        authed_user = _User.query.filter_by(api_token=token, is_active=True).first()
+        authed_user = _authenticate_android_token()
         if not authed_user:
             return jsonify({"error": "Token invalide ou compte désactivé"}), 401
 
@@ -448,10 +492,23 @@ def sms_ingest():
     if not sender or not body:
         return jsonify({"error": "sender and body are required"}), 400
 
+    try:
+        if current_user.is_authenticated:
+            business = get_current_business()
+        else:
+            business_id = payload.get("business_id")
+            if business_id is None:
+                return jsonify({"error": "Sélectionnez le mode Android à utiliser"}), 400
+            business = resolve_business_for_user(
+                user=authed_user, business_id=business_id
+            )
+    except (PermissionError, TypeError, ValueError):
+        return jsonify({"error": "Mode Android invalide ou inaccessible"}), 403
     vendeur_id = authed_user.business_vendeur_id
-    business = resolve_business_for_user(user=authed_user)
     if vendeur_id is None or business is None:
         return jsonify({"error": "Platform admins cannot use SMS ingest"}), 403
+    if business.owner_user_id != authed_user.id:
+        return jsonify({"error": "La capture SMS est réservée au propriétaire"}), 403
 
     from apps.main.sms_parser import parse_sms
     parsed = parse_sms(sender, body)
@@ -463,7 +520,61 @@ def sms_ingest():
     if parsed.quantity <= 0:
         return jsonify({"error": "Parsed quantity is zero — message format may have changed"}), 400
 
+    ingestion = None
+    if not current_user.is_authenticated:
+        try:
+            received_at = int(payload.get("received_at"))
+            if received_at <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            return jsonify({"error": "Horodatage SMS Android manquant"}), 400
+        fingerprint = sha256(
+            f"{business.id}\0{sender.strip().lower()}\0{body}\0{received_at}".encode("utf-8")
+        ).hexdigest()
+        existing = SmsIngestion.query.filter_by(
+            business_id=business.id, fingerprint=fingerprint
+        ).first()
+        if existing is not None:
+            return jsonify({
+                "type": existing.message_type,
+                "status": "duplicate",
+                "sale_id": existing.sale_id,
+                "purchase_id": existing.purchase_id,
+            }), 200
+        ingestion = SmsIngestion(
+            business_id=business.id,
+            user_id=authed_user.id,
+            fingerprint=fingerprint,
+            sender=sender,
+            received_at_ms=received_at,
+            message_type=parsed.message_type,
+        )
+        db.session.add(ingestion)
+        try:
+            db.session.flush()
+        except IntegrityError:
+            # A concurrent delivery won the unique fingerprint race. Its
+            # transaction remains the only one allowed to mutate inventory.
+            db.session.rollback()
+            existing = SmsIngestion.query.filter_by(
+                business_id=business.id, fingerprint=fingerprint
+            ).first()
+            return jsonify({
+                "type": existing.message_type if existing else parsed.message_type,
+                "status": "duplicate",
+                "sale_id": existing.sale_id if existing else None,
+                "purchase_id": existing.purchase_id if existing else None,
+            }), 200
+
     try:
+        if business.business_type == BusinessType.WHOLESALE:
+            if parsed.message_type == "sale":
+                return _sms_create_wholesale_sale(
+                    parsed, business, authed_user, ingestion=ingestion
+                )
+            return _sms_create_wholesale_purchase(
+                parsed, business, authed_user, ingestion=ingestion
+            )
         if parsed.message_type == "sale":
             return _sms_create_sale(parsed, business, vendeur_id, authed_user)
         else:
@@ -472,6 +583,124 @@ def sms_ingest():
         db.session.rollback()
         current_app.logger.error(f"[SMS ingest] Unhandled error: {e}", exc_info=True)
         return jsonify({"error": "Erreur serveur lors du traitement SMS"}), 500
+
+
+def _default_wholesale_preset(*, business, network, operation):
+    return PricePreset.query.filter_by(
+        business_id=business.id,
+        network=network,
+        operation=operation,
+        is_default=True,
+        is_active=True,
+    ).order_by(PricePreset.display_order, PricePreset.id).first()
+
+
+def _sms_wholesale_client(parsed, business, owner):
+    """Resolve a retailer by network phone, creating one when first observed."""
+    from sqlalchemy import or_
+
+    client = None
+    if parsed.recipient_phone:
+        client = Client.query.filter(
+            Client.business_id == business.id,
+            or_(
+                Client.phone_airtel == parsed.recipient_phone,
+                Client.phone_africel == parsed.recipient_phone,
+                Client.phone_orange == parsed.recipient_phone,
+                Client.phone_vodacom == parsed.recipient_phone,
+            ),
+        ).first()
+    if client is not None:
+        return client
+
+    name = parsed.client_name or parsed.recipient_phone or "Détaillant inconnu"
+    client = Client(
+        name=name,
+        vendeur_id=owner.id,
+        business_id=business.id,
+    )
+    phone_field = {
+        NetworkType.AIRTEL: "phone_airtel",
+        NetworkType.AFRICEL: "phone_africel",
+        NetworkType.ORANGE: "phone_orange",
+        NetworkType.VODACOM: "phone_vodacom",
+    }[parsed.network]
+    if parsed.recipient_phone:
+        setattr(client, phone_field, parsed.recipient_phone)
+    db.session.add(client)
+    db.session.flush()
+    return client
+
+
+def _sms_create_wholesale_sale(parsed, business, owner, *, ingestion=None):
+    preset = _default_wholesale_preset(
+        business=business,
+        network=parsed.network,
+        operation=PriceOperation.SALE,
+    )
+    if preset is None:
+        return jsonify({
+            "error": f"Aucun prix de vente grossiste par défaut pour {parsed.network.value}"
+        }), 400
+    client = _sms_wholesale_client(parsed, business, owner)
+    sale = record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=parsed.network,
+        quantity=parsed.quantity,
+        cash_received=Decimal("0"),
+        sale_date=date.today(),
+        preset=preset,
+    )
+    if ingestion is not None:
+        ingestion.sale_id = sale.id
+    db.session.commit()
+    return jsonify({
+        "type": "sale",
+        "mode": "wholesale",
+        "status": "created",
+        "sale_id": sale.id,
+        "network": parsed.network.value,
+        "quantity": parsed.quantity,
+        "total_usd": float(sale.total_amount_due),
+        "client": client.name,
+        "payment_status": "debt",
+    }), 201
+
+
+def _sms_create_wholesale_purchase(parsed, business, owner, *, ingestion=None):
+    preset = _default_wholesale_preset(
+        business=business,
+        network=parsed.network,
+        operation=PriceOperation.PURCHASE,
+    )
+    if preset is None:
+        return jsonify({
+            "error": f"Aucun prix d'achat grossiste par défaut pour {parsed.network.value}"
+        }), 400
+    purchase = record_wholesale_purchase(
+        business=business,
+        purchased_by=owner,
+        network=parsed.network,
+        quantity=parsed.quantity,
+        preset=preset,
+        purchase_date=date.today(),
+    )
+    db.session.flush()
+    if ingestion is not None:
+        ingestion.purchase_id = purchase.id
+    db.session.commit()
+    return jsonify({
+        "type": "purchase",
+        "mode": "wholesale",
+        "status": "created",
+        "purchase_id": purchase.id,
+        "network": parsed.network.value,
+        "quantity": parsed.quantity,
+        "total_usd": float(purchase.actual_total_cost),
+        "new_balance": float(purchase.stock_item.balance),
+    }), 201
 
 
 def _sms_create_sale(parsed, business, vendeur_id: int, authed_user):

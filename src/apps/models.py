@@ -798,6 +798,38 @@ class StockPurchase(db.Model):
         return self.stock_item.vendeur_id if self.stock_item else None
 
 
+class SmsIngestion(db.Model):
+    """Idempotency and audit record for one Android SMS confirmation."""
+    __tablename__ = "sms_ingestions"
+
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+    business_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=False
+    )
+    fingerprint: so.Mapped[str] = so.mapped_column(sa.String(64), nullable=False)
+    sender: so.Mapped[str] = so.mapped_column(sa.String(40), nullable=False)
+    received_at_ms: so.Mapped[int] = so.mapped_column(sa.BigInteger, nullable=False)
+    message_type: so.Mapped[str] = so.mapped_column(sa.String(16), nullable=False)
+    sale_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("sales.id"), nullable=True
+    )
+    purchase_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("stock_purchases.id"), nullable=True
+    )
+    created_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "business_id", "fingerprint", name="_sms_business_fingerprint_uc"
+        ),
+    )
+
+
 # ===========================================
 # StockOpeningBalance Model
 # ===========================================
