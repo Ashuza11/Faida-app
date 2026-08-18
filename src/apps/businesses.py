@@ -38,6 +38,8 @@ def create_business(
     business.memberships.append(BusinessMembership(
         user=owner, role=MembershipRole.OWNER
     ))
+    from apps.pricing import seed_default_price_presets
+    business.price_presets.extend(seed_default_price_presets(business))
     db.session.add(business)
     return business
 

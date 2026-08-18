@@ -62,6 +62,11 @@ class MembershipRole(PyEnum):
     STOCKEUR = "stockeur"
 
 
+class PriceOperation(PyEnum):
+    PURCHASE = "purchase"
+    SALE = "sale"
+
+
 class CashOutflowCategory(PyEnum):
     """Categories for cash outflows."""
     PURCHASE_AIRTIME = "Achat Stock"
@@ -449,6 +454,9 @@ class Business(db.Model):
     memberships: so.Mapped[List["BusinessMembership"]] = so.relationship(
         back_populates="business", cascade="all, delete-orphan"
     )
+    price_presets: so.Mapped[List["PricePreset"]] = so.relationship(
+        back_populates="business", cascade="all, delete-orphan"
+    )
 
     @property
     def currency_symbol(self) -> str:
@@ -483,6 +491,45 @@ class BusinessMembership(db.Model):
 
     __table_args__ = (
         sa.UniqueConstraint("business_id", "user_id", name="_business_user_membership_uc"),
+    )
+
+
+class PricePreset(db.Model):
+    """A business-owned purchase or sale rate shown as a simple choice."""
+    __tablename__ = "price_presets"
+
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+    business_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    network: so.Mapped[NetworkType] = so.mapped_column(
+        sa.Enum(NetworkType), nullable=False
+    )
+    operation: so.Mapped[PriceOperation] = so.mapped_column(
+        sa.Enum(PriceOperation), nullable=False
+    )
+    label: so.Mapped[str] = so.mapped_column(sa.String(80), nullable=False)
+    unit_price: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=False
+    )
+    ratio_amount: so.Mapped[Optional[Decimal]] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=True
+    )
+    ratio_units: so.Mapped[Optional[Decimal]] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=True
+    )
+    is_default: so.Mapped[bool] = so.mapped_column(default=False, nullable=False)
+    is_active: so.Mapped[bool] = so.mapped_column(default=True, nullable=False)
+    display_order: so.Mapped[int] = so.mapped_column(default=0, nullable=False)
+
+    business: so.Mapped[Business] = so.relationship(back_populates="price_presets")
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "(ratio_amount IS NULL AND ratio_units IS NULL) OR "
+            "(ratio_amount > 0 AND ratio_units > 0)",
+            name="_price_preset_complete_ratio_ck",
+        ),
     )
 
 
