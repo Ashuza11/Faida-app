@@ -195,7 +195,7 @@
                             </thead>
                             <tbody id="sales-history-tbody">
                             {% for sale in sales_pagination.items %} 
-                                    <tr>
+                                    <tr class="{% if sale.status.value == 'reversed' %}text-muted{% endif %}">
                                         <td>{{ sale.id }}</td>
                                         <td>{{ sale.client.name if sale.client else sale.client_name_adhoc }}</td>
                                         <td>{{ sale.seller.username }}</td>
@@ -210,9 +210,9 @@
                                         <td>{{ "{:,.2f}".format(sale.total_amount_due) }}</td>
                                         <td>
                                             <span id="cash-paid-{{ sale.id }}">{{ "{:,.2f}".format(sale.cash_paid) }}</span>
-                                            <button type="button" class="btn btn-sm btn-info btn-edit-cash ml-2" data-sale-id="{{ sale.id }}" data-current-cash="{{ sale.cash_paid }}">
+                                            {% if sale.status.value == 'active' %}<button type="button" class="btn btn-sm btn-info btn-edit-cash ml-2" data-sale-id="{{ sale.id }}" data-current-cash="{{ sale.cash_paid }}">
                                                 <i class="fas fa-edit"></i>
-                                            </button>
+                                            </button>{% else %}<span class="badge badge-danger">Annulée</span>{% endif %}
                                         </td>
                                         <td><span id="debt-amount-{{ sale.id }}">{{ "{:,.2f}".format(sale.debt_amount) }}</span></td>
                                         <td>{{ sale.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
@@ -223,8 +223,7 @@
                                                 </a>
                                                 <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
                                                     <a class="dropdown-item" href="{{ url_for('main_bp.view_sale_details', sale_id=sale.id) }}">Détails</a>
-                                                    <a class="dropdown-item" href="{{ url_for('main_bp.edit_sale', sale_id=sale.id) }}">Modifier</a>
-                                                    <a class="dropdown-item text-danger" href="{{ url_for('main_bp.delete_sale', sale_id=sale.id) }}">Supprimer</a>
+                                                    {% if sale.status.value == 'active' %}<a class="dropdown-item text-danger" href="{{ url_for('main_bp.delete_sale', sale_id=sale.id) }}">Annuler et corriger</a>{% endif %}
                                                 </div>
                                             </div>
                                         </td>

@@ -14,6 +14,7 @@ from apps.models import (
     RoleType,
     Sale,
     Stock,
+    TransactionStatus,
     User,
 )
 
@@ -184,6 +185,25 @@ def test_new_retail_records_receive_active_business_key(app, session):
     ).one()
     assert created_sale.business_id == retail.id
 
+    edit_response = client.get(f"/edit_sale/{created_sale.id}")
+    assert edit_response.status_code == 302
+    assert edit_response.headers["Location"].endswith(
+        f"/delete_sale/{created_sale.id}"
+    )
+    cancel_response = client.post(
+        f"/delete_sale/{created_sale.id}",
+        data={"reason": "Quantité incorrecte"},
+    )
+    assert cancel_response.status_code == 302
+    session.refresh(created_sale)
+    stock = Stock.query.filter_by(
+        business_id=retail.id, network=NetworkType.AIRTEL
+    ).one()
+    assert created_sale.status == TransactionStatus.REVERSED
+    assert created_sale.reversal_reason == "Quantité incorrecte"
+    assert stock.balance == Decimal("100")
+    assert Sale.query.filter_by(id=created_sale.id).count() == 1
+
 
 def test_retail_debt_payment_cannot_reach_wholesale_debt(app, session):
     owner, retail, _, retail_client, wholesale_client = setup_ledgers(session)
@@ -270,3 +290,16 @@ def test_sale_cash_update_pays_older_retail_debt_first(app, session):
     event = PaymentEvent.query.one()
     assert event.amount == Decimal("60.00")
     assert {allocation.sale_id for allocation in event.allocations} == {oldest.id}
+
+    detail_response = client.get(f"/view_sale_details/{current.id}")
+    assert detail_response.status_code == 200
+    assert b"60.00 FC" in detail_response.data
+    cancel_response = client.post(
+        f"/payments/{event.id}/reverse",
+        data={"reason": "Montant incorrect"},
+    )
+    assert cancel_response.status_code == 302
+    session.refresh(oldest)
+    session.refresh(event)
+    assert oldest.debt_amount == Decimal("100.00")
+    assert event.status == TransactionStatus.REVERSED

@@ -14,7 +14,8 @@
                         <h3 class="mb-0 text-white"><i class="fas fa-exclamation-triangle mr-2"></i>{{ page_title }}</h3>
                     </div>
                     <div class="card-body">
-                        <p class="lead">Êtes-vous sûr de vouloir supprimer cette vente ? Cette action est irréversible et réinitialisera les stocks associés.</p>
+                        <p class="lead">Confirmez l'annulation de cette vente. La ligne restera dans l'historique et le stock exact sera restauré.</p>
+                        {% if sale.cash_paid > 0 %}<div class="alert alert-warning">Annulez d'abord les paiements liés depuis les détails de la vente.</div>{% endif %}
                         <p><strong>Détails de la vente:</strong></p>
                         <ul>
                             <li><strong>ID Vente:</strong> {{ sale.id }}</li>
@@ -33,9 +34,13 @@
                         <form method="POST" action="{{ url_for('main_bp.delete_sale', sale_id=sale.id) }}">
                             {# Render the CSRF token using the form object #}
                             {{ confirm_form.csrf_token }} 
+                            <div class="form-group">
+                                {{ confirm_form.reason.label }}
+                                {{ confirm_form.reason(class="form-control") }}
+                            </div>
                             <div class="text-right mb-3">
-                                <button type="submit" class="btn btn-danger">Oui, Supprimer</button>
-                                <a href="{{ url_for('main_bp.vente_stock') }}" class="btn btn-secondary">Annuler</a>
+                                <button type="submit" class="btn btn-danger">Confirmer l'annulation</button>
+                                <a href="{{ url_for('main_bp.vente_stock') }}" class="btn btn-secondary">Retour</a>
                             </div>
                         </form>
                     </div>

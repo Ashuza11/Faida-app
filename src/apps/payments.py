@@ -240,7 +240,7 @@ def apply_additional_payment_to_sale(
         db.session.add(CashInflow(
             amount=paid_here,
             category=CashInflowCategory.SALE_COLLECTION,
-            allocation_kind=PaymentAllocationKind.CURRENT_SALE,
+            allocation_kind=PaymentAllocationKind.PRIOR_DEBT,
             description="Paiement supplémentaire",
             recorded_by=recorded_by,
             vendeur_id=sale.vendeur_id,

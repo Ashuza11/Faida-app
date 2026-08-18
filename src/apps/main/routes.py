@@ -110,7 +110,11 @@ from apps.purchases import (
     replace_retail_purchase,
     reverse_wholesale_purchase,
 )
-from apps.sales import record_wholesale_sale, reverse_unpaid_wholesale_sale
+from apps.sales import (
+    record_wholesale_sale,
+    reverse_unpaid_sale,
+    reverse_unpaid_wholesale_sale,
+)
 from apps.wholesale_reports import build_wholesale_daily_report
 
 
@@ -1833,6 +1837,14 @@ def update_sale_cash(sale_id):
 def edit_sale(sale_id):
     sale = db.get_or_404(Sale, sale_id)
     ensure_access(sale)
+    flash(
+        "Pour préserver l'historique, annulez la vente puis enregistrez la correction.",
+        "warning",
+    )
+    return redirect(url_for("main_bp.delete_sale", sale_id=sale.id))
+
+    # Legacy in-place edit implementation retained temporarily for migration
+    # reference. This branch is intentionally unreachable.
     form = SaleForm()
     business = get_current_business()
 
@@ -2135,52 +2147,24 @@ def delete_sale(sale_id):
     sale = db.get_or_404(Sale, sale_id)
     ensure_access(sale)
     business = get_current_business()
-    confirm_form = DeleteConfirmForm()
+    confirm_form = TransactionReversalForm()
 
     if request.method == "POST":
 
         try:
-            db.session.begin_nested()
-
-            # Snapshot items to history before deletion
-            for sale_item in sale.sale_items:
-                db.session.add(SaleItemHistory(
-                    sale_id=sale.id,
-                    vendeur_id=sale.vendeur_id,
-                    business_id=sale.business_id,
-                    changed_by_id=current_user.id,
-                    action='delete',
-                    network=sale_item.network,
-                    quantity=sale_item.quantity,
-                    price_per_unit_applied=sale_item.price_per_unit_applied,
-                    subtotal=sale_item.subtotal,
-                ))
-
-            for sale_item in sale.sale_items:
-                stock_item = Stock.query.filter_by(
-                    business_id=business.id,
-                    network=sale_item.network).first()
-                if not stock_item:
-                    raise ValueError(
-                        f"Stock introuvable pour {sale_item.network.value} lors de la suppression. Annulation."
-                    )
-                restore_sale_cost(
-                    stock=stock_item,
-                    quantity=sale_item.quantity,
-                    cost_total=sale_item.cost_total,
-                )
-                db.session.add(stock_item)
-                current_app.logger.info(
-                    f"delete_sale: restored {sale_item.quantity} units of {sale_item.network.value}. "
-                    f"New balance: {stock_item.balance}"
-                )
-
-            for item_to_delete in list(sale.sale_items):
-                db.session.delete(item_to_delete)
-
-            db.session.delete(sale)
+            if not confirm_form.validate_on_submit():
+                raise ValueError("Indiquez une raison valide pour l'annulation.")
+            reverse_unpaid_sale(
+                sale=sale,
+                business=business,
+                reversed_by=current_user,
+                reason=confirm_form.reason.data,
+            )
             db.session.commit()
-            flash(f"Vente #{sale_id} supprimée avec succès!", "success")
+            flash(
+                f"Vente #{sale_id} annulée. Enregistrez maintenant la correction.",
+                "success",
+            )
             return redirect(url_for("main_bp.vente_stock"))
 
         except Exception as e:
@@ -2194,7 +2178,7 @@ def delete_sale(sale_id):
             )
             return redirect(url_for("main_bp.vente_stock"))
 
-    flash("Confirmez la suppression de la vente.", "warning")
+    flash("Confirmez l'annulation de la vente.", "warning")
     return render_template(
         "main/confirm_delete_sale.html",
         sale=sale,
@@ -2211,12 +2195,59 @@ def delete_sale(sale_id):
 def view_sale_details(sale_id):
     sale = db.get_or_404(Sale, sale_id)
     ensure_access(sale)
+    payment_events = (
+        PaymentEvent.query.outerjoin(CashInflow)
+        .filter(
+            db.or_(
+                PaymentEvent.source_sale_id == sale.id,
+                CashInflow.sale_id == sale.id,
+            )
+        )
+        .distinct()
+        .order_by(PaymentEvent.payment_date.desc(), PaymentEvent.created_at.desc())
+        .all()
+    )
     return render_template(
         "main/sale_details.html",
         sale=sale,
+        payment_events=payment_events,
+        reversal_form=TransactionReversalForm(),
         segment="stock",
         sub_segment="vente_stock",
     )
+
+
+@bp.route("/payments/<int:payment_event_id>/reverse", methods=["POST"])
+@login_required
+@vendeur_required
+def reverse_retail_payment_route(payment_event_id):
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.RETAIL:
+        return redirect(url_for("main_bp.businesses"))
+    payment_event = db.get_or_404(PaymentEvent, payment_event_id)
+    form = TransactionReversalForm()
+    redirect_sale_id = payment_event.source_sale_id
+    if redirect_sale_id is None and payment_event.allocations:
+        redirect_sale_id = payment_event.allocations[0].sale_id
+    try:
+        if not form.validate_on_submit():
+            raise ValueError("Indiquez une raison valide pour l'annulation.")
+        reverse_payment_event(
+            payment_event=payment_event,
+            business=business,
+            reversed_by=current_user,
+            reason=form.reason.data,
+        )
+        db.session.commit()
+        flash("Paiement annulé et dettes restaurées.", "success")
+    except (ValueError, PermissionError, RuntimeError) as error:
+        db.session.rollback()
+        flash(str(error), "danger")
+    if redirect_sale_id is not None:
+        return redirect(
+            url_for("main_bp.view_sale_details", sale_id=redirect_sale_id)
+        )
+    return redirect(url_for("main_bp.vente_stock"))
 
 # ============================================================
 # UPDATED: sorties_cash route with DATE FILTERING

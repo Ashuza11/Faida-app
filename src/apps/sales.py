@@ -113,14 +113,16 @@ def record_wholesale_sale(
     return sale
 
 
-def reverse_unpaid_wholesale_sale(
+def reverse_unpaid_sale(
     *, sale: Sale, business: Business, reversed_by: User, reason: str
 ) -> None:
-    """Reverse a wholesale sale only while no cash has been allocated to it."""
-    if business.business_type != BusinessType.WHOLESALE:
-        raise ValueError("Cette opération est réservée au registre grossiste.")
-    if business.owner_user_id != reversed_by.id:
-        raise PermissionError("Seul le propriétaire peut annuler cette vente.")
+    """Reverse an unpaid sale while retaining its immutable audit row."""
+    has_membership = any(
+        membership.user_id == reversed_by.id and membership.is_active
+        for membership in business.memberships
+    )
+    if not has_membership:
+        raise PermissionError("Vous n'avez pas accès à cette entreprise.")
     if sale.business_id != business.id:
         raise PermissionError("Cette vente appartient à une autre entreprise.")
     if sale.status != TransactionStatus.ACTIVE:
@@ -151,3 +153,17 @@ def reverse_unpaid_wholesale_sale(
     sale.reversed_at = datetime.now(timezone.utc)
     sale.reversed_by_id = reversed_by.id
     sale.reversal_reason = reason
+
+
+def reverse_unpaid_wholesale_sale(
+    *, sale: Sale, business: Business, reversed_by: User, reason: str
+) -> None:
+    """Compatibility wrapper enforcing the wholesale ledger type."""
+    if business.business_type != BusinessType.WHOLESALE:
+        raise ValueError("Cette opération est réservée au registre grossiste.")
+    reverse_unpaid_sale(
+        sale=sale,
+        business=business,
+        reversed_by=reversed_by,
+        reason=reason,
+    )
