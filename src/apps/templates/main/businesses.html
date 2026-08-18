@@ -10,8 +10,19 @@
           <h3>{{ business.name }}</h3>
           <p><span class="badge badge-info">{{ business.business_type.value | upper }}</span>
              <span class="badge badge-secondary">{{ business.currency_code.value }}</span></p>
+          {% if business.business_type.value == 'wholesale' and business.approval_status.value != 'approved' %}
+          <div class="alert alert-{% if business.approval_status.value == 'pending' %}warning{% else %}danger{% endif %} py-2">
+            {% if business.approval_status.value == 'pending' %}
+              En attente d'approbation par l'administrateur.
+            {% else %}
+              Demande grossiste refusée. Contactez l'administrateur.
+            {% endif %}
+          </div>
+          {% endif %}
           {% if current_business and current_business.id == business.id %}
           <span class="text-success font-weight-bold">Entreprise active</span>
+          {% elif business.approval_status.value != 'approved' %}
+          <button class="btn btn-secondary" type="button" disabled>Accès non approuvé</button>
           {% else %}
           <form method="post" action="{{ url_for('main_bp.switch_business', business_id=business.id) }}">
             {{ form.csrf_token }}

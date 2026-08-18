@@ -175,9 +175,11 @@ def create_wholesale_business():
             )
         )
     db.session.commit()
-    session["active_business_id"] = business.id
-    flash("Entreprise grossiste créée avec succès.", "success")
-    return redirect(url_for("main_bp.wholesale_dashboard"))
+    flash(
+        "Demande grossiste envoyée. Un administrateur doit l'approuver avant utilisation.",
+        "success",
+    )
+    return redirect(url_for("main_bp.businesses"))
 
 
 @bp.route("/businesses/<int:business_id>/switch", methods=["POST"])

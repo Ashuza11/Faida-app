@@ -13,9 +13,13 @@ import secrets
 
 from apps import db
 from apps.models import (
+    Business,
+    BusinessApprovalStatus,
+    BusinessType,
     User, RoleType, InviteCode, Sale, Stock,
     StockPurchase, Client, DailyOverallReport
 )
+from apps.businesses import approve_wholesale_business
 from apps.decorators import platform_admin_required
 
 bp = Blueprint('admin_bp', __name__, url_prefix='/admin')
@@ -74,6 +78,11 @@ def dashboard():
     recent_codes = InviteCode.query.order_by(
         InviteCode.created_at.desc()
     ).limit(5).all()
+    pending_wholesale_requests = Business.query.filter_by(
+        business_type=BusinessType.WHOLESALE,
+        approval_status=BusinessApprovalStatus.PENDING,
+        is_active=True,
+    ).order_by(Business.created_at).all()
 
     return render_template(
         'admin/dashboard.html',
@@ -86,6 +95,7 @@ def dashboard():
         total_cash_today=total_cash_today,
         recent_vendeurs=recent_vendeurs,
         recent_codes=recent_codes,
+        pending_wholesale_requests=pending_wholesale_requests,
         segment='admin',
         sub_segment='dashboard'
     )
@@ -205,6 +215,9 @@ def vendeur_detail(vendeur_id):
         total_sales=total_sales,
         total_debt=total_debt,
         total_stock_value=total_stock_value,
+        businesses=Business.query.filter_by(owner_user_id=vendeur.id)
+        .order_by(Business.created_at)
+        .all(),
         segment='admin',
         sub_segment='vendeurs'
     )
@@ -229,6 +242,25 @@ def toggle_vendeur_status(vendeur_id):
     flash(f"Le vendeur {vendeur.username} a été {status}.", "success")
 
     return redirect(url_for('admin_bp.vendeur_detail', vendeur_id=vendeur_id))
+
+
+@bp.route('/businesses/<int:business_id>/approve-wholesale', methods=['POST'])
+@login_required
+@platform_admin_required
+def approve_wholesale(business_id):
+    """Approve a pending wholesale request for operational access."""
+    business = Business.query.get_or_404(business_id)
+    if business.business_type != BusinessType.WHOLESALE:
+        flash("Cette entreprise n'est pas grossiste.", "warning")
+    elif business.approval_status == BusinessApprovalStatus.APPROVED:
+        flash("Cette entreprise grossiste est déjà approuvée.", "info")
+    else:
+        approve_wholesale_business(business=business, admin=current_user)
+        db.session.commit()
+        flash(f"L'entreprise {business.name} est maintenant approuvée.", "success")
+    return redirect(
+        url_for('admin_bp.vendeur_detail', vendeur_id=business.owner_user_id)
+    )
 
 
 # ============================================================

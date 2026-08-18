@@ -116,6 +116,21 @@
 
 <!-- Main Content -->
 <div class="container-fluid mt--6">
+  {% if pending_wholesale_requests %}
+  <div class="card border-warning">
+    <div class="card-header">
+      <h3 class="mb-0">Demandes grossistes en attente ({{ pending_wholesale_requests|length }})</h3>
+    </div>
+    <div class="card-body">
+      {% for business in pending_wholesale_requests %}
+      <div class="d-flex justify-content-between align-items-center {% if not loop.last %}border-bottom{% endif %} py-2">
+        <div><strong>{{ business.name }}</strong><br><small>{{ business.owner.username }} · {{ business.owner.phone }}</small></div>
+        <a class="btn btn-sm btn-warning" href="{{ url_for('admin_bp.vendeur_detail', vendeur_id=business.owner_user_id) }}">Examiner</a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
   <div class="row">
     
     <!-- Recent Vendeurs -->

@@ -1,6 +1,7 @@
 from apps.businesses import add_stockeur, create_business
 from apps.models import (
     Business,
+    BusinessApprovalStatus,
     BusinessType,
     CurrencyCode,
     NetworkType,
@@ -45,11 +46,12 @@ def test_owner_creates_isolated_usd_wholesale_workspace(app, session):
     )
 
     assert response.status_code == 302
-    assert response.headers["Location"].endswith("/businesses/wholesale")
+    assert response.headers["Location"].endswith("/businesses")
     wholesale = Business.query.filter_by(
         owner_user_id=owner.id, business_type=BusinessType.WHOLESALE
     ).one()
     assert wholesale.currency_code == CurrencyCode.USD
+    assert wholesale.approval_status == BusinessApprovalStatus.PENDING
     assert wholesale.id != retail.id
     assert {stock.network for stock in Stock.query.filter_by(
         business_id=wholesale.id
@@ -68,7 +70,10 @@ def test_owner_switches_between_retail_and_wholesale(app, session):
         owner=owner, name="Retail", business_type=BusinessType.RETAIL
     )
     wholesale = create_business(
-        owner=owner, name="Wholesale", business_type=BusinessType.WHOLESALE
+        owner=owner,
+        name="Wholesale",
+        business_type=BusinessType.WHOLESALE,
+        approval_status=BusinessApprovalStatus.APPROVED,
     )
     session.commit()
     client = app.test_client()
@@ -92,7 +97,10 @@ def test_stockeur_cannot_switch_to_owners_wholesale_business(app, session):
         owner=owner, name="Retail", business_type=BusinessType.RETAIL
     )
     wholesale = create_business(
-        owner=owner, name="Wholesale", business_type=BusinessType.WHOLESALE
+        owner=owner,
+        name="Wholesale",
+        business_type=BusinessType.WHOLESALE,
+        approval_status=BusinessApprovalStatus.APPROVED,
     )
     add_stockeur(business=retail, stockeur=stockeur)
     session.commit()
@@ -107,7 +115,10 @@ def test_stockeur_cannot_switch_to_owners_wholesale_business(app, session):
 def test_wholesale_session_is_kept_out_of_legacy_retail_routes(app, session):
     owner = make_user(session, suffix=5)
     wholesale = create_business(
-        owner=owner, name="Wholesale", business_type=BusinessType.WHOLESALE
+        owner=owner,
+        name="Wholesale",
+        business_type=BusinessType.WHOLESALE,
+        approval_status=BusinessApprovalStatus.APPROVED,
     )
     session.commit()
     client = app.test_client()
@@ -119,3 +130,38 @@ def test_wholesale_session_is_kept_out_of_legacy_retail_routes(app, session):
 
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/businesses/wholesale")
+
+
+def test_pending_wholesale_cannot_be_selected(app, session):
+    owner = make_user(session, suffix=6)
+    wholesale = create_business(
+        owner=owner, name="Pending Wholesale", business_type=BusinessType.WHOLESALE
+    )
+    session.commit()
+    client = app.test_client()
+    login(client, owner)
+
+    response = client.post(f"/businesses/{wholesale.id}/switch")
+
+    assert response.status_code == 403
+
+
+def test_platform_admin_approves_wholesale_request(app, session):
+    owner = make_user(session, suffix=7)
+    admin = make_user(session, suffix=8, role=RoleType.PLATFORM_ADMIN)
+    wholesale = create_business(
+        owner=owner, name="Approval Needed", business_type=BusinessType.WHOLESALE
+    )
+    session.commit()
+    client = app.test_client()
+    login(client, admin)
+
+    response = client.post(
+        f"/admin/businesses/{wholesale.id}/approve-wholesale"
+    )
+
+    assert response.status_code == 302
+    session.refresh(wholesale)
+    assert wholesale.approval_status == BusinessApprovalStatus.APPROVED
+    assert wholesale.approved_by_user_id == admin.id
+    assert wholesale.approved_at is not None

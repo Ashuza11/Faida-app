@@ -5,7 +5,7 @@ from apps.businesses import (
     create_business,
     resolve_business_for_user,
 )
-from apps.models import BusinessType, RoleType, User
+from apps.models import BusinessApprovalStatus, BusinessType, RoleType, User
 
 
 def user(session, suffix, role):
@@ -23,7 +23,10 @@ def user(session, suffix, role):
 def test_owner_defaults_to_retail_and_can_select_wholesale(session):
     owner = user(session, 1, RoleType.VENDEUR)
     wholesale = create_business(
-        owner=owner, name="A Wholesale", business_type=BusinessType.WHOLESALE
+        owner=owner,
+        name="A Wholesale",
+        business_type=BusinessType.WHOLESALE,
+        approval_status=BusinessApprovalStatus.APPROVED,
     )
     retail = create_business(
         owner=owner, name="Z Retail", business_type=BusinessType.RETAIL

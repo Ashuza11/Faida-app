@@ -8,6 +8,7 @@ disagreeing about who can access a business.
 from apps import db
 from apps.models import (
     Business,
+    BusinessApprovalStatus,
     BusinessMembership,
     BusinessType,
     CurrencyCode,
@@ -35,14 +36,19 @@ def businesses_for_user(user: User):
 
 
 def resolve_business_for_user(*, user: User, business_id=None):
-    businesses = businesses_for_user(user)
-    if not businesses:
-        return None
+    assigned_businesses = businesses_for_user(user)
+    businesses = [
+        business
+        for business in assigned_businesses
+        if business.approval_status == BusinessApprovalStatus.APPROVED
+    ]
     if business_id is not None:
         for business in businesses:
             if business.id == int(business_id):
                 return business
         raise PermissionError("Vous n'avez pas accès à cette entreprise.")
+    if not businesses:
+        return None
     retail = next(
         (b for b in businesses if b.business_type == BusinessType.RETAIL), None
     )
@@ -72,6 +78,7 @@ def get_current_business():
 def create_business(
     *, owner: User, name: str, business_type: BusinessType,
     currency_code: CurrencyCode | None = None,
+    approval_status: BusinessApprovalStatus | None = None,
 ) -> Business:
     if owner.is_stockeur:
         raise ValueError("Un stockeur ne peut pas posséder une entreprise.")
@@ -80,11 +87,18 @@ def create_business(
             CurrencyCode.USD if business_type == BusinessType.WHOLESALE
             else CurrencyCode.CDF
         )
+    if approval_status is None:
+        approval_status = (
+            BusinessApprovalStatus.PENDING
+            if business_type == BusinessType.WHOLESALE
+            else BusinessApprovalStatus.APPROVED
+        )
 
     business = Business(
         name=name.strip(),
         business_type=business_type,
         currency_code=currency_code,
+        approval_status=approval_status,
         owner=owner,
     )
     business.memberships.append(BusinessMembership(
@@ -94,6 +108,19 @@ def create_business(
     business.price_presets.extend(seed_default_price_presets(business))
     db.session.add(business)
     return business
+
+
+def approve_wholesale_business(*, business: Business, admin: User) -> None:
+    """Authorize a requested wholesale ledger and retain an audit trail."""
+    from datetime import datetime, timezone
+
+    if not admin.is_platform_admin:
+        raise PermissionError("Seul un administrateur peut approuver un grossiste.")
+    if business.business_type != BusinessType.WHOLESALE:
+        raise ValueError("Seules les entreprises grossistes nécessitent une approbation.")
+    business.approval_status = BusinessApprovalStatus.APPROVED
+    business.approved_by_user_id = admin.id
+    business.approved_at = datetime.now(timezone.utc)
 
 
 def add_stockeur(*, business: Business, stockeur: User) -> BusinessMembership:

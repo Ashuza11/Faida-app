@@ -50,6 +50,13 @@ class BusinessType(PyEnum):
     WHOLESALE = "wholesale"
 
 
+class BusinessApprovalStatus(PyEnum):
+    """Platform approval required before a wholesale ledger can operate."""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class CurrencyCode(PyEnum):
     """Supported business ledger currencies."""
     CDF = "CDF"
@@ -437,6 +444,17 @@ class Business(db.Model):
     )
     owner_user_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False, index=True
+    )
+    approval_status: so.Mapped[BusinessApprovalStatus] = so.mapped_column(
+        sa.Enum(BusinessApprovalStatus),
+        nullable=False,
+        default=BusinessApprovalStatus.APPROVED,
+    )
+    approved_by_user_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=True
+    )
+    approved_at: so.Mapped[Optional[datetime]] = so.mapped_column(
+        sa.DateTime(timezone=True), nullable=True
     )
     is_active: so.Mapped[bool] = so.mapped_column(default=True, nullable=False)
     created_at: so.Mapped[datetime] = so.mapped_column(
