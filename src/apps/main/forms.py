@@ -599,6 +599,30 @@ class WholesaleBusinessForm(FlaskForm):
     submit = SubmitField("Créer l'entreprise grossiste")
 
 
+class WholesalePurchaseForm(FlaskForm):
+    network = SelectField(
+        "Réseau",
+        choices=[(network.name, network.value.capitalize()) for network in NetworkType],
+        validators=[DataRequired()],
+    )
+    quantity = IntegerField(
+        "Quantité achetée (unités)",
+        validators=[DataRequired(), NumberRange(min=1)],
+        render_kw={"placeholder": "Ex: 10650", "min": "1"},
+    )
+    price_choice = SelectField(
+        "Prix d'achat",
+        validators=[DataRequired()],
+    )
+    custom_unit_cost = DecimalField(
+        "Prix personnalisé par unité ($)",
+        validators=[Optional(), NumberRange(min=Decimal("0.000000000001"))],
+        places=12,
+        render_kw={"placeholder": "Ex: 0.00935", "step": "0.000000000001"},
+    )
+    submit = SubmitField("Enregistrer l'achat")
+
+
 # Form for confirming deletion of a sale
 class DeleteConfirmForm(FlaskForm):
     submit = SubmitField("Oui, Supprimer", validators=[DataRequired()])

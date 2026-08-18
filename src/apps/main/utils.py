@@ -262,10 +262,16 @@ def get_stock_purchase_history_query(date_filter=True, date_arg_key='date'):
         .order_by(StockPurchase.created_at.desc())
     )
 
-    # Apply vendeur filter — platform admin sees all
-    vendeur_id = get_current_vendeur_id()
-    if vendeur_id is not None:
-        query = query.filter(Stock.vendeur_id == vendeur_id)
+    # Business identity is required because one owner can operate multiple
+    # ledgers with stock rows for the same network.
+    from apps.businesses import get_current_business
+    business = get_current_business()
+    if business is not None:
+        query = query.filter(Stock.business_id == business.id)
+    else:
+        vendeur_id = get_current_vendeur_id()
+        if vendeur_id is not None:
+            query = query.filter(Stock.vendeur_id == vendeur_id)
 
     # Apply date filter if requested
     if date_filter:

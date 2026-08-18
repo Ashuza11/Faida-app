@@ -4,7 +4,10 @@
 <div class="container-fluid mt-4">
   <div class="d-flex justify-content-between align-items-center mb-4">
     <div><h1>{{ business.name }}</h1><span class="badge badge-info">GROSSISTE</span> <span class="badge badge-secondary">USD</span></div>
-    <a class="btn btn-outline-primary" href="{{ url_for('main_bp.businesses') }}">Changer d'entreprise</a>
+    <div>
+      <a class="btn btn-primary" href="{{ url_for('main_bp.wholesale_purchases') }}">Enregistrer un achat</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('main_bp.businesses') }}">Changer d'entreprise</a>
+    </div>
   </div>
   <div class="row">
     {% for stock in stocks %}
@@ -15,6 +18,6 @@
     </div></div></div>
     {% endfor %}
   </div>
-  <div class="alert alert-info">Le registre grossiste est isolé du commerce de détail. Les transactions USD arrivent dans l'étape suivante.</div>
+  <div class="alert alert-info">Le registre grossiste USD est isolé du commerce de détail en FC.</div>
 </div>
 {% endblock %}

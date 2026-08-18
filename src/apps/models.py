@@ -729,6 +729,13 @@ class StockPurchase(db.Model):
     stock_item: so.Mapped["Stock"] = so.relationship(
         back_populates="purchases")
 
+    price_preset_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("price_presets.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    price_preset: so.Mapped[Optional["PricePreset"]] = so.relationship()
+
     network: so.Mapped[NetworkType] = so.mapped_column(
         sa.Enum(NetworkType), nullable=False
     )
@@ -756,8 +763,8 @@ class StockPurchase(db.Model):
 
     @property
     def total_cost(self) -> Decimal:
-        """Calculate total cost of this purchase."""
-        return self.buying_price_at_purchase * self.amount_purchased
+        """Return the immutable exact cost captured when the purchase occurred."""
+        return self.actual_total_cost
 
     @property
     def vendeur_id(self) -> int:

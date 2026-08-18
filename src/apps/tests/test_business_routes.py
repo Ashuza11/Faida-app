@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from apps.businesses import add_stockeur, create_business
 from apps.models import (
     Business,
@@ -9,6 +11,7 @@ from apps.models import (
     PriceOperation,
     RoleType,
     Stock,
+    StockPurchase,
     User,
 )
 
@@ -131,6 +134,10 @@ def test_wholesale_session_is_kept_out_of_legacy_retail_routes(app, session):
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/businesses/wholesale")
 
+    dashboard = client.get("/businesses/wholesale")
+    assert dashboard.status_code == 200
+    assert b"Wholesale" in dashboard.data
+
 
 def test_pending_wholesale_cannot_be_selected(app, session):
     owner = make_user(session, suffix=6)
@@ -165,3 +172,52 @@ def test_platform_admin_approves_wholesale_request(app, session):
     assert wholesale.approval_status == BusinessApprovalStatus.APPROVED
     assert wholesale.approved_by_user_id == admin.id
     assert wholesale.approved_at is not None
+
+
+def test_retail_purchase_never_updates_same_network_wholesale_stock(app, session):
+    owner = make_user(session, suffix=9)
+    retail = create_business(
+        owner=owner, name="Retail", business_type=BusinessType.RETAIL
+    )
+    wholesale = create_business(
+        owner=owner,
+        name="Wholesale",
+        business_type=BusinessType.WHOLESALE,
+        approval_status=BusinessApprovalStatus.APPROVED,
+    )
+    session.flush()
+    retail_stock = Stock(
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        network=NetworkType.AIRTEL,
+        balance=Decimal("100"),
+    )
+    wholesale_stock = Stock(
+        vendeur_id=owner.id,
+        business_id=wholesale.id,
+        network=NetworkType.AIRTEL,
+        balance=Decimal("1000"),
+    )
+    session.add_all([retail_stock, wholesale_stock])
+    session.commit()
+    client = app.test_client()
+    login(client, owner)
+    with client.session_transaction() as browser_session:
+        browser_session["active_business_id"] = retail.id
+
+    response = client.post(
+        "/achat_stock",
+        data={
+            "network": NetworkType.AIRTEL.name,
+            "amount_purchased": "10",
+            "buying_price_choice": "26.79",
+            "intended_selling_price_choice": "27.5",
+        },
+    )
+
+    assert response.status_code == 302
+    session.refresh(retail_stock)
+    session.refresh(wholesale_stock)
+    assert retail_stock.balance == Decimal("110")
+    assert wholesale_stock.balance == Decimal("1000")
+    assert StockPurchase.query.one().stock_item_id == retail_stock.id

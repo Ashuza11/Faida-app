@@ -65,6 +65,8 @@ from apps.models import (
     validate_drc_phone,
     BusinessType,
     CurrencyCode,
+    PriceOperation,
+    PricePreset,
 )
 
 from apps.main.forms import (
@@ -81,6 +83,7 @@ from apps.main.forms import (
     DeleteConfirmForm,
     get_clients_with_debt,
     WholesaleBusinessForm,
+    WholesalePurchaseForm,
 )
 from apps.businesses import (
     businesses_for_user,
@@ -88,6 +91,7 @@ from apps.businesses import (
     get_current_business,
     resolve_business_for_user,
 )
+from apps.purchases import record_wholesale_purchase
 
 
 # Define the timezone for the application
@@ -99,6 +103,7 @@ _WHOLESALE_SAFE_ENDPOINTS = {
     "main_bp.create_wholesale_business",
     "main_bp.switch_business",
     "main_bp.wholesale_dashboard",
+    "main_bp.wholesale_purchases",
     "main_bp.profile",
     "main_bp.health",
 }
@@ -215,6 +220,83 @@ def wholesale_dashboard():
         "main/wholesale_dashboard.html",
         business=business,
         stocks=stocks,
+        segment="businesses",
+    )
+
+
+@bp.route("/businesses/wholesale/purchases", methods=["GET", "POST"])
+@login_required
+@vendeur_required
+def wholesale_purchases():
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    if business.owner_user_id != current_user.id:
+        abort(403)
+
+    presets = (
+        PricePreset.query.filter_by(
+            business_id=business.id,
+            operation=PriceOperation.PURCHASE,
+            is_active=True,
+        )
+        .order_by(PricePreset.network, PricePreset.display_order, PricePreset.id)
+        .all()
+    )
+    form = WholesalePurchaseForm()
+    form.price_choice.choices = [
+        (f"preset:{preset.id}", f"{preset.network.value.capitalize()} — {preset.label}")
+        for preset in presets
+    ] + [("custom", "Prix personnalisé")]
+
+    if form.validate_on_submit():
+        try:
+            network = NetworkType[form.network.data]
+            selected_preset = None
+            custom_unit_cost = None
+            if form.price_choice.data == "custom":
+                custom_unit_cost = form.custom_unit_cost.data
+            else:
+                preset_id = int(form.price_choice.data.removeprefix("preset:"))
+                selected_preset = db.session.get(PricePreset, preset_id)
+            record_wholesale_purchase(
+                business=business,
+                purchased_by=current_user,
+                network=network,
+                quantity=form.quantity.data,
+                preset=selected_preset,
+                custom_unit_cost=custom_unit_cost,
+            )
+            db.session.commit()
+            flash("Achat grossiste enregistré avec succès.", "success")
+            return redirect(url_for("main_bp.wholesale_purchases"))
+        except (ValueError, PermissionError) as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+
+    purchases = (
+        StockPurchase.query.join(Stock)
+        .filter(Stock.business_id == business.id)
+        .order_by(StockPurchase.created_at.desc())
+        .all()
+    )
+    preset_data = {network.name: [] for network in NetworkType}
+    for preset in presets:
+        preset_data[preset.network.name].append(
+            {
+                "value": f"preset:{preset.id}",
+                "label": preset.label,
+                "unit_price": str(preset.unit_price),
+                "ratio_amount": str(preset.ratio_amount or ""),
+                "ratio_units": str(preset.ratio_units or ""),
+            }
+        )
+    return render_template(
+        "main/wholesale_purchases.html",
+        business=business,
+        form=form,
+        purchases=purchases,
+        preset_data=preset_data,
         segment="businesses",
     )
 
@@ -701,6 +783,7 @@ def client_toggle_active(client_id):
 @vendeur_required
 def achat_stock():
     form = StockPurchaseForm()
+    active_business = get_current_business()
 
     # --- 1. HANDLE POST (Processing the Purchase) ---
     if form.validate_on_submit():
@@ -740,11 +823,13 @@ def achat_stock():
 
             # F. Database Operations
             stock_item = Stock.query.filter_by(
-                vendeur_id=current_user.business_vendeur_id, network=network_enum).first()
+                business_id=active_business.id, network=network_enum
+            ).first()
 
             if not stock_item:
                 stock_item = Stock(
                     vendeur_id=current_user.business_vendeur_id,
+                    business_id=active_business.id,
                     network=network_enum,
                     balance=Decimal("0.00"),
                     buying_price_per_unit=buying_price_to_record,
@@ -821,12 +906,11 @@ def achat_stock():
 # Edit Stock Purchase
 @bp.route("/achat_stock/editer/<int:purchase_id>", methods=["GET", "POST"])
 @login_required
-@business_member_required
+@vendeur_required
 def edit_stock_purchase(purchase_id):
     purchase = StockPurchase.query.get_or_404(purchase_id)
-    # Ownership check: verify this purchase belongs to the current business
-    if not current_user.can_access_vendeur_data(purchase.stock_item.vendeur_id):
-        abort(403)
+    ensure_access(purchase.stock_item)
+    active_business = get_current_business()
     form = StockPurchaseForm(obj=purchase)
 
     # --- Pre-fill form based on existing purchase data ---
@@ -924,8 +1008,7 @@ def edit_stock_purchase(purchase_id):
 
             # --- Adjust Stock Balance and Buying/Selling Prices on Stock model ---
             # Step 1: Revert old amount from old network's stock
-            old_stock_item = Stock.query.filter_by(
-                vendeur_id=current_user.business_vendeur_id, network=old_network).first()
+            old_stock_item = purchase.stock_item
             if not old_stock_item:
                 raise ValueError(
                     f"Stock introuvable pour {old_network.value} lors de la restauration. Annulation."
@@ -939,10 +1022,12 @@ def edit_stock_purchase(purchase_id):
 
             # Step 2: Apply new amount to new network's stock, and update its current prices
             new_stock_item = Stock.query.filter_by(
-                vendeur_id=current_user.business_vendeur_id, network=network_enum).first()
+                business_id=active_business.id, network=network_enum
+            ).first()
             if not new_stock_item:
                 new_stock_item = Stock(
                     vendeur_id=current_user.business_vendeur_id,
+                    business_id=active_business.id,
                     network=network_enum,
                     balance=Decimal("0.00"),
                     buying_price_per_unit=buying_price_to_record,
@@ -982,18 +1067,15 @@ def edit_stock_purchase(purchase_id):
 # Delete Stock Purchase
 @bp.route("/achat_stock/supprimer/<int:purchase_id>", methods=["GET", "POST"])
 @login_required
-@business_member_required
+@vendeur_required
 def delete_stock_purchase(purchase_id):
     purchase = StockPurchase.query.get_or_404(purchase_id)
-    # Ownership check: verify this purchase belongs to the current business
-    if not current_user.can_access_vendeur_data(purchase.stock_item.vendeur_id):
-        abort(403)
+    ensure_access(purchase.stock_item)
 
     if request.method == "POST":
         try:
             # Revert the stock balance
-            stock_item = Stock.query.filter_by(
-                vendeur_id=current_user.business_vendeur_id, network=purchase.network).first()
+            stock_item = purchase.stock_item
             if stock_item:
                 reverse_purchase(
                     stock=stock_item,
