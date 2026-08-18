@@ -17,6 +17,58 @@ from apps.models import (
 )
 
 
+def businesses_for_user(user: User):
+    """Return active businesses explicitly granted to a user."""
+    if user.is_platform_admin:
+        return Business.query.filter_by(is_active=True).order_by(Business.name).all()
+    return (
+        Business.query
+        .join(BusinessMembership)
+        .filter(
+            BusinessMembership.user_id == user.id,
+            BusinessMembership.is_active.is_(True),
+            Business.is_active.is_(True),
+        )
+        .order_by(Business.name)
+        .all()
+    )
+
+
+def resolve_business_for_user(*, user: User, business_id=None):
+    businesses = businesses_for_user(user)
+    if not businesses:
+        return None
+    if business_id is not None:
+        for business in businesses:
+            if business.id == int(business_id):
+                return business
+        raise PermissionError("Vous n'avez pas accès à cette entreprise.")
+    retail = next(
+        (b for b in businesses if b.business_type == BusinessType.RETAIL), None
+    )
+    return retail or businesses[0]
+
+
+def get_current_business():
+    """Resolve and persist the authenticated user's selected business."""
+    from flask import session
+    from flask_login import current_user
+
+    if not current_user.is_authenticated:
+        return None
+    selected_id = session.get("active_business_id")
+    try:
+        business = resolve_business_for_user(
+            user=current_user, business_id=selected_id
+        )
+    except (PermissionError, TypeError, ValueError):
+        session.pop("active_business_id", None)
+        business = resolve_business_for_user(user=current_user)
+    if business is not None:
+        session["active_business_id"] = business.id
+    return business
+
+
 def create_business(
     *, owner: User, name: str, business_type: BusinessType,
     currency_code: CurrencyCode | None = None,

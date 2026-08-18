@@ -133,11 +133,16 @@ def can_access_resource(resource) -> bool:
     Returns:
         True if user can access, False otherwise
     """
-    if not hasattr(resource, 'vendeur_id'):
-        return False
-
     if current_user.is_platform_admin:
         return True
+
+    if hasattr(resource, 'business_id') and resource.business_id is not None:
+        from apps.businesses import get_current_business
+        business = get_current_business()
+        return business is not None and business.id == resource.business_id
+
+    if not hasattr(resource, 'vendeur_id'):
+        return False
 
     return current_user.can_access_vendeur_data(resource.vendeur_id)
 

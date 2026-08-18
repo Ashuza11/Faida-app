@@ -665,8 +665,8 @@ class Stock(db.Model):
 
     # Unique constraint: one stock record per network per vendeur
     __table_args__ = (
-        sa.UniqueConstraint('vendeur_id', 'network',
-                            name='_vendeur_network_uc'),
+        sa.UniqueConstraint('business_id', 'network',
+                            name='_business_network_uc'),
     )
 
     def __repr__(self) -> str:
