@@ -32,5 +32,5 @@ services:
     # Build configuration
     buildCommand: ""  # Docker handles this
     
-    # Start command (overrides Dockerfile CMD)
-    startCommand: "gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 run:app"
+    # Use the same migration-first startup path as the Docker image.
+    startCommand: "/bin/sh entrypoint.sh"

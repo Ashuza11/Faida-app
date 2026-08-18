@@ -19,7 +19,7 @@ import os
 import logging
 from flask_migrate import Migrate
 from apps import create_app, db
-from apps.config import config_dict
+from apps.config import resolve_config
 
 # ===========================================
 # Environment Detection
@@ -63,9 +63,9 @@ def get_environment():
 ENVIRONMENT = get_environment()
 DEBUG = ENVIRONMENT in ['development', 'debug', 'testing']
 
-# Get configuration class
-config_mode = ENVIRONMENT.capitalize() if ENVIRONMENT != 'debug' else 'Debug'
-app_config = config_dict.get(config_mode, config_dict['Debug'])
+# Resolve the canonical lowercase name; unknown runtime modes fail closed to
+# the local debug configuration instead of selecting an external database.
+app_config = resolve_config(ENVIRONMENT)
 
 # Create Flask application
 app = create_app(app_config)

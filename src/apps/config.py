@@ -229,6 +229,11 @@ config_dict = {
 }
 
 
+def resolve_config(environment, default=DebugConfig):
+    """Resolve a normalized runtime environment without silent key drift."""
+    return config_dict.get((environment or "").lower(), default)
+
+
 def get_config():
     """
     Get configuration based on FLASK_ENV environment variable.
@@ -238,4 +243,4 @@ def get_config():
     2. Default to 'development'
     """
     env = os.environ.get('FLASK_ENV', 'development').lower()
-    return config_dict.get(env, DevelopmentConfig)
+    return resolve_config(env, DevelopmentConfig)

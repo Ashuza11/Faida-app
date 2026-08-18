@@ -31,5 +31,6 @@ USER appuser
 # Expose port
 EXPOSE 5000
 
-# Default command
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "run:app"]
+# Apply migrations before accepting traffic. The script fails fast if an
+# upgrade cannot be completed, so incompatible code is never served.
+CMD ["/bin/sh", "entrypoint.sh"]
