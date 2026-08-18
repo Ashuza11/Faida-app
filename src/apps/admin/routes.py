@@ -446,13 +446,18 @@ def android_tokens():
     vendeurs = (
         User.query
         .filter_by(role=RoleType.VENDEUR, is_active=True)
-        .order_by(User.name.asc())
+        .order_by(User.username.asc())
         .all()
     )
-    # Ensure every vendeur has a token (generate lazily)
+    # Generate missing tokens in one transaction instead of committing once
+    # per vendeur while rendering the page.
+    generated_token = False
     for v in vendeurs:
         if not v.api_token:
-            v.get_or_create_api_token()
+            v.api_token = secrets.token_urlsafe(32)
+            generated_token = True
+    if generated_token:
+        db.session.commit()
 
     return render_template(
         'admin/android_tokens.html',
@@ -468,8 +473,11 @@ def android_tokens():
 def regenerate_token(vendeur_id):
     """Generate a fresh API token for a vendeur (invalidates the old one)."""
     import secrets as _secrets
-    vendeur = User.query.get_or_404(vendeur_id)
+    vendeur = User.query.filter_by(
+        id=vendeur_id,
+        role=RoleType.VENDEUR,
+    ).first_or_404()
     vendeur.api_token = _secrets.token_urlsafe(32)
     db.session.commit()
-    flash(f'Nouveau code généré pour {vendeur.name}.', 'success')
+    flash(f'Nouveau code généré pour {vendeur.username}.', 'success')
     return redirect(url_for('admin_bp.android_tokens'))

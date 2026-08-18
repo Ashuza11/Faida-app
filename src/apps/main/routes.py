@@ -674,6 +674,9 @@ def health():
 @bp.route("/index")
 @login_required
 def index():
+    if current_user.is_platform_admin:
+        return redirect(url_for("admin_bp.dashboard"))
+
     _, today_local_date, _, _ = get_local_timezone_datetime_info()
 
     # Support ?date= filter; default to today

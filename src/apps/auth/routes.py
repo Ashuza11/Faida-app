@@ -50,6 +50,8 @@ def login():
     """
     # Already logged in? Go to dashboard
     if current_user.is_authenticated:
+        if current_user.is_platform_admin:
+            return redirect(url_for("admin_bp.dashboard"))
         return redirect(url_for("main_bp.index"))
 
     # --- Brute-force guard (session-based) ---
