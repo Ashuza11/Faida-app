@@ -6,6 +6,7 @@ Revises: c92e14ad7530
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "e07ad6fb4319"
@@ -14,12 +15,24 @@ branch_labels = None
 depends_on = None
 
 
+def existing_network_type():
+    """Reference the base-schema enum without recreating it on PostgreSQL."""
+    values = ("AIRTEL", "AFRICEL", "ORANGE", "VODACOM")
+    if op.get_bind().dialect.name == "postgresql":
+        return postgresql.ENUM(
+            *values,
+            name="networktype",
+            create_type=False,
+        )
+    return sa.Enum(*values, name="networktype")
+
+
 def upgrade():
     op.create_table(
         "price_presets",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("business_id", sa.Integer(), nullable=False),
-        sa.Column("network", sa.Enum("AIRTEL", "AFRICEL", "ORANGE", "VODACOM", name="networktype"), nullable=False),
+        sa.Column("network", existing_network_type(), nullable=False),
         sa.Column("operation", sa.Enum("PURCHASE", "SALE", name="priceoperation"), nullable=False),
         sa.Column("label", sa.String(length=80), nullable=False),
         sa.Column("unit_price", sa.Numeric(24, 12), nullable=False),
