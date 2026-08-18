@@ -575,6 +575,9 @@ class Client(db.Model):
     vendeur_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False
     )
+    business_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("businesses.id"), nullable=True, index=True
+    )
     vendeur: so.Mapped[User] = so.relationship(
         back_populates="clients",
         foreign_keys=[vendeur_id]
@@ -616,6 +619,9 @@ class Stock(db.Model):
     # Which vendeur owns this stock
     vendeur_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False
+    )
+    business_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("businesses.id"), nullable=True, index=True
     )
     vendeur: so.Mapped[User] = so.relationship(
         back_populates="stock_items",
@@ -758,6 +764,9 @@ class StockOpeningBalance(db.Model):
     vendeur_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False, index=True
     )
+    business_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("businesses.id"), nullable=True, index=True
+    )
     vendeur: so.Mapped["User"] = so.relationship(
         foreign_keys=[vendeur_id],
         back_populates="opening_balances",
@@ -844,6 +853,9 @@ class Sale(db.Model):
     # (redundant for vendeurs, but needed for stockeur sales)
     vendeur_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False
+    )
+    business_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("businesses.id"), nullable=True, index=True
     )
 
     # Can be linked to a registered client OR use ad-hoc name
@@ -969,6 +981,9 @@ class SaleItemHistory(db.Model):
     vendeur_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False
     )
+    business_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("businesses.id"), nullable=True, index=True
+    )
 
     # Who triggered the change
     changed_by_id: so.Mapped[int] = so.mapped_column(
@@ -1026,6 +1041,9 @@ class CashOutflow(db.Model):
     vendeur_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False
     )
+    business_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("businesses.id"), nullable=True, index=True
+    )
 
     recorded_by_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False
@@ -1063,6 +1081,9 @@ class CashInflow(db.Model):
     # Which vendeur's business
     vendeur_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False
+    )
+    business_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("businesses.id"), nullable=True, index=True
     )
 
     recorded_by_id: so.Mapped[int] = so.mapped_column(
@@ -1119,6 +1140,9 @@ class DailyStockReport(db.Model):
     vendeur_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False
     )
+    business_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("businesses.id"), nullable=True, index=True
+    )
 
     report_date: so.Mapped[date] = so.mapped_column(
         sa.Date, nullable=False, index=True
@@ -1164,6 +1188,9 @@ class DailyOverallReport(db.Model):
     # Which vendeur's report
     vendeur_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False
+    )
+    business_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("businesses.id"), nullable=True, index=True
     )
 
     report_date: so.Mapped[date] = so.mapped_column(
