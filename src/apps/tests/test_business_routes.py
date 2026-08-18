@@ -264,4 +264,17 @@ def test_retail_purchase_never_updates_same_network_wholesale_stock(app, session
     session.refresh(wholesale_stock)
     assert retail_stock.balance == Decimal("110")
     assert wholesale_stock.balance == Decimal("1000")
+
+    purchase = StockPurchase.query.filter_by(stock_item_id=retail_stock.id).one()
+    history = client.get("/achat_stock")
+    assert history.status_code == 200
+    assert b">ID</th>" not in history.data
+
+    edit_page = client.get(f"/achat_stock/editer/{purchase.id}")
+    assert edit_page.status_code == 200
+    assert f"#{purchase.id}".encode() not in edit_page.data
+
+    delete_page = client.get(f"/achat_stock/supprimer/{purchase.id}")
+    assert delete_page.status_code == 200
+    assert b"ID Achat" not in delete_page.data
     assert StockPurchase.query.one().stock_item_id == retail_stock.id

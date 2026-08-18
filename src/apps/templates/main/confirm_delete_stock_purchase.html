@@ -33,7 +33,6 @@
             <div class="card-body">
               <p class="mb-4">Êtes-vous sûr de vouloir supprimer l'achat de stock suivant ? Cette action est irréversible et ajustera le solde du stock.</p>
               <ul class="list-group list-group-flush mb-4">
-                <li class="list-group-item"><strong>ID Achat:</strong> #{{ purchase.id }}</li>
                 <li class="list-group-item"><strong>Réseau:</strong> {{ purchase.network.value }}</li>
                 <li class="list-group-item"><strong>Montant Acheté:</strong> {{ "{:,.2f}".format(purchase.amount_purchased) }}</li>
                 <li class="list-group-item"><strong>Prix de Vente Unitaire:</strong> {{ "{:,.2f}".format(purchase.selling_price_at_purchase) }}</li>

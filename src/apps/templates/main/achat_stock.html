@@ -52,7 +52,6 @@
                         <table class="table align-items-center table-flush">
                             <thead class="thead-light">
                                 <tr>
-                                    <th scope="col" class="sort">ID</th>
                                     <th scope="col" class="sort">Reseaux</th>
                                     <th scope="col" class="sort">Nombre</th>
                                     <th scope="col" class="sort">Prix d'achat</th> 
@@ -64,7 +63,6 @@
                             <tbody class="list" id="stock-purchase-tbody">
                                 {% for purchase in stock_purchases %}
                                 <tr>
-                                    <td>{{ purchase.id }}</td>
                                     <td>{{ purchase.network.value|capitalize }}</td>
                                     <td>{{ purchase.amount_purchased }} unités</td>
                                     <td>{{ "%.2f FC"|format(purchase.buying_price_at_purchase) }}</td>
@@ -84,7 +82,7 @@
                                 </tr>
                                 {% else %}
                                 <tr>
-                                    <td colspan="7" class="text-center">Aucun achat de stock enregistré.</td>
+                                    <td colspan="6" class="text-center">Aucun achat de stock enregistré.</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>

@@ -1242,7 +1242,7 @@ def achat_stock():
 @login_required
 @vendeur_required
 def edit_stock_purchase(purchase_id):
-    purchase = StockPurchase.query.get_or_404(purchase_id)
+    purchase = db.get_or_404(StockPurchase, purchase_id)
     ensure_access(purchase.stock_item)
     active_business = get_current_business()
     form = StockPurchaseForm(obj=purchase)
@@ -1362,7 +1362,7 @@ def edit_stock_purchase(purchase_id):
 @login_required
 @vendeur_required
 def delete_stock_purchase(purchase_id):
-    purchase = StockPurchase.query.get_or_404(purchase_id)
+    purchase = db.get_or_404(StockPurchase, purchase_id)
     ensure_access(purchase.stock_item)
 
     if request.method == "POST":
@@ -1373,8 +1373,7 @@ def delete_stock_purchase(purchase_id):
                 deleted_by=current_user,
             )
             db.session.commit()
-            flash(
-                f"Achat de stock #{purchase_id} supprimé avec succès!", "success")
+            flash("Achat de stock supprimé avec succès!", "success")
             return redirect(url_for("main_bp.achat_stock"))
 
         except Exception as e:
