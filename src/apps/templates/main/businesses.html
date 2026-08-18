@@ -1,5 +1,5 @@
 {% extends "layouts/base.html" %}
-{% block title %}Mes entreprises{% endblock %}
+{% block title %}Modes{% endblock %}
 {% block content %}
 <div class="container-fluid mt-4">
   <div class="row">
@@ -8,7 +8,7 @@
       <div class="card shadow {% if current_business and current_business.id == business.id %}border-primary{% endif %}">
         <div class="card-body">
           <h3>{{ business.name }}</h3>
-          <p><span class="badge badge-info">{{ business.business_type.value | upper }}</span>
+          <p><span class="badge badge-info">Mode {% if business.business_type.value == 'wholesale' %}grossiste{% else %}détail{% endif %}</span>
              <span class="badge badge-secondary">{{ business.currency_code.value }}</span></p>
           {% if business.business_type.value == 'wholesale' and business.approval_status.value != 'approved' %}
           <div class="alert alert-{% if business.approval_status.value == 'pending' %}warning{% else %}danger{% endif %} py-2">
@@ -20,13 +20,13 @@
           </div>
           {% endif %}
           {% if current_business and current_business.id == business.id %}
-          <span class="text-success font-weight-bold">Entreprise active</span>
+          <span class="text-success font-weight-bold">Mode actif</span>
           {% elif business.approval_status.value != 'approved' %}
-          <button class="btn btn-secondary" type="button" disabled>Accès non approuvé</button>
+          <button class="btn btn-secondary" type="button" disabled>En attente</button>
           {% else %}
           <form method="post" action="{{ url_for('main_bp.switch_business', business_id=business.id) }}">
             {{ form.csrf_token }}
-            <button class="btn btn-primary" type="submit">Utiliser cette entreprise</button>
+            <button class="btn btn-primary" type="submit">Changer mode</button>
           </form>
           {% endif %}
         </div>
@@ -36,7 +36,7 @@
   </div>
   {% if current_user.is_vendeur and not has_wholesale %}
   <div class="card shadow">
-    <div class="card-header"><h3 class="mb-0">Ajouter une entreprise grossiste</h3></div>
+    <div class="card-header"><h3 class="mb-0">Ajouter le mode grossiste</h3></div>
     <div class="card-body">
       <form method="post" action="{{ url_for('main_bp.create_wholesale_business') }}">
         {{ form.hidden_tag() }}

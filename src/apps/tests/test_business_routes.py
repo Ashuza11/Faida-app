@@ -82,6 +82,13 @@ def test_owner_switches_between_retail_and_wholesale(app, session):
     client = app.test_client()
     login(client, owner)
 
+    modes_page = client.get("/businesses")
+    assert modes_page.status_code == 200
+    assert "Mode détail".encode() in modes_page.data
+    assert b"Mode grossiste" in modes_page.data
+    assert b"Changer mode" in modes_page.data
+    assert b"Mes entreprises" not in modes_page.data
+
     wholesale_response = client.post(f"/businesses/{wholesale.id}/switch")
     with client.session_transaction() as browser_session:
         assert browser_session["active_business_id"] == wholesale.id

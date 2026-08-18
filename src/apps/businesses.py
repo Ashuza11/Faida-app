@@ -46,7 +46,7 @@ def resolve_business_for_user(*, user: User, business_id=None):
         for business in businesses:
             if business.id == int(business_id):
                 return business
-        raise PermissionError("Vous n'avez pas accès à cette entreprise.")
+        raise PermissionError("Vous n'avez pas accès à ce mode.")
     if not businesses:
         return None
     retail = next(
@@ -81,7 +81,7 @@ def create_business(
     approval_status: BusinessApprovalStatus | None = None,
 ) -> Business:
     if owner.is_stockeur:
-        raise ValueError("Un stockeur ne peut pas posséder une entreprise.")
+        raise ValueError("Un stockeur ne peut pas posséder un mode.")
     if currency_code is None:
         currency_code = (
             CurrencyCode.USD if business_type == BusinessType.WHOLESALE
@@ -117,7 +117,7 @@ def approve_wholesale_business(*, business: Business, admin: User) -> None:
     if not admin.is_platform_admin:
         raise PermissionError("Seul un administrateur peut approuver un grossiste.")
     if business.business_type != BusinessType.WHOLESALE:
-        raise ValueError("Seules les entreprises grossistes nécessitent une approbation.")
+        raise ValueError("Seul le mode grossiste nécessite une approbation.")
     business.approval_status = BusinessApprovalStatus.APPROVED
     business.approved_by_user_id = admin.id
     business.approved_at = datetime.now(timezone.utc)
@@ -125,11 +125,11 @@ def approve_wholesale_business(*, business: Business, admin: User) -> None:
 
 def add_stockeur(*, business: Business, stockeur: User) -> BusinessMembership:
     if not business.allows_stockeurs:
-        raise ValueError("Une entreprise grossiste ne peut pas avoir de stockeurs.")
+        raise ValueError("Le mode grossiste ne peut pas avoir de stockeurs.")
     if stockeur.role != RoleType.STOCKEUR:
         raise ValueError("Le membre doit avoir le rôle stockeur.")
     if any(m.user_id == stockeur.id or m.user is stockeur for m in business.memberships):
-        raise ValueError("Ce stockeur appartient déjà à cette entreprise.")
+        raise ValueError("Ce stockeur est déjà associé à ce mode.")
 
     membership = BusinessMembership(
         business=business, user=stockeur, role=MembershipRole.STOCKEUR

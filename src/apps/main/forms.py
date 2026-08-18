@@ -92,7 +92,7 @@ class StockeurForm(FlaskForm):
         }
     )
 
-    submit = SubmitField("Créer stockeur")
+    submit = SubmitField("Ajouter")
 
     def validate_phone(self, field):
         """Validate phone is a valid DRC number."""
@@ -162,7 +162,7 @@ class ClientForm(FlaskForm):
     address = StringField(
         "Adresse (Optionnel)", validators=[Optional(), Length(max=255)]
     )
-    submit = SubmitField("Ajouter Client")
+    submit = SubmitField("Ajouter")
 
 
 # Form for editing an existing Client (KEEP gps_lat/long here for manual editing if needed)
@@ -296,7 +296,7 @@ class StockPurchaseForm(FlaskForm):
     )
 
     submit = SubmitField(
-        "Enregistrer l'achat",
+        "Acheter",
         render_kw={"class": "btn btn-primary mt-3"},
     )
 
@@ -388,7 +388,7 @@ class SaleForm(FlaskForm):
         ],
         render_kw={"step": "0.01"},
     )
-    submit = SubmitField("Enregistre Vente")
+    submit = SubmitField("Vendre")
 
     def validate(self, extra_validators=None):
         # Custom validation for client fields
@@ -589,16 +589,16 @@ class StockOpeningBalanceForm(FlaskForm):
         validators=[Optional(), NumberRange(min=0)],
         render_kw={"placeholder": "0"},
     )
-    submit = SubmitField("Enregistrer Stock Initial")
+    submit = SubmitField("Enregistrer")
 
 
 class WholesaleBusinessForm(FlaskForm):
     name = StringField(
-        "Nom de l'entreprise grossiste",
+        "Nom du commerce grossiste",
         validators=[DataRequired(), Length(min=2, max=128)],
         render_kw={"placeholder": "Ex: Faida Distribution"},
     )
-    submit = SubmitField("Créer l'entreprise grossiste")
+    submit = SubmitField("Demander accès")
 
 
 class WholesalePurchaseForm(FlaskForm):
@@ -627,7 +627,7 @@ class WholesalePurchaseForm(FlaskForm):
         places=12,
         render_kw={"placeholder": "Ex: 0.00935", "step": "0.000000000001"},
     )
-    submit = SubmitField("Enregistrer l'achat")
+    submit = SubmitField("Acheter")
 
 
 class WholesaleSaleForm(FlaskForm):
@@ -665,7 +665,7 @@ class WholesaleSaleForm(FlaskForm):
         default=Decimal("0.00"),
         render_kw={"placeholder": "0.00", "step": "0.01"},
     )
-    submit = SubmitField("Enregistrer la vente")
+    submit = SubmitField("Vendre")
 
 
 class WholesaleDebtPaymentForm(FlaskForm):
@@ -684,7 +684,7 @@ class WholesaleDebtPaymentForm(FlaskForm):
         "Note (facultative)",
         validators=[Optional(), Length(max=255)],
     )
-    submit = SubmitField("Enregistrer le paiement")
+    submit = SubmitField("Payer")
 
 
 class TransactionReversalForm(FlaskForm):
@@ -693,9 +693,9 @@ class TransactionReversalForm(FlaskForm):
         validators=[DataRequired(), Length(min=3, max=255)],
         render_kw={"placeholder": "Ex: quantité saisie incorrectement"},
     )
-    submit = SubmitField("Confirmer l'annulation")
+    submit = SubmitField("Confirmer")
 
 
 # Form for confirming deletion of a sale
 class DeleteConfirmForm(FlaskForm):
-    submit = SubmitField("Oui, Supprimer", validators=[DataRequired()])
+    submit = SubmitField("Supprimer", validators=[DataRequired()])

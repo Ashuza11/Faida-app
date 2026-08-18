@@ -201,7 +201,7 @@ def test_pending_wholesale_cannot_record_purchase(session):
     )
     session.flush()
 
-    with pytest.raises(PermissionError, match="pas encore approuvée"):
+    with pytest.raises(PermissionError, match="pas encore approuvé"):
         record_wholesale_purchase(
             business=business,
             purchased_by=owner,

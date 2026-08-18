@@ -37,7 +37,7 @@ def record_wholesale_purchase(
     if business.business_type != BusinessType.WHOLESALE:
         raise ValueError("Cette opération est réservée au registre grossiste.")
     if business.approval_status != BusinessApprovalStatus.APPROVED:
-        raise PermissionError("L'entreprise grossiste n'est pas encore approuvée.")
+        raise PermissionError("Le mode grossiste n'est pas encore approuvé.")
     if business.owner_user_id != purchased_by.id:
         raise PermissionError("Seul le propriétaire peut enregistrer cet achat.")
 
@@ -199,7 +199,7 @@ def replace_retail_purchase(
     """Atomically reverse a retail purchase and apply its replacement."""
     _validate_retail_owner(business=business, user=updated_by)
     if purchase.stock_item.business_id != business.id:
-        raise PermissionError("Cet achat appartient à une autre entreprise.")
+        raise PermissionError("Cet achat appartient à un autre mode.")
 
     old_stock = purchase.stock_item
     reverse_purchase(
@@ -236,7 +236,7 @@ def delete_retail_purchase(
     """Reverse and remove a retail purchase from its owning ledger."""
     _validate_retail_owner(business=business, user=deleted_by)
     if purchase.stock_item.business_id != business.id:
-        raise PermissionError("Cet achat appartient à une autre entreprise.")
+        raise PermissionError("Cet achat appartient à un autre mode.")
     reverse_purchase(
         stock=purchase.stock_item,
         quantity=purchase.amount_purchased,
@@ -254,7 +254,7 @@ def reverse_wholesale_purchase(
     if business.owner_user_id != reversed_by.id:
         raise PermissionError("Seul le propriétaire peut annuler cet achat.")
     if purchase.stock_item.business_id != business.id:
-        raise PermissionError("Cet achat appartient à une autre entreprise.")
+        raise PermissionError("Cet achat appartient à un autre mode.")
     if purchase.status != TransactionStatus.ACTIVE:
         raise ValueError("Cet achat est déjà annulé.")
     reason = (reason or "").strip()

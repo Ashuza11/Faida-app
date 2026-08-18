@@ -223,7 +223,7 @@
                                                 </a>
                                                 <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
                                                     <a class="dropdown-item" href="{{ url_for('main_bp.view_sale_details', sale_id=sale.id) }}">Détails</a>
-                                                    {% if sale.status.value == 'active' %}<a class="dropdown-item text-danger" href="{{ url_for('main_bp.delete_sale', sale_id=sale.id) }}">Annuler et corriger</a>{% endif %}
+                                                    {% if sale.status.value == 'active' %}<a class="dropdown-item text-danger" href="{{ url_for('main_bp.delete_sale', sale_id=sale.id) }}">Corriger</a>{% endif %}
                                                 </div>
                                             </div>
                                         </td>

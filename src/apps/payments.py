@@ -138,12 +138,12 @@ def collect_client_debt(
 ) -> Decimal:
     """Collect a registered client's debt within exactly one business."""
     if client.business_id != business.id:
-        raise PermissionError("Ce client appartient à une autre entreprise.")
+        raise PermissionError("Ce client appartient à un autre mode.")
     if not any(
         membership.user_id == recorded_by.id and membership.is_active
         for membership in business.memberships
     ):
-        raise PermissionError("Vous n'avez pas accès à cette entreprise.")
+        raise PermissionError("Vous n'avez pas accès à ce mode.")
 
     amount = Decimal(amount)
     if amount <= 0:
@@ -255,7 +255,7 @@ def reverse_payment_event(
 ) -> None:
     """Reverse one receipt and every debt allocation it produced."""
     if payment_event.business_id != business.id:
-        raise PermissionError("Ce paiement appartient à une autre entreprise.")
+        raise PermissionError("Ce paiement appartient à un autre mode.")
     if business.owner_user_id != reversed_by.id:
         raise PermissionError("Seul le propriétaire peut annuler ce paiement.")
     if payment_event.status != TransactionStatus.ACTIVE:
@@ -282,7 +282,7 @@ def reverse_payment_event(
     for allocation in allocations:
         sale = sales.get(allocation.sale_id)
         if sale is None or sale.business_id != business.id:
-            raise PermissionError("Une allocation appartient à une autre entreprise.")
+            raise PermissionError("Une allocation appartient à un autre mode.")
         if sale.status != TransactionStatus.ACTIVE:
             raise ValueError(
                 "Une vente liée est annulée; ce paiement ne peut pas être modifié."

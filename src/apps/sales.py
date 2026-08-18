@@ -39,11 +39,11 @@ def record_wholesale_sale(
     if business.business_type != BusinessType.WHOLESALE:
         raise ValueError("Cette opération est réservée au registre grossiste.")
     if business.approval_status != BusinessApprovalStatus.APPROVED:
-        raise PermissionError("L'entreprise grossiste n'est pas encore approuvée.")
+        raise PermissionError("Le mode grossiste n'est pas encore approuvé.")
     if business.owner_user_id != sold_by.id:
         raise PermissionError("Seul le propriétaire peut enregistrer cette vente.")
     if client.business_id != business.id:
-        raise ValueError("Le client sélectionné appartient à une autre entreprise.")
+        raise ValueError("Le client sélectionné appartient à un autre mode.")
 
     quantity = as_decimal(quantity)
     if quantity <= 0 or quantity != quantity.to_integral_value():
@@ -122,9 +122,9 @@ def reverse_unpaid_sale(
         for membership in business.memberships
     )
     if not has_membership:
-        raise PermissionError("Vous n'avez pas accès à cette entreprise.")
+        raise PermissionError("Vous n'avez pas accès à ce mode.")
     if sale.business_id != business.id:
-        raise PermissionError("Cette vente appartient à une autre entreprise.")
+        raise PermissionError("Cette vente appartient à un autre mode.")
     if sale.status != TransactionStatus.ACTIVE:
         raise ValueError("Cette vente est déjà annulée.")
     has_legacy_payment = any(

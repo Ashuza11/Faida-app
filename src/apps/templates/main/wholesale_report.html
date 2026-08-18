@@ -4,7 +4,7 @@
 <div class="container-fluid mt-4">
   <div class="d-flex justify-content-between align-items-center mb-4">
     <div><h1>Rapport journalier · {{ business.name }}</h1><span class="badge badge-secondary">USD</span></div>
-    <div><a class="btn btn-success" href="{{ url_for('pdf_bp.download_wholesale_report_pdf', date=report.date.isoformat()) }}">Exporter PDF</a> <a class="btn btn-outline-primary" href="{{ url_for('main_bp.wholesale_dashboard') }}">Tableau de bord</a></div>
+    <div><a class="btn btn-success" href="{{ url_for('pdf_bp.download_wholesale_report_pdf', date=report.date.isoformat()) }}">PDF</a> <a class="btn btn-outline-primary" href="{{ url_for('main_bp.wholesale_dashboard') }}">Accueil</a></div>
   </div>
   <form method="get" class="form-inline mb-4"><label class="mr-2" for="reportDate">Date</label><input id="reportDate" class="form-control mr-2" type="date" name="date" value="{{ report.date.isoformat() }}"><button class="btn btn-primary" type="submit">Afficher</button></form>
   <div class="row">

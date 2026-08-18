@@ -5,11 +5,11 @@
   <div class="d-flex justify-content-between align-items-center mb-4">
     <div><h1>{{ business.name }}</h1><span class="badge badge-info">GROSSISTE</span> <span class="badge badge-secondary">USD</span></div>
     <div>
-      <a class="btn btn-success" href="{{ url_for('main_bp.wholesale_sales') }}">Enregistrer une vente</a>
-      <a class="btn btn-primary" href="{{ url_for('main_bp.wholesale_purchases') }}">Enregistrer un achat</a>
-      <a class="btn btn-info" href="{{ url_for('main_bp.wholesale_clients') }}">Détaillants et dettes</a>
-      <a class="btn btn-warning" href="{{ url_for('main_bp.wholesale_report') }}">Rapport journalier</a>
-      <a class="btn btn-outline-primary" href="{{ url_for('main_bp.businesses') }}">Changer d'entreprise</a>
+      <a class="btn btn-success" href="{{ url_for('main_bp.wholesale_sales') }}">Vendre</a>
+      <a class="btn btn-primary" href="{{ url_for('main_bp.wholesale_purchases') }}">Acheter</a>
+      <a class="btn btn-info" href="{{ url_for('main_bp.wholesale_clients') }}">Dettes</a>
+      <a class="btn btn-warning" href="{{ url_for('main_bp.wholesale_report') }}">Rapport</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('main_bp.businesses') }}">Changer mode</a>
     </div>
   </div>
   <div class="row">
@@ -21,6 +21,6 @@
     </div></div></div>
     {% endfor %}
   </div>
-  <div class="alert alert-info">Le registre grossiste USD est isolé du commerce de détail en FC.</div>
+  <div class="alert alert-info">Le mode grossiste en USD est séparé du mode détail en FC.</div>
 </div>
 {% endblock %}

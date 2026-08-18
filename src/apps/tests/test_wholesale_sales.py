@@ -205,7 +205,7 @@ def test_payment_reversal_rejects_another_business(session):
     event = PaymentEvent.query.filter_by(source_sale_id=sale.id).one()
     other_owner, other_business, _, _ = setup_wholesale(session, suffix=25)
 
-    with pytest.raises(PermissionError, match="autre entreprise"):
+    with pytest.raises(PermissionError, match="autre mode"):
         reverse_payment_event(
             payment_event=event,
             business=other_business,
@@ -317,7 +317,7 @@ def test_wholesale_sale_rejects_another_business_client(session):
     owner, business, _, preset = setup_wholesale(session, suffix=3)
     other_owner, other_business, other_client, _ = setup_wholesale(session, suffix=4)
 
-    with pytest.raises(ValueError, match="autre entreprise"):
+    with pytest.raises(ValueError, match="autre mode"):
         record_wholesale_sale(
             business=business,
             sold_by=owner,
@@ -440,7 +440,7 @@ def test_debt_collection_rejects_excess_and_cross_business_client(session):
             recorded_by=owner,
             payment_date=date.today(),
         )
-    with pytest.raises(PermissionError, match="autre entreprise"):
+    with pytest.raises(PermissionError, match="autre mode"):
         collect_client_debt(
             business=business,
             client=other_client,

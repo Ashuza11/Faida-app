@@ -114,13 +114,13 @@
 
 <div class="container-fluid mt--6">
   <div class="card">
-    <div class="card-header"><h5 class="h3 mb-0">Entreprises</h5></div>
+    <div class="card-header"><h5 class="h3 mb-0">Modes</h5></div>
     <div class="card-body">
       {% for business in businesses %}
       <div class="d-flex justify-content-between align-items-center border-bottom py-3">
         <div>
           <strong>{{ business.name }}</strong>
-          <span class="badge badge-info">{{ business.business_type.value | upper }}</span>
+          <span class="badge badge-info">Mode {% if business.business_type.value == 'wholesale' %}grossiste{% else %}détail{% endif %}</span>
           <span class="badge badge-secondary">{{ business.currency_code.value }}</span>
           {% if business.approval_status.value == 'approved' %}
           <span class="badge badge-success">Approuvée</span>
@@ -132,12 +132,12 @@
         </div>
         {% if business.business_type.value == 'wholesale' and business.approval_status.value != 'approved' %}
         <form method="post" action="{{ url_for('admin_bp.approve_wholesale', business_id=business.id) }}">
-          <button class="btn btn-sm btn-success" type="submit">Approuver grossiste</button>
+          <button class="btn btn-sm btn-success" type="submit">Approuver</button>
         </form>
         {% endif %}
       </div>
       {% else %}
-      <span class="text-muted">Aucune entreprise enregistrée.</span>
+      <span class="text-muted">Aucun mode enregistré.</span>
       {% endfor %}
     </div>
   </div>

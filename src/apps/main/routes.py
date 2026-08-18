@@ -186,7 +186,7 @@ def create_wholesale_business():
         business.business_type == BusinessType.WHOLESALE
         for business in businesses_for_user(current_user)
     ):
-        flash("Vous possédez déjà une entreprise grossiste.", "warning")
+        flash("Le mode grossiste est déjà ajouté à votre compte.", "warning")
         return redirect(url_for("main_bp.businesses"))
 
     business = create_business(

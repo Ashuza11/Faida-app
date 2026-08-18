@@ -35,7 +35,7 @@ def vendeur_required(f):
     @login_required
     def decorated_function(*args, **kwargs):
         if not (current_user.is_vendeur or current_user.is_platform_admin):
-            flash("Accès réservé aux propriétaires d'entreprise.", "warning")
+            flash("Accès réservé aux propriétaires du commerce.", "warning")
             return redirect(url_for("main_bp.index"))
         return f(*args, **kwargs)
     return decorated_function
@@ -62,7 +62,7 @@ def business_member_required(f):
         # Stockeurs must belong to a vendeur
         if current_user.is_stockeur:
             if current_user.vendeur_id is None:
-                flash("Votre compte n'est pas associé à une entreprise.", "danger")
+                flash("Votre compte n'est associé à aucun mode.", "danger")
                 return redirect(url_for("main_bp.index"))
             return f(*args, **kwargs)
 

@@ -83,7 +83,7 @@ class VendeurRegistrationForm(FlaskForm):
     )
 
     username = StringField(
-        "Nom de votre entreprise",
+        "Nom de votre commerce",
         validators=[
             DataRequired(message="Le nom est requis"),
             Length(min=2, max=64,
@@ -144,7 +144,7 @@ class VendeurRegistrationForm(FlaskForm):
         }
     )
 
-    submit = SubmitField("Créer mon compte")
+    submit = SubmitField("Créer compte")
 
     def validate_invite_code(self, field):
         """Check if invite code exists and is valid."""
@@ -178,7 +178,7 @@ class VendeurRegistrationForm(FlaskForm):
         """Check if username is unique."""
         existing = User.query.filter_by(username=field.data.strip()).first()
         if existing:
-            raise ValidationError("Ce nom d'entreprise est déjà utilisé")
+            raise ValidationError("Ce nom de commerce est déjà utilisé")
 
     def validate_email(self, field):
         """Check if email is unique (if provided)."""

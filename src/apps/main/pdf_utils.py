@@ -103,7 +103,7 @@ def generate_daily_report_pdf(
     report_data: dict,
     grand_totals: dict,
     selected_date: str,
-    business_name: str = "Mon Entreprise",
+    business_name: str = "Mon commerce",
     networks: list = None,
     # Financial sections (new)
     cash_summary: dict = None,

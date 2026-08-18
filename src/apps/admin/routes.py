@@ -251,13 +251,13 @@ def approve_wholesale(business_id):
     """Approve a pending wholesale request for operational access."""
     business = db.get_or_404(Business, business_id)
     if business.business_type != BusinessType.WHOLESALE:
-        flash("Cette entreprise n'est pas grossiste.", "warning")
+        flash("Ce mode n'est pas grossiste.", "warning")
     elif business.approval_status == BusinessApprovalStatus.APPROVED:
-        flash("Cette entreprise grossiste est déjà approuvée.", "info")
+        flash("Ce mode grossiste est déjà approuvé.", "info")
     else:
         approve_wholesale_business(business=business, admin=current_user)
         db.session.commit()
-        flash(f"L'entreprise {business.name} est maintenant approuvée.", "success")
+        flash(f"Le mode grossiste {business.name} est maintenant approuvé.", "success")
     return redirect(
         url_for('admin_bp.vendeur_detail', vendeur_id=business.owner_user_id)
     )
