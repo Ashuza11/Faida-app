@@ -42,10 +42,16 @@ def upgrade():
         batch_op.add_column(sa.Column(
             "allocation_kind", allocation_kind, nullable=True
         ))
+    allocation_case = (
+        "CASE WHEN description = 'Paiement de la vente' "
+        "THEN 'CURRENT_SALE' ELSE 'PRIOR_DEBT' END"
+    )
+    if op.get_bind().dialect.name == "postgresql":
+        allocation_case = f"({allocation_case})::paymentallocationkind"
     op.execute(
-        "UPDATE cash_inflows SET allocation_kind = CASE "
-        "WHEN description = 'Paiement de la vente' THEN 'CURRENT_SALE' "
-        "ELSE 'PRIOR_DEBT' END WHERE sale_id IS NOT NULL"
+        "UPDATE cash_inflows "
+        f"SET allocation_kind = {allocation_case} "
+        "WHERE sale_id IS NOT NULL"
     )
     op.execute(
         "UPDATE sales SET initial_cash_paid = COALESCE(("

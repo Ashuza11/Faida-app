@@ -24,6 +24,13 @@ def test_migration_sql_does_not_assign_integer_literals_to_booleans():
     assert violations == []
 
 
+def test_postgresql_enum_case_backfill_has_an_explicit_cast():
+    migration = MIGRATIONS / "b3a8cf947120_add_report_transaction_facts.py"
+    source = migration.read_text()
+
+    assert "::paymentallocationkind" in source
+
+
 def test_legacy_to_head_postgresql_sql_reuses_base_enum_types():
     environment = {
         **os.environ,
@@ -50,3 +57,4 @@ def test_legacy_to_head_postgresql_sql_reuses_base_enum_types():
 
     assert result.returncode == 0, result.stderr
     assert "CREATE TYPE networktype" not in result.stdout
+    assert ")::paymentallocationkind" in result.stdout
