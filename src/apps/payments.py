@@ -181,3 +181,61 @@ def collect_client_debt(
     if remaining != 0:
         raise RuntimeError("Le paiement n'a pas été entièrement alloué.")
     return amount
+
+
+def reverse_payment_event(
+    *, payment_event: PaymentEvent, business: Business, reversed_by, reason: str
+) -> None:
+    """Reverse one receipt and every debt allocation it produced."""
+    if payment_event.business_id != business.id:
+        raise PermissionError("Ce paiement appartient à une autre entreprise.")
+    if business.owner_user_id != reversed_by.id:
+        raise PermissionError("Seul le propriétaire peut annuler ce paiement.")
+    if payment_event.status != TransactionStatus.ACTIVE:
+        raise ValueError("Ce paiement est déjà annulé.")
+    reason = (reason or "").strip()
+    if len(reason) < 3:
+        raise ValueError("Indiquez la raison de l'annulation.")
+
+    allocations = [
+        allocation
+        for allocation in payment_event.allocations
+        if allocation.status == TransactionStatus.ACTIVE
+    ]
+    if not allocations:
+        raise ValueError("Ce paiement ne contient aucune allocation annulable.")
+
+    if any(allocation.sale_id is None for allocation in allocations):
+        raise RuntimeError("Une allocation de paiement n'est liée à aucune vente.")
+    sale_ids = {allocation.sale_id for allocation in allocations}
+    sales = {
+        sale.id: sale
+        for sale in Sale.query.filter(Sale.id.in_(sale_ids)).with_for_update().all()
+    }
+    for allocation in allocations:
+        sale = sales.get(allocation.sale_id)
+        if sale is None or sale.business_id != business.id:
+            raise PermissionError("Une allocation appartient à une autre entreprise.")
+        if sale.status != TransactionStatus.ACTIVE:
+            raise ValueError(
+                "Une vente liée est annulée; ce paiement ne peut pas être modifié."
+            )
+        if sale.cash_paid < allocation.amount:
+            raise RuntimeError("Le solde payé de la vente est incohérent.")
+        if allocation.allocation_kind == PaymentAllocationKind.CURRENT_SALE:
+            if sale.initial_cash_paid < allocation.amount:
+                raise RuntimeError("Le paiement initial de la vente est incohérent.")
+
+    for allocation in allocations:
+        sale = sales[allocation.sale_id]
+        sale.cash_paid -= allocation.amount
+        sale.debt_amount += allocation.amount
+        if allocation.allocation_kind == PaymentAllocationKind.CURRENT_SALE:
+            sale.initial_cash_paid -= allocation.amount
+        sale.updated_at = datetime.now(timezone.utc)
+        allocation.status = TransactionStatus.REVERSED
+
+    payment_event.status = TransactionStatus.REVERSED
+    payment_event.reversed_at = datetime.now(timezone.utc)
+    payment_event.reversed_by_id = reversed_by.id
+    payment_event.reversal_reason = reason

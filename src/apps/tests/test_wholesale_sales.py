@@ -19,7 +19,7 @@ from apps.models import (
     User,
 )
 from apps.purchases import record_wholesale_purchase
-from apps.payments import collect_client_debt
+from apps.payments import collect_client_debt, reverse_payment_event
 from apps.sales import record_wholesale_sale, reverse_unpaid_wholesale_sale
 from apps.wholesale_reports import build_wholesale_daily_report
 
@@ -128,6 +128,125 @@ def test_wholesale_cash_pays_old_debt_before_current_sale(session):
         first.id,
         second.id,
     }
+
+
+def test_payment_reversal_restores_every_allocated_debt_and_reports(session):
+    owner, business, client, _ = setup_wholesale(session, suffix=23)
+    first = record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=500,
+        cash_received=0,
+        sale_date=date.today(),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    second = record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=500,
+        cash_received=Decimal("7.00"),
+        sale_date=date.today(),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    session.flush()
+    event = PaymentEvent.query.one()
+
+    reverse_payment_event(
+        payment_event=event,
+        business=business,
+        reversed_by=owner,
+        reason="Montant incorrect",
+    )
+    session.flush()
+
+    assert event.status == TransactionStatus.REVERSED
+    assert event.reversal_reason == "Montant incorrect"
+    assert {allocation.status for allocation in event.allocations} == {
+        TransactionStatus.REVERSED
+    }
+    assert first.cash_paid == 0
+    assert first.debt_amount == Decimal("5.00")
+    assert second.cash_paid == 0
+    assert second.initial_cash_paid == 0
+    assert second.debt_amount == Decimal("5.00")
+    report = build_wholesale_daily_report(
+        business=business, target_date=date.today()
+    )
+    assert report["totals"]["cash_collected"] == 0
+    assert report["totals"]["old_debt_collected"] == 0
+    assert report["totals"]["remaining_debt"] == Decimal("10.00")
+
+    reverse_unpaid_wholesale_sale(
+        sale=second,
+        business=business,
+        reversed_by=owner,
+        reason="Quantité incorrecte",
+    )
+    assert second.status == TransactionStatus.REVERSED
+
+
+def test_payment_reversal_rejects_another_business(session):
+    owner, business, client, _ = setup_wholesale(session, suffix=24)
+    sale = record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=500,
+        cash_received=Decimal("1.00"),
+        sale_date=date.today(),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    session.flush()
+    event = PaymentEvent.query.filter_by(source_sale_id=sale.id).one()
+    other_owner, other_business, _, _ = setup_wholesale(session, suffix=25)
+
+    with pytest.raises(PermissionError, match="autre entreprise"):
+        reverse_payment_event(
+            payment_event=event,
+            business=other_business,
+            reversed_by=other_owner,
+            reason="Montant incorrect",
+        )
+
+    assert event.status == TransactionStatus.ACTIVE
+
+
+def test_owner_can_reverse_payment_from_client_page(app, session):
+    owner, business, client_record, _ = setup_wholesale(session, suffix=26)
+    sale = record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client_record,
+        network=NetworkType.AIRTEL,
+        quantity=500,
+        cash_received=Decimal("1.00"),
+        sale_date=date.today(),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    session.commit()
+    event = PaymentEvent.query.filter_by(source_sale_id=sale.id).one()
+    client = app.test_client()
+    with client.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    response = client.post(
+        f"/businesses/wholesale/payments/{event.id}/reverse",
+        data={"reason": "Montant incorrect"},
+    )
+
+    assert response.status_code == 302
+    session.refresh(event)
+    session.refresh(sale)
+    assert event.status == TransactionStatus.REVERSED
+    assert sale.cash_paid == 0
+    assert sale.debt_amount == Decimal("5.00")
 
 
 def test_unpaid_wholesale_sale_reversal_restores_exact_inventory(session):

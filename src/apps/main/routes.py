@@ -29,7 +29,11 @@ from apps.main.utils import (
     get_sales_history_query,
     update_daily_reports,
 )
-from apps.payments import apply_payment_to_sale, collect_client_debt
+from apps.payments import (
+    apply_payment_to_sale,
+    collect_client_debt,
+    reverse_payment_event,
+)
 from apps.inventory import consume_stock, restore_sale_cost
 
 from apps.decorators import (
@@ -67,6 +71,7 @@ from apps.models import (
     CurrencyCode,
     PriceOperation,
     PricePreset,
+    PaymentEvent,
     TransactionStatus,
 )
 
@@ -121,6 +126,7 @@ _WHOLESALE_SAFE_ENDPOINTS = {
     "main_bp.reverse_wholesale_sale_route",
     "main_bp.wholesale_clients",
     "main_bp.wholesale_client_detail",
+    "main_bp.reverse_wholesale_payment_route",
     "main_bp.wholesale_report",
     "main_bp.profile",
     "main_bp.health",
@@ -459,6 +465,7 @@ def wholesale_sales():
         business_id=business.id,
         payment_date=today,
         category=CashInflowCategory.SALE_COLLECTION,
+        status=TransactionStatus.ACTIVE,
     ).all()
     for inflow in inflows:
         if inflow.sale and inflow.sale.total_amount_due:
@@ -599,13 +606,8 @@ def wholesale_client_detail(client_id):
         .all()
     )
     payments = (
-        CashInflow.query.join(Sale)
-        .filter(
-            CashInflow.business_id == business.id,
-            Sale.client_id == client.id,
-            CashInflow.category == CashInflowCategory.SALE_COLLECTION,
-        )
-        .order_by(CashInflow.payment_date.desc(), CashInflow.created_at.desc())
+        PaymentEvent.query.filter_by(business_id=business.id, client_id=client.id)
+        .order_by(PaymentEvent.payment_date.desc(), PaymentEvent.created_at.desc())
         .all()
     )
     active_sales = [sale for sale in sales if sale.status == TransactionStatus.ACTIVE]
@@ -617,12 +619,48 @@ def wholesale_client_detail(client_id):
         business=business,
         client=client,
         form=form,
+        reversal_form=TransactionReversalForm(),
         sales=sales,
         payments=payments,
         total_purchased=total_purchased,
         total_paid=total_paid,
         total_debt=total_debt,
         segment="businesses",
+    )
+
+
+@bp.route(
+    "/businesses/wholesale/payments/<int:payment_event_id>/reverse",
+    methods=["POST"],
+)
+@login_required
+@vendeur_required
+def reverse_wholesale_payment_route(payment_event_id):
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    payment_event = db.get_or_404(PaymentEvent, payment_event_id)
+    client_id = payment_event.client_id
+    form = TransactionReversalForm()
+    if not form.validate_on_submit():
+        flash("Indiquez une raison valide pour l'annulation.", "danger")
+        return redirect(
+            url_for("main_bp.wholesale_client_detail", client_id=client_id)
+        )
+    try:
+        reverse_payment_event(
+            payment_event=payment_event,
+            business=business,
+            reversed_by=current_user,
+            reason=form.reason.data,
+        )
+        db.session.commit()
+        flash("Paiement annulé et dettes restaurées.", "success")
+    except (ValueError, PermissionError, RuntimeError) as error:
+        db.session.rollback()
+        flash(str(error), "danger")
+    return redirect(
+        url_for("main_bp.wholesale_client_detail", client_id=client_id)
     )
 
 

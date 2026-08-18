@@ -1160,6 +1160,18 @@ class PaymentEvent(db.Model):
     amount: so.Mapped[Decimal] = so.mapped_column(sa.Numeric(12, 2), nullable=False)
     payment_date: so.Mapped[date] = so.mapped_column(sa.Date, nullable=False, index=True)
     description: so.Mapped[Optional[str]] = so.mapped_column(sa.String(255))
+    status: so.Mapped[TransactionStatus] = so.mapped_column(
+        sa.Enum(TransactionStatus), nullable=False, default=TransactionStatus.ACTIVE
+    )
+    reversed_at: so.Mapped[Optional[datetime]] = so.mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    reversed_by_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=True
+    )
+    reversal_reason: so.Mapped[Optional[str]] = so.mapped_column(
+        sa.String(255), nullable=True
+    )
     created_at: so.Mapped[datetime] = so.mapped_column(
         sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -1212,6 +1224,9 @@ class CashInflow(db.Model):
     )
     allocation_kind: so.Mapped[Optional[PaymentAllocationKind]] = so.mapped_column(
         sa.Enum(PaymentAllocationKind), nullable=True
+    )
+    status: so.Mapped[TransactionStatus] = so.mapped_column(
+        sa.Enum(TransactionStatus), nullable=False, default=TransactionStatus.ACTIVE
     )
     description: so.Mapped[Optional[str]] = so.mapped_column(
         sa.String(255), nullable=True

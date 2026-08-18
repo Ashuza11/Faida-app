@@ -130,6 +130,7 @@ def build_wholesale_daily_report(
         business_id=business.id,
         payment_date=target_date,
         category=CashInflowCategory.SALE_COLLECTION,
+        status=TransactionStatus.ACTIVE,
     ).all()
     cash_collected = sum((_decimal(inflow.amount) for inflow in inflows), ZERO)
     old_debt_collected = sum(
@@ -182,6 +183,7 @@ def build_wholesale_daily_report(
             CashInflow.business_id == business.id,
             CashInflow.payment_date <= target_date,
             CashInflow.allocation_kind == PaymentAllocationKind.PRIOR_DEBT,
+            CashInflow.status == TransactionStatus.ACTIVE,
         )
         .scalar()
         or ZERO

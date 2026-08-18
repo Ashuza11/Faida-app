@@ -125,7 +125,10 @@ def reverse_unpaid_wholesale_sale(
         raise PermissionError("Cette vente appartient à une autre entreprise.")
     if sale.status != TransactionStatus.ACTIVE:
         raise ValueError("Cette vente est déjà annulée.")
-    if sale.cash_inflows or sale.cash_paid > 0:
+    has_active_payment = any(
+        inflow.status == TransactionStatus.ACTIVE for inflow in sale.cash_inflows
+    )
+    if has_active_payment or sale.cash_paid > 0:
         raise ValueError(
             "Cette vente a déjà reçu un paiement; annulez d'abord le paiement."
         )
