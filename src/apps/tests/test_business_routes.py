@@ -100,6 +100,37 @@ def test_owner_switches_between_retail_and_wholesale(app, session):
     assert retail_response.headers["Location"].endswith("/index")
 
 
+def test_wholesale_dashboard_uses_sidebar_actions_and_compact_header(app, session):
+    owner = make_user(session, suffix=21)
+    wholesale = create_business(
+        owner=owner,
+        name="Ets Albin",
+        business_type=BusinessType.WHOLESALE,
+        approval_status=BusinessApprovalStatus.APPROVED,
+    )
+    session.commit()
+    client = app.test_client()
+    login(client, owner)
+    with client.session_transaction() as browser_session:
+        browser_session["active_business_id"] = wholesale.id
+
+    response = client.get("/businesses/wholesale")
+    page = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Ets Albin" in page
+    assert "Grossiste" in page
+    assert "USD" in page
+    assert 'id="navbar-wholesale"' in page
+    for label in ("Vendre", "Acheter", "Dettes", "Rapport", "Changer mode"):
+        assert label in page
+    # Only the mode switch remains in the page header; operations live in the sidebar.
+    content = page.rsplit('<div class="container-fluid mt-4">', 1)[1]
+    header = content.split('<div class="row">', 1)[0]
+    assert "Vendre" not in header
+    assert "Acheter" not in header
+
+
 def test_profile_rename_syncs_retail_mode_but_preserves_wholesale_name(app, session):
     owner = make_user(session, suffix=20)
     owner.email = "owner20@example.com"

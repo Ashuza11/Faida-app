@@ -69,6 +69,35 @@
           <!-- ========================================== -->
           {% if current_user.is_vendeur or current_user.is_stockeur %}
 
+          {% if segment == 'wholesale' %}
+          <li class="nav-item">
+            <a class="nav-link {% if sub_segment == 'dashboard' %}active{% endif %}" href="{{ url_for('main_bp.wholesale_dashboard') }}">
+              <i class="fas fa-home text-primary"></i>
+              <span class="nav-link-text">Accueil</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="#navbar-wholesale" data-toggle="collapse" role="button" aria-expanded="true" data-target="#navbar-wholesale">
+              <i class="fas fa-store text-primary"></i>
+              <span class="nav-link-text">Grossiste</span>
+            </a>
+            <div class="collapse show" id="navbar-wholesale">
+              <ul class="nav nav-sm flex-column">
+                <li class="nav-item"><a class="nav-link {% if sub_segment == 'sales' %}active{% endif %}" href="{{ url_for('main_bp.wholesale_sales') }}"><i class="fas fa-shopping-cart"></i><span class="nav-link-text">Vendre</span></a></li>
+                <li class="nav-item"><a class="nav-link {% if sub_segment == 'purchases' %}active{% endif %}" href="{{ url_for('main_bp.wholesale_purchases') }}"><i class="fas fa-cart-plus"></i><span class="nav-link-text">Acheter</span></a></li>
+                <li class="nav-item"><a class="nav-link {% if sub_segment in ['clients', 'client_detail'] %}active{% endif %}" href="{{ url_for('main_bp.wholesale_clients') }}"><i class="fas fa-hand-holding-usd"></i><span class="nav-link-text">Dettes</span></a></li>
+                <li class="nav-item"><a class="nav-link {% if sub_segment == 'report' %}active{% endif %}" href="{{ url_for('main_bp.wholesale_report') }}"><i class="fas fa-chart-bar"></i><span class="nav-link-text">Rapport</span></a></li>
+              </ul>
+            </div>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('main_bp.businesses') }}">
+              <i class="fas fa-exchange-alt text-primary"></i>
+              <span class="nav-link-text">Changer mode</span>
+            </a>
+          </li>
+          {% else %}
+
           <li class="nav-item">
             <a class="nav-link {% if 'index' in segment %} active {% endif %}" href="/index">
               <i class="fas fa-home text-primary"></i>
@@ -178,6 +207,8 @@
               </ul>
             </div>
           </li>
+
+          {% endif %}
 
           {% endif %}
           <!-- END BUSINESS USERS ONLY -->

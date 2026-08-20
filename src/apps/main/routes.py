@@ -252,7 +252,8 @@ def wholesale_dashboard():
         "main/wholesale_dashboard.html",
         business=business,
         stocks=stocks,
-        segment="businesses",
+        segment="wholesale",
+        sub_segment="dashboard",
     )
 
 
@@ -333,7 +334,8 @@ def wholesale_purchases():
         purchases=purchases,
         preset_data=preset_data,
         reversal_form=TransactionReversalForm(),
-        segment="businesses",
+        segment="wholesale",
+        sub_segment="purchases",
     )
 
 
@@ -466,7 +468,8 @@ def wholesale_sales():
         daily_report=daily_report,
         preset_data=preset_data,
         reversal_form=TransactionReversalForm(),
-        segment="businesses",
+        segment="wholesale",
+        sub_segment="sales",
     )
 
 
@@ -534,7 +537,8 @@ def wholesale_clients():
         business=business,
         clients=clients,
         totals=totals,
-        segment="businesses",
+        segment="wholesale",
+        sub_segment="clients",
     )
 
 
@@ -598,7 +602,8 @@ def wholesale_client_detail(client_id):
         total_purchased=total_purchased,
         total_paid=total_paid,
         total_debt=total_debt,
-        segment="businesses",
+        segment="wholesale",
+        sub_segment="client_detail",
     )
 
 
@@ -663,7 +668,8 @@ def wholesale_report():
         "main/wholesale_report.html",
         business=business,
         report=report,
-        segment="businesses",
+        segment="wholesale",
+        sub_segment="report",
     )
 
 
