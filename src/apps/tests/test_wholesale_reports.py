@@ -155,6 +155,10 @@ def test_daily_report_is_business_isolated_and_route_renders(app, session):
     )
     assert response.status_code == 200
     assert b"Rapport journalier" in response.data
+    assert b'id="report-home-btn"' in response.data
+    assert b'id="report-pdf-btn"' in response.data
+    assert b"Afficher" not in response.data
+    assert b"Filtrer" not in response.data
     assert b"$1.00" in response.data
 
     pdf = client_app.get(

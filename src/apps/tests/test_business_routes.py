@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from apps.businesses import add_stockeur, create_business
@@ -129,6 +130,42 @@ def test_wholesale_dashboard_uses_sidebar_actions_and_compact_header(app, sessio
     header = content.split('<div class="row">', 1)[0]
     assert "Vendre" not in header
     assert "Acheter" not in header
+
+
+def test_date_filters_auto_submit_without_action_buttons(app, session):
+    owner = make_user(session, suffix=22)
+    retail = create_business(
+        owner=owner, name="Retail", business_type=BusinessType.RETAIL
+    )
+    wholesale = create_business(
+        owner=owner,
+        name="Wholesale",
+        business_type=BusinessType.WHOLESALE,
+        approval_status=BusinessApprovalStatus.APPROVED,
+    )
+    session.commit()
+    client = app.test_client()
+    login(client, owner)
+
+    with client.session_transaction() as browser_session:
+        browser_session["active_business_id"] = retail.id
+
+    for url in ("/index", "/sorties_cash", "/sorties_cash/encaisser_dette", "/achat_stock", "/rapports"):
+        response = client.get(url)
+        assert response.status_code == 200
+        assert b"Afficher" not in response.data
+        assert b"Filtrer" not in response.data
+        assert b'onchange="this.form.submit()"' in response.data
+
+    with client.session_transaction() as browser_session:
+        browser_session["active_business_id"] = wholesale.id
+
+    wholesale_report = client.get(f"/businesses/wholesale/report?date={date.today().isoformat()}")
+    assert wholesale_report.status_code == 200
+    assert b"Afficher" not in wholesale_report.data
+    assert b"Filtrer" not in wholesale_report.data
+    assert b'id="report-home-btn"' in wholesale_report.data
+    assert b'id="report-pdf-btn"' in wholesale_report.data
 
 
 def test_profile_rename_syncs_retail_mode_but_preserves_wholesale_name(app, session):

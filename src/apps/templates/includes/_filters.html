@@ -13,17 +13,13 @@
                        name="date" 
                        class="form-control form-control-alternative" 
                        value="{{ selected_date }}" 
-                       required>
+                       required
+                       onchange="this.form.submit()">
             </div>
             <div class="col-sm-auto col-12 mb-2">
-                <div class="btn-group w-100">
-                    <button type="submit" class="btn btn-secondary shadow-sm">
-                        <i class="fas fa-filter mr-1"></i> Filtrer
-                    </button>
-                    <a href="{{ target_url }}" class="btn btn-neutral shadow-none" title="Réinitialiser">
-                        <i class="fas fa-redo"></i>
-                    </a>
-                </div>
+                <a href="{{ target_url }}" class="btn btn-neutral shadow-none" title="Réinitialiser">
+                    <i class="fas fa-redo"></i>
+                </a>
             </div>
         </div>
     </form>
