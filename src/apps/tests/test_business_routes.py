@@ -168,6 +168,32 @@ def test_date_filters_auto_submit_without_action_buttons(app, session):
     assert b'id="report-pdf-btn"' in wholesale_report.data
 
 
+def test_compact_buttons_render_on_retail_and_business_pages(app, session):
+    owner = make_user(session, suffix=23)
+    retail = create_business(
+        owner=owner, name="Retail", business_type=BusinessType.RETAIL
+    )
+    session.commit()
+    client = app.test_client()
+    login(client, owner)
+
+    with client.session_transaction() as browser_session:
+        browser_session["active_business_id"] = retail.id
+
+    businesses_page = client.get("/businesses")
+    clients_page = client.get("/admin/clients")
+
+    assert businesses_page.status_code == 200
+    assert b"Ajouter grossiste" in businesses_page.data
+    assert b"Ajouter le mode grossiste" not in businesses_page.data
+
+    assert clients_page.status_code == 200
+    assert b"Ajouter" in clients_page.data
+    assert b"Ajouter Client" not in clients_page.data
+    assert b"Position" in clients_page.data
+    assert b"Obtenir ma position" not in clients_page.data
+
+
 def test_profile_rename_syncs_retail_mode_but_preserves_wholesale_name(app, session):
     owner = make_user(session, suffix=20)
     owner.email = "owner20@example.com"

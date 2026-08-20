@@ -35,8 +35,8 @@
     {% endfor %}
   </div>
   {% if current_user.is_vendeur and not has_wholesale %}
-  <div class="card shadow">
-    <div class="card-header"><h3 class="mb-0">Ajouter le mode grossiste</h3></div>
+    <div class="card shadow">
+    <div class="card-header"><h3 class="mb-0">Ajouter grossiste</h3></div>
     <div class="card-body">
       <form method="post" action="{{ url_for('main_bp.create_wholesale_business') }}">
         {{ form.hidden_tag() }}

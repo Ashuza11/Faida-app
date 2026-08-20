@@ -97,3 +97,27 @@ def test_admin_can_regenerate_vendor_android_token(app, session):
         f"/admin/android-tokens/{admin.id}/regenerate",
     )
     assert invalid_target.status_code == 404
+
+
+def test_admin_vendors_page_uses_shorter_action_labels(app, session):
+    admin = make_user(
+        session,
+        suffix=7,
+        role=RoleType.PLATFORM_ADMIN,
+    )
+    make_user(
+        session,
+        suffix=8,
+        role=RoleType.VENDEUR,
+    )
+    session.commit()
+    client = app.test_client()
+    login(client, admin)
+
+    response = client.get("/admin/vendeurs")
+
+    assert response.status_code == 200
+    assert b"Codes" in response.data
+    assert b"Codes d'invitation" not in response.data
+    assert b"D\xc3\xa9tails" in response.data
+    assert b"Voir d\xc3\xa9tails" not in response.data

@@ -19,7 +19,7 @@
         </div>
         <div class="col-lg-6 col-5 text-right">
           <a href="{{ url_for('admin_bp.invite_codes_list') }}" class="btn btn-sm btn-neutral">
-            <i class="fas fa-key mr-2"></i>Codes d'invitation
+            <i class="fas fa-key mr-2"></i>Codes
           </a>
         </div>
       </div>
@@ -117,7 +117,7 @@
                     </a>
                     <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
                       <a class="dropdown-item" href="{{ url_for('admin_bp.vendeur_detail', vendeur_id=vendeur.id) }}">
-                        <i class="fas fa-eye mr-2"></i>Voir détails
+                        <i class="fas fa-eye mr-2"></i>Détails
                       </a>
                       <form action="{{ url_for('admin_bp.toggle_vendeur_status', vendeur_id=vendeur.id) }}" 
                             method="POST" class="d-inline">

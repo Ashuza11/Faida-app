@@ -24,7 +24,7 @@
                 {# "Ajouter Client" button with role check #}
                 {% if current_user.is_authenticated %}
                   <button type="button" class="btn btn-sm btn-primary" data-toggle="modal" data-target="#addClientModal">
-                    <i class="fas fa-plus"></i> Ajouter Client
+                    <i class="fas fa-plus"></i> Ajouter
                   </button>
                 {% endif %}
               </div>
@@ -152,7 +152,7 @@
                     <div class="input-group-append">
                         <button class="btn btn-outline-primary" type="button" id="getGeolocationBtn">
                             <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-                            Obtenir ma position
+                            Position
                         </button>
                     </div>
                 </div>
