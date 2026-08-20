@@ -462,10 +462,10 @@ document.addEventListener('DOMContentLoaded', function () {
       if (typeof Swal !== 'undefined') {
         Swal.fire({
           title: 'Archiver le rapport ?',
-          text: 'Voulez-vous archiver le rapport du {{ selected_date }} ?',
+          text: 'Archiver le rapport du {{ selected_date }} ?',
           icon: 'question',
           showCancelButton: true,
-          confirmButtonText: 'Oui, archiver',
+          confirmButtonText: 'Archiver',
           cancelButtonText: 'Annuler'
         }).then(function (result) {
           if (result.isConfirmed) { archiveForm.submit(); }

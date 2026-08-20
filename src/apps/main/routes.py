@@ -36,6 +36,11 @@ from apps.payments import (
     reverse_payment_event,
 )
 from apps.inventory import consume_stock
+from apps.client_identities import (
+    ClientIdentityError,
+    ensure_unique_client_name,
+    replace_client_phones,
+)
 
 from apps.decorators import (
     platform_admin_required,
@@ -133,6 +138,9 @@ _WHOLESALE_SAFE_ENDPOINTS = {
     "main_bp.wholesale_sales",
     "main_bp.reverse_wholesale_sale_route",
     "main_bp.wholesale_clients",
+    "main_bp.wholesale_client_management",
+    "main_bp.wholesale_client_edit",
+    "main_bp.wholesale_client_archive",
     "main_bp.wholesale_client_detail",
     "main_bp.reverse_wholesale_payment_route",
     "main_bp.wholesale_report",
@@ -152,7 +160,7 @@ def protect_unmigrated_wholesale_routes():
         and business.business_type == BusinessType.WHOLESALE
         and request.endpoint not in _WHOLESALE_SAFE_ENDPOINTS
     ):
-        flash("Cette fonction grossiste sera activée après sa migration.", "info")
+        flash("Cette page n'est pas disponible ici.", "info")
         return redirect(url_for("main_bp.wholesale_dashboard"))
     return None
 
@@ -182,13 +190,13 @@ def create_wholesale_business():
         abort(403)
     form = WholesaleBusinessForm()
     if not form.validate_on_submit():
-        flash("Veuillez saisir un nom valide.", "danger")
+        flash("Entrez un nom valide.", "danger")
         return redirect(url_for("main_bp.businesses"))
     if any(
         business.business_type == BusinessType.WHOLESALE
         for business in businesses_for_user(current_user)
     ):
-        flash("Le mode grossiste est déjà ajouté à votre compte.", "warning")
+        flash("Ce mode est déjà sur votre compte.", "warning")
         return redirect(url_for("main_bp.businesses"))
 
     business = create_business(
@@ -213,7 +221,7 @@ def create_wholesale_business():
         )
     db.session.commit()
     flash(
-        "Demande grossiste envoyée. Un administrateur doit l'approuver avant utilisation.",
+        "Demande envoyée. Un administrateur doit l'approuver.",
         "success",
     )
     return redirect(url_for("main_bp.businesses"))
@@ -304,7 +312,7 @@ def wholesale_purchases():
                 purchase_date=form.purchase_date.data,
             )
             db.session.commit()
-            flash("Achat grossiste enregistré avec succès.", "success")
+            flash("Achat enregistré.", "success")
             return redirect(url_for("main_bp.wholesale_purchases"))
         except (ValueError, PermissionError) as error:
             db.session.rollback()
@@ -349,7 +357,7 @@ def reverse_wholesale_purchase_route(purchase_id):
     purchase = db.get_or_404(StockPurchase, purchase_id)
     form = TransactionReversalForm()
     if not form.validate_on_submit():
-        flash("Indiquez une raison valide pour l'annulation.", "danger")
+        flash("Ajoutez une raison.", "danger")
         return redirect(url_for("main_bp.wholesale_purchases"))
     try:
         reverse_wholesale_purchase(
@@ -359,7 +367,7 @@ def reverse_wholesale_purchase_route(purchase_id):
             reason=form.reason.data,
         )
         db.session.commit()
-        flash("Achat annulé. Enregistrez la valeur corrigée si nécessaire.", "success")
+        flash("Achat annulé.", "success")
     except (ValueError, PermissionError) as error:
         db.session.rollback()
         flash(str(error), "danger")
@@ -405,6 +413,9 @@ def wholesale_sales():
                 name = (form.new_client_name.data or "").strip()
                 if len(name) < 2:
                     raise ValueError("Saisissez le nom du nouveau détaillant.")
+                name = ensure_unique_client_name(
+                    business_id=business.id, name=name
+                )
                 client = Client(
                     name=name,
                     vendeur_id=current_user.id,
@@ -435,7 +446,7 @@ def wholesale_sales():
                 custom_unit_price=custom_unit_price,
             )
             db.session.commit()
-            flash("Vente grossiste enregistrée avec succès.", "success")
+            flash("Vente enregistrée.", "success")
             return redirect(url_for("main_bp.wholesale_sales"))
         except (ValueError, PermissionError) as error:
             db.session.rollback()
@@ -483,7 +494,7 @@ def reverse_wholesale_sale_route(sale_id):
     sale = db.get_or_404(Sale, sale_id)
     form = TransactionReversalForm()
     if not form.validate_on_submit():
-        flash("Indiquez une raison valide pour l'annulation.", "danger")
+        flash("Ajoutez une raison.", "danger")
         return redirect(url_for("main_bp.wholesale_sales"))
     try:
         reverse_unpaid_wholesale_sale(
@@ -493,11 +504,152 @@ def reverse_wholesale_sale_route(sale_id):
             reason=form.reason.data,
         )
         db.session.commit()
-        flash("Vente annulée. Enregistrez la valeur corrigée si nécessaire.", "success")
+        flash("Vente annulée.", "success")
     except (ValueError, PermissionError) as error:
         db.session.rollback()
         flash(str(error), "danger")
     return redirect(url_for("main_bp.wholesale_sales"))
+
+
+@bp.route("/businesses/wholesale/client-management", methods=["GET", "POST"])
+@login_required
+@vendeur_required
+def wholesale_client_management():
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    if business.owner_user_id != current_user.id:
+        abort(403)
+
+    form = ClientForm()
+    if form.validate_on_submit():
+        try:
+            client = Client(
+                name=ensure_unique_client_name(
+                    business_id=business.id, name=form.name.data
+                ),
+                vendeur_id=current_user.id,
+                business_id=business.id,
+                address=form.address.data,
+            )
+            db.session.add(client)
+            db.session.flush()
+            replace_client_phones(
+                client=client, phone_entries=_client_phone_entries(form)
+            )
+            db.session.commit()
+            flash("Client créé.", "success")
+            return redirect(url_for("main_bp.wholesale_client_management"))
+        except ClientIdentityError as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+
+    clients = (
+        Client.query.filter_by(business_id=business.id)
+        .order_by(Client.is_active.desc(), Client.name, Client.id)
+        .all()
+    )
+    return render_template(
+        "main/wholesale_client_management.html",
+        business=business,
+        clients=clients,
+        form=form,
+        segment="wholesale",
+        sub_segment="client_management",
+    )
+
+
+@bp.route(
+    "/businesses/wholesale/client-management/<int:client_id>/edit",
+    methods=["GET", "POST"],
+)
+@login_required
+@vendeur_required
+def wholesale_client_edit(client_id):
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    if business.owner_user_id != current_user.id:
+        abort(403)
+    client = db.get_or_404(Client, client_id)
+    if client.business_id != business.id:
+        abort(403)
+
+    form = ClientEditForm()
+    if request.method == "GET":
+        form.name.data = client.name
+        form.phone_airtel.data = "\n".join(client.airtel_phones)
+        form.phone_africel.data = "\n".join(client.africel_phones)
+        form.phone_orange.data = "\n".join(client.orange_phones)
+        form.phone_vodacom.data = "\n".join(client.vodacom_phones)
+        form.address.data = client.address
+        form.gps_lat.data = client.gps_lat
+        form.gps_long.data = client.gps_long
+        form.is_active.data = client.is_active
+    elif form.validate_on_submit():
+        try:
+            client.name = ensure_unique_client_name(
+                business_id=business.id,
+                name=form.name.data,
+                exclude_client_id=client.id,
+            )
+            client.address = form.address.data
+            client.gps_lat = form.gps_lat.data
+            client.gps_long = form.gps_long.data
+            client.is_active = form.is_active.data
+            client.identification_status = "identified"
+            replace_client_phones(
+                client=client, phone_entries=_client_phone_entries(form)
+            )
+            db.session.commit()
+            flash("Client mis à jour.", "success")
+            return redirect(url_for("main_bp.wholesale_client_management"))
+        except ClientIdentityError as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+
+    return render_template(
+        "main/wholesale_client_edit.html",
+        business=business,
+        client=client,
+        form=form,
+        segment="wholesale",
+        sub_segment="client_management",
+    )
+
+
+@bp.route(
+    "/businesses/wholesale/client-management/<int:client_id>/archive",
+    methods=["POST"],
+)
+@login_required
+@vendeur_required
+def wholesale_client_archive(client_id):
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    if business.owner_user_id != current_user.id:
+        abort(403)
+    client = db.get_or_404(Client, client_id)
+    if client.business_id != business.id:
+        abort(403)
+    if not client.is_active:
+        try:
+            ensure_unique_client_name(
+                business_id=business.id,
+                name=client.name,
+                exclude_client_id=client.id,
+            )
+        except ClientIdentityError as error:
+            flash(str(error), "danger")
+            return redirect(url_for("main_bp.wholesale_client_management"))
+    client.is_active = not client.is_active
+    db.session.commit()
+    flash(
+        f"Client {'réactivé' if client.is_active else 'archivé'} avec succès.",
+        "success",
+    )
+    return redirect(url_for("main_bp.wholesale_client_management"))
 
 
 @bp.route("/businesses/wholesale/clients")
@@ -569,7 +721,7 @@ def wholesale_client_detail(client_id):
                 description=form.description.data,
             )
             db.session.commit()
-            flash("Paiement appliqué aux plus anciennes dettes.", "success")
+            flash("Paiement appliqué.", "success")
             return redirect(
                 url_for("main_bp.wholesale_client_detail", client_id=client.id)
             )
@@ -621,7 +773,7 @@ def reverse_wholesale_payment_route(payment_event_id):
     client_id = payment_event.client_id
     form = TransactionReversalForm()
     if not form.validate_on_submit():
-        flash("Indiquez une raison valide pour l'annulation.", "danger")
+        flash("Ajoutez une raison.", "danger")
         return redirect(
             url_for("main_bp.wholesale_client_detail", client_id=client_id)
         )
@@ -633,7 +785,7 @@ def reverse_wholesale_payment_route(payment_event_id):
             reason=form.reason.data,
         )
         db.session.commit()
-        flash("Paiement annulé et dettes restaurées.", "success")
+        flash("Paiement annulé.", "success")
     except (ValueError, PermissionError, RuntimeError) as error:
         db.session.rollback()
         flash(str(error), "danger")
@@ -659,7 +811,7 @@ def wholesale_report():
             else datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
         )
     except ValueError:
-        flash("La date du rapport n'est pas valide.", "danger")
+        flash("Date invalide.", "danger")
         return redirect(url_for("main_bp.wholesale_report"))
     report = build_wholesale_daily_report(
         business=business, target_date=target_date
@@ -1035,6 +1187,21 @@ def user_toggle_active(user_id):
 
 
 # Client Management
+def _client_phone_entries(form):
+    entries = []
+    for network, field_name in (
+        (NetworkType.AIRTEL, "phone_airtel"),
+        (NetworkType.AFRICEL, "phone_africel"),
+        (NetworkType.ORANGE, "phone_orange"),
+        (NetworkType.VODACOM, "phone_vodacom"),
+    ):
+        raw_value = getattr(form, field_name).data or ""
+        for value in raw_value.replace(",", "\n").splitlines():
+            if value.strip():
+                entries.append((network, value.strip()))
+    return entries
+
+
 @bp.route("/admin/clients", methods=["GET", "POST"])
 @login_required
 @business_member_required
@@ -1055,31 +1222,29 @@ def client_management():
             gps_lat = None
             gps_long = None
 
-        existing_client = Client.query.filter_by(
-            name=client_form.name.data,
-            business_id=business.id,
-        ).first()
-
-        if existing_client:
-            flash("Un client avec ce nom existe déjà.", "danger")
-        else:
-            # FIX: Use vendeur_id instead of vendeur
+        try:
+            clean_name = ensure_unique_client_name(
+                business_id=business.id, name=client_form.name.data
+            )
             new_client = Client(
-                name=client_form.name.data,
-                phone_airtel=client_form.phone_airtel.data,
-                phone_africel=client_form.phone_africel.data,
-                phone_orange=client_form.phone_orange.data,
-                phone_vodacom=client_form.phone_vodacom.data,
+                name=clean_name,
                 address=client_form.address.data,
                 gps_lat=gps_lat,
                 gps_long=gps_long,
-                vendeur_id=current_user.business_vendeur_id,  # ← FIXED
+                vendeur_id=current_user.business_vendeur_id,
                 business_id=business.id,
             )
             db.session.add(new_client)
+            db.session.flush()
+            replace_client_phones(
+                client=new_client, phone_entries=_client_phone_entries(client_form)
+            )
             db.session.commit()
             flash("Client créé avec succès!", "success")
             return redirect(url_for("main_bp.client_management"))
+        except ClientIdentityError as error:
+            db.session.rollback()
+            flash(str(error), "danger")
 
     # FIX: Use the helper instead of role check
     if business is not None:
@@ -1110,22 +1275,29 @@ def client_edit(client_id):
 
     client_edit_form = ClientEditForm()
     if client_edit_form.validate_on_submit():
-        client.name = client_edit_form.name.data
-        client.phone_airtel = client_edit_form.phone_airtel.data
-        client.phone_africel = client_edit_form.phone_africel.data
-        client.phone_orange = client_edit_form.phone_orange.data
-        client.phone_vodacom = client_edit_form.phone_vodacom.data
-        client.address = client_edit_form.address.data
-        client.gps_lat = client_edit_form.gps_lat.data
-        client.gps_long = client_edit_form.gps_long.data
-        client.is_active = client_edit_form.is_active.data
-
-        db.session.commit()
-        flash("Client mis à jour avec succès!", "success")
-        return redirect(url_for("main_bp.client_management"))
+        try:
+            client.name = ensure_unique_client_name(
+                business_id=client.business_id,
+                name=client_edit_form.name.data,
+                exclude_client_id=client.id,
+            )
+            client.address = client_edit_form.address.data
+            client.gps_lat = client_edit_form.gps_lat.data
+            client.gps_long = client_edit_form.gps_long.data
+            client.is_active = client_edit_form.is_active.data
+            client.identification_status = "identified"
+            replace_client_phones(
+                client=client, phone_entries=_client_phone_entries(client_edit_form)
+            )
+            db.session.commit()
+            flash("Client mis à jour.", "success")
+            return redirect(url_for("main_bp.client_management"))
+        except ClientIdentityError as error:
+            db.session.rollback()
+            flash(str(error), "danger")
     else:
         flash(
-            "Erreur lors de la mise à jour du client. Veuillez vérifier les champs.",
+            "Vérifiez les champs.",
             "danger",
         )
     return redirect(url_for("main_bp.client_management"))
@@ -1142,6 +1314,16 @@ def client_toggle_active(client_id):
 
     ensure_access(client)
 
+    if not client.is_active:
+        try:
+            ensure_unique_client_name(
+                business_id=client.business_id,
+                name=client.name,
+                exclude_client_id=client.id,
+            )
+        except ClientIdentityError as error:
+            flash(str(error), "danger")
+            return redirect(url_for("main_bp.client_management"))
     client.is_active = not client.is_active
     db.session.commit()
     status_message = "activé" if client.is_active else "désactivé"
@@ -1202,7 +1384,7 @@ def achat_stock():
             )
             db.session.commit()
 
-            flash("Achat de stock enregistré avec succès!", "success")
+            flash("Achat enregistré.", "success")
             # Redirect to Clear the POST request
             return redirect(url_for("main_bp.achat_stock"))
 
@@ -1212,11 +1394,11 @@ def achat_stock():
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Error recording stock purchase: {e}")
-            flash("Une erreur système est survenue lors de l'enregistrement.", "danger")
+            flash("Une erreur est survenue.", "danger")
 
     elif form.errors:
         current_app.logger.debug("achat_stock form errors: %s", form.errors)
-        flash("Veuillez corriger les erreurs dans le formulaire.", "danger")
+        flash("Vérifiez les champs.", "danger")
 
     # --- 2. HANDLE GET (Data Fetching & Pagination) ---
 
@@ -1343,7 +1525,7 @@ def edit_stock_purchase(purchase_id):
                 intended_selling_price=selling_price_to_record,
             )
             db.session.commit()
-            flash("Achat de stock mis à jour avec succès!", "success")
+            flash("Achat mis à jour.", "success")
             return redirect(url_for("main_bp.achat_stock"))
 
         except Exception as e:
@@ -1380,7 +1562,7 @@ def delete_stock_purchase(purchase_id):
                 deleted_by=current_user,
             )
             db.session.commit()
-            flash("Achat de stock supprimé avec succès!", "success")
+            flash("Achat supprimé.", "success")
             return redirect(url_for("main_bp.achat_stock"))
 
         except Exception as e:
@@ -1392,7 +1574,7 @@ def delete_stock_purchase(purchase_id):
                 f"Une erreur est survenue lors de la suppression: {e}", "danger")
             return redirect(url_for("main_bp.achat_stock"))
 
-    flash("Confirmez la suppression de l'achat de stock.", "warning")
+    flash("Confirmez la suppression.", "warning")
     return render_template(
         "main/confirm_delete_stock_purchase.html",
         purchase=purchase,
@@ -1435,7 +1617,7 @@ def stock_ouverture():
 
     if form.validate_on_submit():
         if not vendeur_id:
-            flash("Impossible de déterminer le vendeur.", "danger")
+            flash("Mode introuvable.", "danger")
             return redirect(url_for('main_bp.stock_ouverture'))
 
         balance_date = form.balance_date.data
@@ -1629,13 +1811,13 @@ def vente_stock():
                 client_id = form.existing_client_id.data
                 if not client_id:
                     raise ValueError(
-                        "Veuillez sélectionner un client existant.")
+                        "Sélectionnez un client.")
                 client = Client.query.filter_by(
                     id=int(client_id),
                     business_id=business.id,
                 ).first()
                 if not client:
-                    raise ValueError("Client sélectionné invalide.")
+                    raise ValueError("Client invalide.")
 
             elif form.client_choice.data == "new":
                 selected_key = (form.adhoc_customer_key.data or "").strip()
@@ -1647,13 +1829,13 @@ def vente_stock():
                         Sale.status == TransactionStatus.ACTIVE,
                     ).order_by(Sale.created_at.desc()).first()
                     if not prior_identity:
-                        raise ValueError("Client ad-hoc sélectionné invalide.")
+                        raise ValueError("Client temporaire invalide.")
                     client_name_adhoc = prior_identity.client_display_name
                     adhoc_customer_key = selected_key
                 else:
                     client_name_adhoc = (form.new_client_name.data or "").strip()
                     if not client_name_adhoc:
-                        raise ValueError("Veuillez entrer le nom du nouveau client.")
+                        raise ValueError("Saisissez le nom du client.")
                     adhoc_customer_key = uuid4().hex
 
             # B. Process Sale Items
@@ -1683,12 +1865,11 @@ def vente_stock():
 
                 if not stock_item:
                     raise ValueError(
-                        f"Réseau '{network_type.value}' introuvable en stock.")
+                        f"Stock introuvable pour {network_type.value}.")
 
                 if quantity > stock_item.balance:
                     raise ValueError(
-                        f"Stock insuffisant pour {network_type.value}. "
-                        f"Dispo: {stock_item.balance}, Demandé: {quantity}."
+                        f"Stock insuffisant pour {network_type.value}."
                     )
 
                 # Determine Price
@@ -1699,8 +1880,7 @@ def vente_stock():
                     final_unit_price = stock_item.selling_price_per_unit
                 else:
                     raise ValueError(
-                        f"Prix introuvable pour '{network_type.value}'. "
-                        "Définissez un prix dans le stock ou manuellement."
+                        f"Prix introuvable pour {network_type.value}."
                     )
 
                 # Calculate Line Totals
@@ -1729,7 +1909,7 @@ def vente_stock():
 
             if not sale_items_to_add:
                 raise ValueError(
-                    "Veuillez ajouter au moins un article valide.")
+                    "Ajoutez au moins un article.")
 
             # C. Finalize Financials
             total_amount_due = calculate_sale_total(raw_subtotals)
@@ -1760,7 +1940,7 @@ def vente_stock():
             )
             db.session.commit()
 
-            flash("Vente enregistrée avec succès!", "success")
+            flash("Vente enregistrée.", "success")
             return redirect(url_for("main_bp.vente_stock"))
 
         except ValueError as e:
@@ -1769,11 +1949,11 @@ def vente_stock():
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Sale Error: {e}")
-            flash("Une erreur système est survenue.", "danger")
+            flash("Une erreur est survenue.", "danger")
 
     # Handle Form Validation Errors (if submit failed but no exception raised)
     elif form.errors:
-        flash("Veuillez corriger les erreurs dans le formulaire.", "danger")
+        flash("Vérifiez les champs.", "danger")
         # Optional: Detailed error logging to flash can be done here if desired
 
     # --- 3. HANDLE GET (Data Fetching & Pagination) ---
@@ -1817,11 +1997,11 @@ def update_sale_cash(sale_id):
         return redirect(url_for("main_bp.vente_stock"))
 
     if new_cash < 0:
-        flash("Le paiement ne peut pas être négatif.", "danger")
+        flash("Le paiement doit être positif.", "danger")
         return redirect(url_for("main_bp.vente_stock"))
 
     if new_cash < sale.cash_paid:
-        flash("Annulez d'abord le paiement à corriger; une diminution directe est interdite.", "danger")
+        flash("Annulez ce paiement avant de le réduire.", "danger")
         return redirect(url_for("main_bp.vente_stock"))
 
     try:
@@ -1834,11 +2014,11 @@ def update_sale_cash(sale_id):
                 payment_date=datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date(),
             )
         db.session.commit()
-        flash("Paiement mis à jour avec succès!", "success")
+        flash("Paiement mis à jour.", "success")
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error updating sale cash {sale_id}: {e}")
-        flash(f"Erreur lors de la mise à jour: {e}", "danger")
+        flash("Une erreur est survenue.", "danger")
 
     return redirect(url_for("main_bp.vente_stock"))
 
@@ -1850,7 +2030,7 @@ def edit_sale(sale_id):
     sale = db.get_or_404(Sale, sale_id)
     ensure_access(sale)
     flash(
-        "Pour préserver l'historique, annulez la vente puis enregistrez la correction.",
+        "Annulez la vente, puis saisissez la correction.",
         "warning",
     )
     return redirect(url_for("main_bp.delete_sale", sale_id=sale.id))
@@ -1869,7 +2049,7 @@ def delete_sale(sale_id):
 
         try:
             if not confirm_form.validate_on_submit():
-                raise ValueError("Indiquez une raison valide pour l'annulation.")
+                raise ValueError("Ajoutez une raison.")
             reverse_unpaid_sale(
                 sale=sale,
                 business=business,
@@ -1878,7 +2058,7 @@ def delete_sale(sale_id):
             )
             db.session.commit()
             flash(
-                f"Vente #{sale_id} annulée. Enregistrez maintenant la correction.",
+                "Vente annulée. Saisissez la correction si besoin.",
                 "success",
             )
             return redirect(url_for("main_bp.vente_stock"))
@@ -1888,13 +2068,10 @@ def delete_sale(sale_id):
             current_app.logger.error(
                 f"Error deleting sale {sale_id}: {e}", exc_info=True
             )
-            flash(
-                f"Une erreur est survenue lors de la suppression de la vente: {e}",
-                "danger",
-            )
+            flash("Une erreur est survenue.", "danger")
             return redirect(url_for("main_bp.vente_stock"))
 
-    flash("Confirmez l'annulation de la vente.", "warning")
+    flash("Confirmez l'annulation.", "warning")
     return render_template(
         "main/confirm_delete_sale.html",
         sale=sale,
@@ -1958,7 +2135,7 @@ def reverse_retail_payment_route(payment_event_id):
         redirect_sale_id = payment_event.allocations[0].sale_id
     try:
         if not form.validate_on_submit():
-            raise ValueError("Indiquez une raison valide pour l'annulation.")
+            raise ValueError("Ajoutez une raison.")
         reverse_payment_event(
             payment_event=payment_event,
             business=business,
@@ -2109,7 +2286,7 @@ def enregistrer_sortie():
                 db.session.rollback()
                 current_app.logger.error(f"Error saving cash outflow: {e}")
                 flash(
-                    f"Erreur lors de l'enregistrement de la sortie: {str(e)}", "danger"
+                    "Une erreur est survenue.", "danger"
                 )
 
         else:
@@ -2182,7 +2359,7 @@ def encaisser_dette():
 
             unpaid_sales = unpaid_q.order_by(Sale.sale_date.asc(), Sale.created_at.asc()).all()
             if not unpaid_sales:
-                raise ValueError("Aucune vente impayée trouvée pour ce client.")
+                raise ValueError("Aucune dette trouvée pour ce client.")
 
             total_debt = sum(s.debt_amount for s in unpaid_sales)
             if amount_paid > total_debt:
@@ -2255,15 +2432,15 @@ def encaisser_dette():
             return redirect(url_for("main_bp.sorties_cash"))
 
         except InvalidOperation:
-            flash("Montant invalide. Veuillez entrer un nombre valide.", "danger")
+            flash("Montant invalide.", "danger")
             db.session.rollback()
         except ValueError as e:
-            flash(f"Erreur de validation: {e}", "danger")
+            flash(str(e), "danger")
             db.session.rollback()
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Error recording debt collection: {e}")
-            flash(f"Erreur lors de l'enregistrement du paiement: {e}", "danger")
+            flash("Une erreur est survenue.", "danger")
 
     # Count unique clients with any outstanding debt (for the "Voir toutes" link)
     all_debt_choices = get_clients_with_debt(vendeur_id=_vendeur_id, sale_date=None)
@@ -2367,8 +2544,7 @@ def rapports():
                         "virtual_value": r.virtual_value,
                     })
         else:
-            flash(f"Aucun rapport archivé trouvé pour le {ctx['date_str']}. "
-                  "Les données financières ci-dessous restent disponibles.", "warning")
+            flash(f"Aucun rapport archivé pour le {ctx['date_str']}.", "warning")
 
     grand_totals["total_calculated_sold_stock"] = (
         grand_totals["initial_stock"]
@@ -2555,7 +2731,7 @@ def archive_daily_report():
     date_str = request.form.get('date_to_archive')
 
     if not date_str:
-        flash("Aucune date spécifiée pour l'archivage.", "danger")
+        flash("Date manquante.", "danger")
         return redirect(url_for('main_bp.rapports'))
 
     try:
@@ -2568,7 +2744,7 @@ def archive_daily_report():
         business_id = business.id if business is not None else None
 
         if not vendeur_id:
-            flash("Impossible de déterminer le vendeur.", "danger")
+            flash("Mode introuvable.", "danger")
             return redirect(url_for('main_bp.rapports', date=date_str))
 
         # 3. Call helper function WITH vendeur_id
@@ -2579,13 +2755,12 @@ def archive_daily_report():
             business_id=business_id,
         )
 
-        flash(
-            f"Le rapport du {date_str} a été archivé avec succès.", "success")
+        flash(f"Rapport du {date_str} archivé.", "success")
 
     except Exception as e:
         current_app.logger.error(
             f"Erreur d'archivage: {str(e)}", exc_info=True)
-        flash(f"Une erreur est survenue: {str(e)}", "danger")
+        flash("Une erreur est survenue.", "danger")
 
     return redirect(url_for('main_bp.rapports', date=date_str))
 
@@ -2613,7 +2788,7 @@ def profile():
         if form.current_password.data or form.new_password.data:
             if not form.current_password.data:
                 flash(
-                    "Veuillez entrer votre mot de passe actuel pour changer le mot de passe.",
+                    "Entrez votre mot de passe actuel.",
                     "danger",
                 )
                 return redirect(url_for("main_bp.profile"))
@@ -2621,22 +2796,22 @@ def profile():
                 flash("Mot de passe actuel incorrect.", "danger")
                 return redirect(url_for("main_bp.profile"))
             if not form.new_password.data:
-                flash("Veuillez entrer un nouveau mot de passe.", "danger")
+                flash("Entrez un nouveau mot de passe.", "danger")
                 return redirect(url_for("main_bp.profile"))
             if form.new_password.data != form.confirm_new_password.data:
-                flash("Les nouveaux mots de passe ne correspondent pas.", "danger")
+                flash("Les mots de passe ne correspondent pas.", "danger")
                 return redirect(url_for("main_bp.profile"))
 
             current_user.set_password(form.new_password.data)
-            flash("Votre mot de passe a été mis à jour !", "success")
+            flash("Mot de passe mis à jour.", "success")
 
         try:
             db.session.commit()
-            flash("Votre profil a été mis à jour !", "success")
+            flash("Profil mis à jour.", "success")
             return redirect(url_for("main_bp.profile"))
         except Exception as e:
             db.session.rollback()
-            flash(f"Une erreur est survenue : {e}", "danger")
+            flash("Une erreur est survenue.", "danger")
 
     elif request.method == "GET":
         # Pre-populate form fields when page is loaded (GET request)

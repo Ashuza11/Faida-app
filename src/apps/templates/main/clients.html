@@ -48,11 +48,11 @@
               <tbody>
                 {% for client in clients %}
                   <tr>
-                    <td>{{ client.name }}</td>
-                    <td>{{ client.phone_airtel if client.phone_airtel else 'N/A' }}</td>
-                    <td>{{ client.phone_africel if client.phone_africel else 'N/A' }}</td>
-                    <td>{{ client.phone_orange if client.phone_orange else 'N/A' }}</td>
-                    <td>{{ client.phone_vodacom if client.phone_vodacom else 'N/A' }}</td>
+                    <td>{{ client.name }}{% if client.identification_status == 'needs_name' %}<br><span class="badge badge-warning">À identifier</span>{% endif %}{% if client.phone_conflicts %}<br><span class="badge badge-danger">Numéro à vérifier</span>{% endif %}</td>
+                    <td>{{ client.airtel_phones|join(', ') or 'N/A' }}</td>
+                    <td>{{ client.africel_phones|join(', ') or 'N/A' }}</td>
+                    <td>{{ client.orange_phones|join(', ') or 'N/A' }}</td>
+                    <td>{{ client.vodacom_phones|join(', ') or 'N/A' }}</td>
                     <td>{{ client.address if client.address else 'N/A' }}</td>
                     <td>
                       <span class="badge badge-dot mr-4">
@@ -74,15 +74,15 @@
                                 data-id="{{ client.id }}"
                                 data-name="{{ client.name }}"
                                 data-email="{{ client.email }}"
-                                data-phone-airtel="{{ client.phone_airtel }}"
-                                data-phone-africel="{{ client.phone_africel }}"
-                                data-phone-orange="{{ client.phone_orange }}"
-                                data-phone-vodacom="{{ client.phone_vodacom }}"
+                                data-phone-airtel="{{ client.airtel_phones|join('\n') }}"
+                                data-phone-africel="{{ client.africel_phones|join('\n') }}"
+                                data-phone-orange="{{ client.orange_phones|join('\n') }}"
+                                data-phone-vodacom="{{ client.vodacom_phones|join('\n') }}"
                                 data-address="{{ client.address }}"
                                 data-gps-lat="{{ client.gps_lat }}"
                                 data-gps-long="{{ client.gps_long }}"
                                 data-is-active="{{ 'true' if client.is_active else 'false' }}">
-                                Editer
+                                Modifier
                             </a>
                             <form action="{{ url_for('main_bp.client_toggle_active', client_id=client.id) }}" method="post" class="d-inline">
                               <button type="submit" class="dropdown-item">
@@ -94,7 +94,7 @@
                               </button>
                             </form>
                           {% else %}
-                            <span class="dropdown-item text-muted">Pas d'actions disponible</span>
+                            <span class="dropdown-item text-muted">Aucune action</span>
                           {% endif %}
                         </div>
                       </div>
@@ -156,7 +156,7 @@
                         </button>
                     </div>
                 </div>
-                <small class="form-text text-muted" id="geolocation_status_message">Cliquez sur le bouton pour obtenir les coordonnées GPS actuelles.</small>
+                <small class="form-text text-muted" id="geolocation_status_message">Utilisez le bouton pour remplir la position.</small>
             </div>
 
 
@@ -174,9 +174,9 @@
 
   {# Include the "Edit Client" Modal (Using the existing modal_form include) #}
   {% set modal_id = 'editClientModal' %}
-  {% set modal_title = 'Editer client' %}
+  {% set modal_title = 'Modifier client' %}
   {% set form = client_edit_form %}
-  {# The modal_form.html should correctly render all fields, including gps_lat/long #}
+  {# The modal_form.html renders the edit fields, including gps_lat/long #}
   {% include 'includes/modal_form.html' %} 
 
 {% endblock content %}
@@ -196,32 +196,32 @@
         if (navigator.geolocation) {
           spinner.removeClass('d-none'); // Show spinner
           getBtn.prop('disabled', true); // Disable button
-          statusMessage.text("Acquisition de la position en cours...");
+          statusMessage.text("Recherche de la position...");
 
           navigator.geolocation.getCurrentPosition(function(position) {
             latField.val(position.coords.latitude);
             longField.val(position.coords.longitude);
-            statusMessage.text("Coordonnées GPS obtenues avec succès.");
+            statusMessage.text("Position enregistrée.");
             console.log("GPS coordinates populated:", position.coords.latitude, position.coords.longitude);
             spinner.addClass('d-none'); // Hide spinner
             getBtn.prop('disabled', false); // Re-enable button
           }, function(error) {
-            let errorMessage = "Erreur lors de l'obtention de la localisation.";
+            let errorMessage = "Position indisponible.";
             switch(error.code) {
               case error.PERMISSION_DENIED:
-                errorMessage = "Géolocalisation refusée par l'utilisateur. Veuillez l'activer dans les paramètres de votre navigateur.";
+                errorMessage = "Position refusée.";
                 break;
               case error.POSITION_UNAVAILABLE:
-                errorMessage = "Informations de localisation indisponibles.";
+                errorMessage = "Position introuvable.";
                 break;
               case error.TIMEOUT:
-                errorMessage = "La demande de localisation a expiré.";
+                errorMessage = "Délai dépassé.";
                 break;
               case error.UNKNOWN_ERROR:
-                errorMessage = "Une erreur inconnue est survenue lors de la géolocalisation.";
+                errorMessage = "Erreur de position.";
                 break;
             }
-            statusMessage.text(errorMessage + " Veuillez entrer les coordonnées manuellement si nécessaire.");
+            statusMessage.text(errorMessage);
             console.warn('ERROR(' + error.code + '): ' + error.message);
             spinner.addClass('d-none'); // Hide spinner
             getBtn.prop('disabled', false); // Re-enable button
@@ -231,7 +231,7 @@
             maximumAge: 0 // No cached location
           });
         } else {
-          statusMessage.text("Votre navigateur ne prend pas en charge la géolocalisation.");
+          statusMessage.text("La position n'est pas disponible ici.");
           console.log("Geolocation is not supported by this browser.");
         }
       }
@@ -255,7 +255,7 @@
         $('#addClientModal').modal('show');
       {% endif %}
 
-      // JavaScript to populate the edit modal when 'Editer' is clicked
+      // JavaScript to populate the edit modal when 'Modifier' is clicked
       $('.edit-client-btn').on('click', function() {
         var clientId = $(this).data('id');
         var name = $(this).data('name');

@@ -147,17 +147,17 @@ class ClientForm(FlaskForm):
         "Nom du Client", validators=[DataRequired(), Length(min=2, max=128)]
     )
     # email = StringField("Email (Optionnel)", validators=[Optional(), Email()])
-    phone_airtel = StringField(
-        "Téléphone Airtel (Optionnel)", validators=[Optional(), Length(max=20)]
+    phone_airtel = TextAreaField(
+        "Numéros Airtel (un par ligne)", validators=[Optional(), Length(max=500)]
     )
-    phone_africel = StringField(
-        "Téléphone Africell (Optionnel)", validators=[Optional(), Length(max=20)]
+    phone_africel = TextAreaField(
+        "Numéros Africell (un par ligne)", validators=[Optional(), Length(max=500)]
     )
-    phone_orange = StringField(
-        "Téléphone Orange (Optionnel)", validators=[Optional(), Length(max=20)]
+    phone_orange = TextAreaField(
+        "Numéros Orange (un par ligne)", validators=[Optional(), Length(max=500)]
     )
-    phone_vodacom = StringField(
-        "Téléphone Vodacom (Optionnel)", validators=[Optional(), Length(max=20)]
+    phone_vodacom = TextAreaField(
+        "Numéros Vodacom (un par ligne)", validators=[Optional(), Length(max=500)]
     )
     address = StringField(
         "Adresse (Optionnel)", validators=[Optional(), Length(max=255)]
@@ -171,17 +171,17 @@ class ClientEditForm(FlaskForm):
         "Nom du Client", validators=[DataRequired(), Length(min=2, max=128)]
     )
     email = StringField("Email (Optionnel)", validators=[Optional(), Email()])
-    phone_airtel = StringField(
-        "Téléphone Airtel (Optionnel)", validators=[Optional(), Length(max=20)]
+    phone_airtel = TextAreaField(
+        "Numéros Airtel (un par ligne)", validators=[Optional(), Length(max=500)]
     )
-    phone_africel = StringField(
-        "Téléphone Africell (Optionnel)", validators=[Optional(), Length(max=20)]
+    phone_africel = TextAreaField(
+        "Numéros Africell (un par ligne)", validators=[Optional(), Length(max=500)]
     )
-    phone_orange = StringField(
-        "Téléphone Orange (Optionnel)", validators=[Optional(), Length(max=20)]
+    phone_orange = TextAreaField(
+        "Numéros Orange (un par ligne)", validators=[Optional(), Length(max=500)]
     )
-    phone_vodacom = StringField(
-        "Téléphone Vodacom (Optionnel)", validators=[Optional(), Length(max=20)]
+    phone_vodacom = TextAreaField(
+        "Numéros Vodacom (un par ligne)", validators=[Optional(), Length(max=500)]
     )
     address = StringField(
         "Adresse (Optionnel)", validators=[Optional(), Length(max=255)]

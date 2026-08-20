@@ -38,6 +38,7 @@ from apps.payments import apply_payment_to_sale
 from apps.inventory import consume_stock
 from apps.purchases import record_retail_purchase, record_wholesale_purchase
 from apps.sales import record_wholesale_sale
+from apps.client_identities import ClientIdentityError, resolve_sms_sale_client
 
 
 @api_bp.before_request
@@ -245,6 +246,9 @@ def create_sale():
             "local_id": local_id,
         }), 201
 
+    except ClientIdentityError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 409
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"[API] Sale sync error: {e}")
@@ -596,39 +600,14 @@ def _default_wholesale_preset(*, business, network, operation):
 
 
 def _sms_wholesale_client(parsed, business, owner):
-    """Resolve a retailer by network phone, creating one when first observed."""
-    from sqlalchemy import or_
-
-    client = None
-    if parsed.recipient_phone:
-        client = Client.query.filter(
-            Client.business_id == business.id,
-            or_(
-                Client.phone_airtel == parsed.recipient_phone,
-                Client.phone_africel == parsed.recipient_phone,
-                Client.phone_orange == parsed.recipient_phone,
-                Client.phone_vodacom == parsed.recipient_phone,
-            ),
-        ).first()
-    if client is not None:
-        return client
-
-    name = parsed.client_name or parsed.recipient_phone or "Détaillant inconnu"
-    client = Client(
-        name=name,
-        vendeur_id=owner.id,
-        business_id=business.id,
+    """Resolve a retailer by its business-scoped network number."""
+    client, _created = resolve_sms_sale_client(
+        business=business,
+        owner=owner,
+        network=parsed.network,
+        raw_phone=parsed.recipient_phone,
+        sms_name=parsed.client_name,
     )
-    phone_field = {
-        NetworkType.AIRTEL: "phone_airtel",
-        NetworkType.AFRICEL: "phone_africel",
-        NetworkType.ORANGE: "phone_orange",
-        NetworkType.VODACOM: "phone_vodacom",
-    }[parsed.network]
-    if parsed.recipient_phone:
-        setattr(client, phone_field, parsed.recipient_phone)
-    db.session.add(client)
-    db.session.flush()
     return client
 
 
@@ -705,31 +684,13 @@ def _sms_create_wholesale_purchase(parsed, business, owner, *, ingestion=None):
 
 def _sms_create_sale(parsed, business, vendeur_id: int, authed_user):
     """Create a Sale from a parsed sell SMS."""
-    from sqlalchemy import or_
-
-    # Match recipient phone to a known client (check all 4 network phone columns)
-    client = None
-    if parsed.recipient_phone:
-        client = Client.query.filter(
-            Client.business_id == business.id,
-            or_(
-                Client.phone_airtel == parsed.recipient_phone,
-                Client.phone_africel == parsed.recipient_phone,
-                Client.phone_orange == parsed.recipient_phone,
-                Client.phone_vodacom == parsed.recipient_phone,
-            )
-        ).first()
-
-    # Build adhoc name for unknown recipients
-    if client is None:
-        if parsed.client_name and parsed.recipient_phone:
-            client_name_adhoc = f"{parsed.client_name} ({parsed.recipient_phone})"
-        elif parsed.client_name:
-            client_name_adhoc = parsed.client_name
-        else:
-            client_name_adhoc = parsed.recipient_phone or "Client inconnu"
-    else:
-        client_name_adhoc = None
+    client, client_created = resolve_sms_sale_client(
+        business=business,
+        owner=business.owner,
+        network=parsed.network,
+        raw_phone=parsed.recipient_phone,
+        sms_name=parsed.client_name,
+    )
 
     # Get stock for this network
     stock_item = Stock.query.filter_by(
@@ -771,8 +732,8 @@ def _sms_create_sale(parsed, business, vendeur_id: int, authed_user):
         vendeur_id=vendeur_id,
         business_id=business.id,
         client=client,
-        client_name_adhoc=client_name_adhoc,
-        adhoc_customer_key=uuid4().hex if client is None else None,
+        client_name_adhoc=None,
+        adhoc_customer_key=None,
         sale_date=date.today(),
         total_amount_due=subtotal,
         cash_paid=subtotal,    # assume cash received; vendor edits if credit
@@ -791,7 +752,7 @@ def _sms_create_sale(parsed, business, vendeur_id: int, authed_user):
 
     current_app.logger.info(
         f"[SMS] Sale created: #{new_sale.id} {parsed.network.value} "
-        f"{parsed.quantity}U → {parsed.recipient_phone} (client_known={client is not None})"
+        f"{parsed.quantity}U → {parsed.recipient_phone} (client_created={client_created})"
     )
     return jsonify({
         "type": "sale",
@@ -800,8 +761,9 @@ def _sms_create_sale(parsed, business, vendeur_id: int, authed_user):
         "network": parsed.network.value,
         "quantity": parsed.quantity,
         "total_fc": float(subtotal),
-        "client": client.name if client else client_name_adhoc,
-        "client_known": client is not None,
+        "client": client.name,
+        "client_known": not client_created,
+        "client_needs_name": client.identification_status == "needs_name",
     }), 201
 
 

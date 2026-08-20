@@ -1,6 +1,6 @@
 {% extends "layouts/base.html" %}
 
-{% block title %} Codes API Android {% endblock %}
+{% block title %} Codes Android {% endblock %}
 
 {% block content %}
 <div class="header bg-primary pb-6">
@@ -8,12 +8,12 @@
     <div class="header-body">
       <div class="row align-items-center py-4">
         <div class="col-lg-6 col-7">
-          <h6 class="h2 text-white d-inline-block mb-0">Codes API Android</h6>
+          <h6 class="h2 text-white d-inline-block mb-0">Codes Android</h6>
           <nav aria-label="breadcrumb" class="d-none d-md-inline-block ml-md-4">
             <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
               <li class="breadcrumb-item"><a href="{{ url_for('admin_bp.dashboard') }}"><i class="fas fa-home"></i></a></li>
               <li class="breadcrumb-item"><a href="{{ url_for('admin_bp.dashboard') }}">Admin</a></li>
-              <li class="breadcrumb-item active">Codes API</li>
+              <li class="breadcrumb-item active">Codes</li>
             </ol>
           </nav>
         </div>
@@ -38,10 +38,10 @@
         <div class="card-header border-0">
           <div class="row align-items-center">
             <div class="col">
-              <h3 class="mb-0">Codes à partager avec les vendeurs</h3>
+              <h3 class="mb-0">Codes à envoyer</h3>
               <p class="text-sm text-muted mb-0">
-                Copiez et envoyez le code à chaque vendeur par WhatsApp.
-                Le vendeur le colle dans l'application Android lors de la première ouverture.
+                Copiez le code et envoyez-le au vendeur.
+                Il le saisit dans l'application Android à la première ouverture.
               </p>
             </div>
           </div>
@@ -53,7 +53,7 @@
               <tr>
                 <th>Vendeur</th>
                 <th>Téléphone</th>
-                <th>Code API</th>
+                <th>Code</th>
                 <th></th>
               </tr>
             </thead>
@@ -85,7 +85,7 @@
                   <form method="POST"
                         action="{{ url_for('admin_bp.regenerate_token', vendeur_id=vendeur.id) }}"
                         onsubmit="return confirm('Générer un nouveau code ? L\'ancien code ne fonctionnera plus.')">
-                    <button class="btn btn-sm btn-outline-danger" type="submit">
+                      <button class="btn btn-sm btn-outline-danger" type="submit">
                       <i class="fas fa-sync-alt"></i> Nouveau code
                     </button>
                   </form>
@@ -103,9 +103,9 @@
         <div class="card-footer">
           <p class="text-sm text-muted mb-0">
             <i class="fas fa-info-circle mr-1"></i>
-            Message WhatsApp à envoyer :
-            <em>"Bonjour, voici votre code Faida Android : <strong>[coller le code]</strong>.
-            Ouvrez l'application, collez ce code et appuyez sur Activer."</em>
+            Message WhatsApp :
+            <em>"Bonjour, voici votre code Faida : <strong>[coller le code]</strong>.
+            Ouvrez l'application et saisissez ce code."</em>
           </p>
         </div>
 

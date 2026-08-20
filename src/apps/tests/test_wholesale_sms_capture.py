@@ -88,6 +88,8 @@ def test_wholesale_purchase_sms_uses_exact_default_usd_cost(app, session):
     assert purchase.stock_item.business_id == wholesale.id
     assert purchase.actual_total_cost == Decimal("100.000000000000")
     assert Stock.query.filter_by(business_id=retail.id).count() == 0
+    from apps.models import Client
+    assert Client.query.filter_by(business_id=wholesale.id).count() == 0
 
 
 def test_wholesale_sale_sms_creates_retailer_debt_at_default_price(app, session):

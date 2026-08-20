@@ -13,8 +13,8 @@
         <h1 class="display-2 text-white"> 
           Bonjour {{ current_user.username }} 
         </h1>
-        <p class="text-white mt-0 mb-5">Ceci est votre page de profil. Vous pouvez gérer vos informations personnelles ici.</p> {# Translated #}
-        <a href="{{ url_for('main_bp.profile') }}" class="btn btn-neutral">Modifier</a> {# Translated #}
+        <p class="text-white mt-0 mb-5">Gérez ici votre compte et votre code Android.</p>
+        <a href="{{ url_for('main_bp.profile') }}" class="btn btn-neutral">Ouvrir</a>
       </div>
     </div>
   </div>
@@ -83,10 +83,10 @@
         <div class="card-header">
           <div class="row align-items-center">
             <div class="col-8">
-              <h3 class="mb-0">Modifier le profil utilisateur</h3> 
+              <h3 class="mb-0">Profil</h3>
             </div>
             <div class="col-4 text-right">
-              <a href="{{ url_for('main_bp.profile') }}" class="btn btn-sm btn-outline-primary">Actualiser</a> {# Translated #}
+              <a href="{{ url_for('main_bp.profile') }}" class="btn btn-sm btn-outline-primary">Rafraîchir</a>
             </div>
           </div>
         </div>
@@ -95,7 +95,7 @@
           <form method="POST" action="{{ url_for('main_bp.profile') }}">
             {{ form.csrf_token }}
 
-            <h6 class="heading-small text-muted mb-4">Informations utilisateur</h6> 
+            <h6 class="heading-small text-muted mb-4">Infos</h6>
             <div class="pl-lg-4">
               <div class="row">
                 <div class="col-lg-6">
@@ -132,7 +132,7 @@
 
             <hr class="my-4" />
 
-            <h6 class="heading-small text-muted mb-4">Changer le mot de passe</h6> 
+            <h6 class="heading-small text-muted mb-4">Mot de passe</h6>
             <div class="pl-lg-4">
               <div class="row">
                 <div class="col-lg-12">
@@ -171,11 +171,9 @@
 
             <hr class="my-4" />
 
-            {# ── Code API pour l'application Android (TWA) ── #}
-            <h6 class="heading-small text-muted mb-3">Application Android — Code API</h6>
+            <h6 class="heading-small text-muted mb-3">Code Android</h6>
             <p class="text-sm text-muted mb-2">
-              Entrez ce code dans l'application Android Faida lors de la première configuration
-              pour activer la capture automatique des SMS réseau.
+              Copiez ce code dans l'application Android lors de la configuration.
             </p>
             <div class="input-group mb-3">
               <input id="apiTokenField" type="text" class="form-control form-control-sm"

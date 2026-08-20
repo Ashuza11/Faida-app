@@ -13,9 +13,9 @@
           {% if business.business_type.value == 'wholesale' and business.approval_status.value != 'approved' %}
           <div class="alert alert-{% if business.approval_status.value == 'pending' %}warning{% else %}danger{% endif %} py-2">
             {% if business.approval_status.value == 'pending' %}
-              En attente d'approbation par l'administrateur.
+              En attente d'approbation.
             {% else %}
-              Demande grossiste refusée. Contactez l'administrateur.
+              Demande refusée. Contactez l'administration.
             {% endif %}
           </div>
           {% endif %}

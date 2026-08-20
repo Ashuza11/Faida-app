@@ -1,0 +1,11 @@
+{% extends "layouts/base.html" %}
+{% block title %}Modifier {{ client.name }} · Grossiste{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-4"><h1>Modifier {{ client.name }}</h1><a class="btn btn-outline-primary" href="{{ url_for('main_bp.wholesale_client_management') }}">Retour</a></div>
+  <div class="card shadow"><div class="card-body"><form method="post">{{ form.hidden_tag() }}
+    <div class="row">{% for field in form if field.name not in ['csrf_token', 'submit', 'email'] %}<div class="col-md-6"><div class="form-group">{{ field.label(class="form-control-label") }}{% if field.type == 'BooleanField' %}<div>{{ field() }}</div>{% else %}{{ field(class="form-control", rows=3) }}{% endif %}{% for error in field.errors %}<small class="text-danger d-block">{{ error }}</small>{% endfor %}</div></div>{% endfor %}</div>
+    {{ form.submit(class="btn btn-primary") }}
+  </form></div></div>
+</div>
+{% endblock %}

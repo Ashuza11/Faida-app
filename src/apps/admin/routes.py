@@ -232,7 +232,7 @@ def toggle_vendeur_status(vendeur_id):
     vendeur = User.query.get_or_404(vendeur_id)
 
     if vendeur.role != RoleType.VENDEUR:
-        flash("Action non autorisée.", "danger")
+        flash("Action refusée.", "danger")
         return redirect(url_for('admin_bp.vendeurs_list'))
 
     vendeur.is_active = not vendeur.is_active
@@ -251,13 +251,13 @@ def approve_wholesale(business_id):
     """Approve a pending wholesale request for operational access."""
     business = db.get_or_404(Business, business_id)
     if business.business_type != BusinessType.WHOLESALE:
-        flash("Ce mode n'est pas grossiste.", "warning")
+        flash("Ce mode n'est pas en grossiste.", "warning")
     elif business.approval_status == BusinessApprovalStatus.APPROVED:
-        flash("Ce mode grossiste est déjà approuvé.", "info")
+        flash("Ce mode est déjà approuvé.", "info")
     else:
         approve_wholesale_business(business=business, admin=current_user)
         db.session.commit()
-        flash(f"Le mode grossiste {business.name} est maintenant approuvé.", "success")
+        flash(f"Le mode grossiste {business.name} est approuvé.", "success")
     return redirect(
         url_for('admin_bp.vendeur_detail', vendeur_id=business.owner_user_id)
     )
@@ -333,7 +333,7 @@ def create_invite_code():
     db.session.add(new_code)
     db.session.commit()
 
-    flash(f"Code d'invitation créé: {code}", "success")
+    flash(f"Code créé: {code}", "success")
 
     return redirect(url_for('admin_bp.invite_codes_list'))
 
@@ -348,13 +348,13 @@ def delete_invite_code(code_id):
 
     # Check if used (used_by_id is not None)
     if code.used_by_id is not None:
-        flash("Impossible de supprimer un code déjà utilisé.", "warning")
+        flash("Code déjà utilisé.", "warning")
         return redirect(url_for('admin_bp.invite_codes_list'))
 
     db.session.delete(code)
     db.session.commit()
 
-    flash("Code d'invitation supprimé.", "success")
+    flash("Code supprimé.", "success")
 
     return redirect(url_for('admin_bp.invite_codes_list'))
 
@@ -369,7 +369,7 @@ def toggle_invite_code(code_id):
 
     # Can't toggle if already used
     if code.used_by_id is not None:
-        flash("Impossible de modifier un code déjà utilisé.", "warning")
+        flash("Code déjà utilisé.", "warning")
         return redirect(url_for('admin_bp.invite_codes_list'))
 
     code.is_active = not code.is_active
@@ -479,5 +479,5 @@ def regenerate_token(vendeur_id):
     ).first_or_404()
     vendeur.api_token = _secrets.token_urlsafe(32)
     db.session.commit()
-    flash(f'Nouveau code généré pour {vendeur.username}.', 'success')
+    flash(f'Code généré pour {vendeur.username}.', 'success')
     return redirect(url_for('admin_bp.android_tokens'))

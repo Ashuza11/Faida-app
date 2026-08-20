@@ -318,9 +318,9 @@
                 if (currentCount >= 4) {
                     Swal.fire({
                         icon: 'info',
-                        title: 'Limite d\'articles',
-                        text: 'Vous ne pouvez ajouter que jusqu\'à 4 articles par vente pour l\'instant.',
-                        confirmButtonText: 'Compris'
+                        title: 'Limite atteinte',
+                        text: '4 articles maximum par vente.',
+                        confirmButtonText: 'OK'
                     });
                     return;
                 }
@@ -393,9 +393,9 @@
                 } else {
                     Swal.fire({
                         icon: 'info',
-                        title: 'Impossible de supprimer',
-                        text: 'Vous devez avoir au moins un article de vente.',
-                        confirmButtonText: 'Compris'
+                        title: 'Article requis',
+                        text: 'Gardez au moins un article.',
+                        confirmButtonText: 'OK'
                     });
                 }
             });

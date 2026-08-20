@@ -6,6 +6,10 @@
         <a class="navbar-brand" href="/admin/dashboard">
           <img src="/static/assets/img/brand/faida-logo.png" class="navbar-brand-img" alt="Faida Logo." style="max-height: 2.6rem;">
         </a>
+      {% elif current_business and current_business.business_type.value == 'wholesale' %}
+        <a class="navbar-brand" href="{{ url_for('main_bp.wholesale_dashboard') }}">
+          <img src="/static/assets/img/brand/faida-logo.png" class="navbar-brand-img" alt="Faida Logo." style="max-height: 2.6rem;">
+        </a>
       {% else %}
         <a class="navbar-brand" href="/">
           <img src="/static/assets/img/brand/faida-logo.png" class="navbar-brand-img" alt="Faida Logo." style="max-height: 2.6rem;">
@@ -85,6 +89,7 @@
               <ul class="nav nav-sm flex-column">
                 <li class="nav-item"><a class="nav-link {% if sub_segment == 'sales' %}active{% endif %}" href="{{ url_for('main_bp.wholesale_sales') }}"><i class="fas fa-shopping-cart"></i><span class="nav-link-text">Vendre</span></a></li>
                 <li class="nav-item"><a class="nav-link {% if sub_segment == 'purchases' %}active{% endif %}" href="{{ url_for('main_bp.wholesale_purchases') }}"><i class="fas fa-cart-plus"></i><span class="nav-link-text">Acheter</span></a></li>
+                <li class="nav-item"><a class="nav-link {% if sub_segment == 'client_management' %}active{% endif %}" href="{{ url_for('main_bp.wholesale_client_management') }}"><i class="fas fa-users"></i><span class="nav-link-text">Clients</span></a></li>
                 <li class="nav-item"><a class="nav-link {% if sub_segment in ['clients', 'client_detail'] %}active{% endif %}" href="{{ url_for('main_bp.wholesale_clients') }}"><i class="fas fa-hand-holding-usd"></i><span class="nav-link-text">Dettes</span></a></li>
                 <li class="nav-item"><a class="nav-link {% if sub_segment == 'report' %}active{% endif %}" href="{{ url_for('main_bp.wholesale_report') }}"><i class="fas fa-chart-bar"></i><span class="nav-link-text">Rapport</span></a></li>
               </ul>

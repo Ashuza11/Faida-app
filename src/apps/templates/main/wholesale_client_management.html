@@ -1,0 +1,36 @@
+{% extends "layouts/base.html" %}
+{% block title %}Clients · Grossiste{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div><h1>Clients · {{ business.name }}</h1><span class="badge badge-info">Grossiste</span> <span class="badge badge-secondary">USD</span></div>
+    <a class="btn btn-outline-primary" href="{{ url_for('main_bp.wholesale_dashboard') }}">Accueil</a>
+  </div>
+  <div class="row">
+    <div class="col-lg-4 mb-4">
+      <div class="card shadow"><div class="card-header"><h3 class="mb-0">Nouveau client</h3></div><div class="card-body">
+        <form method="post">{{ form.hidden_tag() }}
+          {% for field in form if field.name not in ['csrf_token', 'submit'] %}
+          <div class="form-group">{{ field.label(class="form-control-label") }}{{ field(class="form-control", rows=2) }}{% for error in field.errors %}<small class="text-danger d-block">{{ error }}</small>{% endfor %}</div>
+          {% endfor %}
+          {{ form.submit(class="btn btn-primary btn-block") }}
+        </form>
+      </div></div>
+    </div>
+    <div class="col-lg-8">
+      <div class="card shadow"><div class="card-header d-flex justify-content-between"><h3 class="mb-0">Clients enregistrés</h3><span class="text-muted">{{ clients|length }}</span></div><div class="table-responsive">
+        <table class="table align-items-center"><thead><tr><th>Client</th><th>Numéros</th><th>État</th><th></th></tr></thead><tbody>
+          {% for client in clients %}<tr class="{% if not client.is_active %}text-muted{% endif %}">
+            <td><strong>{{ client.name }}</strong>{% if client.identification_status == 'needs_name' %}<br><span class="badge badge-warning">À identifier</span>{% endif %}{% if client.phone_conflicts %}<br><span class="badge badge-danger">Numéro à vérifier</span>{% endif %}</td>
+            <td>{% for phone in client.phones if phone.is_active %}<div><small>{{ phone.network.value|capitalize }}</small> · {{ phone.normalized_phone }}</div>{% else %}—{% endfor %}</td>
+            <td>{{ 'Actif' if client.is_active else 'Archivé' }}</td>
+            <td class="text-right"><a class="btn btn-sm btn-primary" href="{{ url_for('main_bp.wholesale_client_edit', client_id=client.id) }}">Modifier</a>
+              <form class="d-inline" method="post" action="{{ url_for('main_bp.wholesale_client_archive', client_id=client.id) }}">{{ form.csrf_token }}<button class="btn btn-sm btn-outline-secondary" type="submit">{{ 'Archiver' if client.is_active else 'Réactiver' }}</button></form>
+            </td>
+          </tr>{% else %}<tr><td colspan="4" class="text-center text-muted">Aucun client.</td></tr>{% endfor %}
+        </tbody></table>
+      </div></div>
+    </div>
+  </div>
+</div>
+{% endblock %}

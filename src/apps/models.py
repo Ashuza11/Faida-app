@@ -585,6 +585,12 @@ class Client(db.Model):
     )
 
     name: so.Mapped[str] = so.mapped_column(sa.String(128), nullable=False)
+    registration_source: so.Mapped[str] = so.mapped_column(
+        sa.String(16), nullable=False, default="manual"
+    )
+    identification_status: so.Mapped[str] = so.mapped_column(
+        sa.String(24), nullable=False, default="identified"
+    )
 
     # Phone numbers per network
     phone_airtel: so.Mapped[Optional[str]] = so.mapped_column(sa.String(20))
@@ -615,6 +621,16 @@ class Client(db.Model):
     sales: so.Mapped[List["Sale"]] = so.relationship(
         back_populates="client", cascade="all, delete-orphan"
     )
+    phones: so.Mapped[List["ClientPhone"]] = so.relationship(
+        back_populates="client",
+        cascade="all, delete-orphan",
+        order_by="ClientPhone.id",
+    )
+    phone_conflicts: so.Mapped[List["ClientPhoneConflict"]] = so.relationship(
+        back_populates="client",
+        cascade="all, delete-orphan",
+        order_by="ClientPhoneConflict.id",
+    )
 
     def __repr__(self) -> str:
         return f"<Client {self.name}>"
@@ -629,6 +645,110 @@ class Client(db.Model):
     def has_location(self) -> bool:
         """Check if client has GPS coordinates."""
         return self.gps_lat is not None and self.gps_long is not None
+
+    def phones_for(self, network: NetworkType) -> List[str]:
+        values = [
+            phone.normalized_phone for phone in self.phones
+            if phone.network == network and phone.is_active
+        ]
+        values.extend(
+            conflict.normalized_phone for conflict in self.phone_conflicts
+            if conflict.network == network and conflict.normalized_phone not in values
+        )
+        legacy_field = {
+            NetworkType.AIRTEL: self.phone_airtel,
+            NetworkType.AFRICEL: self.phone_africel,
+            NetworkType.ORANGE: self.phone_orange,
+            NetworkType.VODACOM: self.phone_vodacom,
+        }[network]
+        if legacy_field:
+            legacy_normalized = normalize_phone(legacy_field)
+            if legacy_normalized not in values:
+                values.append(legacy_field)
+        return values
+
+    @property
+    def airtel_phones(self) -> List[str]:
+        return self.phones_for(NetworkType.AIRTEL)
+
+    @property
+    def africel_phones(self) -> List[str]:
+        return self.phones_for(NetworkType.AFRICEL)
+
+    @property
+    def orange_phones(self) -> List[str]:
+        return self.phones_for(NetworkType.ORANGE)
+
+    @property
+    def vodacom_phones(self) -> List[str]:
+        return self.phones_for(NetworkType.VODACOM)
+
+
+class ClientPhone(db.Model):
+    """A normalized sale-recipient number owned by one business client."""
+    __tablename__ = "client_phones"
+
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+    business_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    client_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    network: so.Mapped[NetworkType] = so.mapped_column(
+        sa.Enum(NetworkType), nullable=False
+    )
+    normalized_phone: so.Mapped[str] = so.mapped_column(sa.String(20), nullable=False)
+    is_active: so.Mapped[bool] = so.mapped_column(default=True, nullable=False)
+    created_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    client: so.Mapped[Client] = so.relationship(back_populates="phones")
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "business_id", "network", "normalized_phone",
+            name="_client_phone_business_network_uc",
+        ),
+        sa.CheckConstraint(
+            "normalized_phone LIKE '+243%'", name="_client_phone_drc_format_ck"
+        ),
+    )
+
+
+class ClientPhoneConflict(db.Model):
+    """Legacy duplicate that must be resolved before automatic SMS attribution."""
+    __tablename__ = "client_phone_conflicts"
+
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+    business_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    client_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    network: so.Mapped[NetworkType] = so.mapped_column(
+        sa.Enum(NetworkType), nullable=False
+    )
+    normalized_phone: so.Mapped[str] = so.mapped_column(sa.String(20), nullable=False)
+    created_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    client: so.Mapped[Client] = so.relationship(back_populates="phone_conflicts")
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "client_id", "network", "normalized_phone",
+            name="_client_phone_conflict_client_uc",
+        ),
+    )
 
 
 # ===========================================
