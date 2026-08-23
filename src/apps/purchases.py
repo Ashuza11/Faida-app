@@ -34,6 +34,39 @@ def record_wholesale_purchase(
     purchase_date: date | None = None,
 ) -> StockPurchase:
     """Record one exact USD purchase without crossing business boundaries."""
+    _validate_wholesale_purchase_access(
+        business=business, purchased_by=purchased_by
+    )
+    quantity, unit_cost, total_cost = _wholesale_purchase_values(
+        business=business,
+        network=network,
+        quantity=quantity,
+        preset=preset,
+        custom_unit_cost=custom_unit_cost,
+    )
+    stock = _apply_wholesale_purchase_stock(
+        business=business,
+        network=network,
+        quantity=quantity,
+        unit_cost=unit_cost,
+        total_cost=total_cost,
+    )
+    purchase = StockPurchase(
+        purchased_by=purchased_by,
+        stock_item=stock,
+        price_preset=preset,
+        network=network,
+        buying_price_at_purchase=unit_cost,
+        selling_price_at_purchase=stock.selling_price_per_unit,
+        actual_total_cost=total_cost,
+        amount_purchased=int(quantity),
+        purchase_date=purchase_date or date.today(),
+    )
+    db.session.add(purchase)
+    return purchase
+
+
+def _validate_wholesale_purchase_access(*, business, purchased_by):
     if business.business_type != BusinessType.WHOLESALE:
         raise ValueError("Cette opération est réservée au registre grossiste.")
     if business.approval_status != BusinessApprovalStatus.APPROVED:
@@ -41,6 +74,10 @@ def record_wholesale_purchase(
     if business.owner_user_id != purchased_by.id:
         raise PermissionError("Seul le propriétaire peut enregistrer cet achat.")
 
+
+def _wholesale_purchase_values(
+    *, business, network, quantity, preset, custom_unit_cost
+):
     quantity = as_decimal(quantity)
     if quantity <= 0 or quantity != quantity.to_integral_value():
         raise ValueError("La quantité doit être un nombre entier positif.")
@@ -62,7 +99,12 @@ def record_wholesale_purchase(
         if unit_cost <= 0:
             raise ValueError("Le prix d'achat doit être positif.")
         total_cost = quantity * unit_cost
+    return quantity, unit_cost, total_cost
 
+
+def _apply_wholesale_purchase_stock(
+    *, business, network, quantity, unit_cost, total_cost
+):
     stock = (
         Stock.query.filter_by(business_id=business.id, network=network)
         .with_for_update()
@@ -87,19 +129,7 @@ def record_wholesale_purchase(
         actual_total_cost=total_cost,
         quoted_unit_cost=unit_cost,
     )
-    purchase = StockPurchase(
-        purchased_by=purchased_by,
-        stock_item=stock,
-        price_preset=preset,
-        network=network,
-        buying_price_at_purchase=unit_cost,
-        selling_price_at_purchase=stock.selling_price_per_unit,
-        actual_total_cost=total_cost,
-        amount_purchased=int(quantity),
-        purchase_date=purchase_date or date.today(),
-    )
-    db.session.add(purchase)
-    return purchase
+    return stock
 
 
 def _validate_retail_owner(*, business: Business, user: User) -> None:
@@ -286,3 +316,64 @@ def reverse_wholesale_purchase(
     purchase.reversed_at = datetime.now(timezone.utc)
     purchase.reversed_by_id = reversed_by.id
     purchase.reversal_reason = reason
+
+
+def replace_wholesale_purchase(
+    *, purchase, business, updated_by, network, quantity,
+    preset=None, custom_unit_cost=None, purchase_date=None,
+):
+    """Correct an unconsumed wholesale purchase without replacing its audit row."""
+    _validate_wholesale_purchase_access(
+        business=business, purchased_by=updated_by
+    )
+    if purchase.stock_item.business_id != business.id:
+        raise PermissionError("Cet achat appartient à un autre mode.")
+    if purchase.status != TransactionStatus.ACTIVE:
+        raise ValueError("Un achat annulé ne peut pas être modifié.")
+    if _purchase_has_later_sale(purchase=purchase, business=business):
+        raise ValueError(
+            "Cet achat ne peut pas être modifié car ce stock a déjà pu être vendu."
+        )
+
+    reverse_purchase(
+        stock=purchase.stock_item,
+        quantity=purchase.amount_purchased,
+        actual_total_cost=purchase.actual_total_cost,
+    )
+    quantity, unit_cost, total_cost = _wholesale_purchase_values(
+        business=business,
+        network=network,
+        quantity=quantity,
+        preset=preset,
+        custom_unit_cost=custom_unit_cost,
+    )
+    stock = _apply_wholesale_purchase_stock(
+        business=business,
+        network=network,
+        quantity=quantity,
+        unit_cost=unit_cost,
+        total_cost=total_cost,
+    )
+    purchase.stock_item = stock
+    purchase.price_preset = preset
+    purchase.network = network
+    purchase.buying_price_at_purchase = unit_cost
+    purchase.selling_price_at_purchase = stock.selling_price_per_unit
+    purchase.actual_total_cost = total_cost
+    purchase.amount_purchased = int(quantity)
+    purchase.purchase_date = purchase_date or purchase.purchase_date
+
+
+def _purchase_has_later_sale(*, purchase, business):
+    return (
+        db.session.query(SaleItem.id)
+        .join(Sale)
+        .filter(
+            Sale.business_id == business.id,
+            Sale.status == TransactionStatus.ACTIVE,
+            SaleItem.network == purchase.network,
+            Sale.sale_date >= purchase.purchase_date,
+        )
+        .first()
+        is not None
+    )

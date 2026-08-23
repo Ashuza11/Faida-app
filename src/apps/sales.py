@@ -12,11 +12,13 @@ from apps.models import (
     BusinessType,
     Client,
     NetworkType,
+    PaymentEvent,
     PriceOperation,
     PricePreset,
     Sale,
     SaleItem,
     Stock,
+    StockPurchase,
     TransactionStatus,
     User,
 )
@@ -28,14 +30,56 @@ def record_wholesale_sale(
     business: Business,
     sold_by: User,
     client: Client,
-    network: NetworkType,
-    quantity,
     cash_received,
     sale_date: date,
+    network: NetworkType | None = None,
+    quantity=None,
     preset: PricePreset | None = None,
     custom_unit_price=None,
+    items=None,
 ) -> Sale:
-    """Record an exact wholesale sale and allocate cash to old debt first."""
+    """Record an exact, possibly multi-network wholesale sale."""
+    _validate_wholesale_sale_access(
+        business=business, sold_by=sold_by, client=client
+    )
+    cash_received = as_decimal(cash_received or 0)
+    if cash_received < 0:
+        raise ValueError("Le montant reçu ne peut pas être négatif.")
+
+    if items is None:
+        items = [{
+            "network": network,
+            "quantity": quantity,
+            "preset": preset,
+            "custom_unit_price": custom_unit_price,
+        }]
+    prepared_items, total = _consume_wholesale_sale_items(
+        business=business, items=items
+    )
+
+    sale = Sale(
+        seller_id=sold_by.id,
+        vendeur_id=business.owner_user_id,
+        business_id=business.id,
+        client=client,
+        sale_date=sale_date,
+        total_amount_due=total,
+        cash_paid=Decimal("0"),
+        debt_amount=total,
+    )
+    sale.sale_items.extend(prepared_items)
+    db.session.add(sale)
+    db.session.flush()
+    apply_payment_to_sale(
+        sale=sale,
+        amount=cash_received,
+        recorded_by=sold_by,
+        payment_date=sale_date,
+    )
+    return sale
+
+
+def _validate_wholesale_sale_access(*, business, sold_by, client):
     if business.business_type != BusinessType.WHOLESALE:
         raise ValueError("Cette opération est réservée au registre grossiste.")
     if business.approval_status != BusinessApprovalStatus.APPROVED:
@@ -45,13 +89,8 @@ def record_wholesale_sale(
     if client.business_id != business.id:
         raise ValueError("Le client sélectionné appartient à un autre mode.")
 
-    quantity = as_decimal(quantity)
-    if quantity <= 0 or quantity != quantity.to_integral_value():
-        raise ValueError("La quantité doit être un nombre entier positif.")
-    cash_received = as_decimal(cash_received or 0)
-    if cash_received < 0:
-        raise ValueError("Le montant reçu ne peut pas être négatif.")
 
+def _wholesale_unit_price(*, business, network, preset, custom_unit_price):
     if preset is not None:
         if (
             preset.business_id != business.id
@@ -67,50 +106,124 @@ def record_wholesale_sale(
         unit_price = quantize_unit_price(custom_unit_price)
         if unit_price <= 0:
             raise ValueError("Le prix de vente doit être positif.")
+    return unit_price
 
-    stock = (
-        Stock.query.filter_by(business_id=business.id, network=network)
-        .with_for_update()
-        .one_or_none()
-    )
-    if stock is None:
-        raise ValueError(f"Stock {network.value} introuvable.")
-    cost_per_unit, cost_total = consume_stock(stock=stock, quantity=quantity)
-    subtotal = calculate_invoice_total(
-        [quantity * unit_price], business.currency_code
-    )
-    margin = subtotal - cost_total
 
-    sale = Sale(
-        seller_id=sold_by.id,
-        vendeur_id=business.owner_user_id,
-        business_id=business.id,
-        client=client,
-        sale_date=sale_date,
-        total_amount_due=subtotal,
-        cash_paid=Decimal("0"),
-        debt_amount=subtotal,
+def _consume_wholesale_sale_items(*, business, items):
+    if not items:
+        raise ValueError("Ajoutez au moins un réseau.")
+    seen_networks = set()
+    prepared = []
+    subtotals = []
+    for item in items:
+        network = item["network"]
+        if network in seen_networks:
+            raise ValueError(f"Le réseau {network.value} est saisi deux fois.")
+        seen_networks.add(network)
+        quantity = as_decimal(item["quantity"])
+        if quantity <= 0 or quantity != quantity.to_integral_value():
+            raise ValueError("La quantité doit être un nombre entier positif.")
+        preset = item.get("preset")
+        unit_price = _wholesale_unit_price(
+            business=business,
+            network=network,
+            preset=preset,
+            custom_unit_price=item.get("custom_unit_price"),
+        )
+        stock = (
+            Stock.query.filter_by(business_id=business.id, network=network)
+            .with_for_update()
+            .one_or_none()
+        )
+        if stock is None:
+            raise ValueError(f"Stock {network.value} introuvable.")
+        cost_per_unit, cost_total = consume_stock(
+            stock=stock, quantity=quantity
+        )
+        subtotal = calculate_invoice_total(
+            [quantity * unit_price], business.currency_code
+        )
+        prepared.append(SaleItem(
+            network=network,
+            price_preset=preset,
+            quantity=int(quantity),
+            price_per_unit_applied=unit_price,
+            subtotal=subtotal,
+            cost_per_unit_snapshot=cost_per_unit,
+            cost_total=cost_total,
+            margin_amount=subtotal - cost_total,
+            is_cost_estimated=False,
+        ))
+        subtotals.append(subtotal)
+    return prepared, sum(subtotals, Decimal("0"))
+
+
+def replace_unpaid_wholesale_sale(
+    *, sale, business, updated_by, client, sale_date, items
+):
+    """Replace an unpaid wholesale invoice while preserving its audit identity."""
+    _validate_wholesale_sale_access(
+        business=business, sold_by=updated_by, client=client
     )
-    sale.sale_items.append(SaleItem(
-        network=network,
-        price_preset=preset,
-        quantity=int(quantity),
-        price_per_unit_applied=unit_price,
-        subtotal=subtotal,
-        cost_per_unit_snapshot=cost_per_unit,
-        cost_total=cost_total,
-        margin_amount=margin,
-        is_cost_estimated=False,
-    ))
-    db.session.add(sale)
+    if sale.business_id != business.id:
+        raise PermissionError("Cette vente appartient à un autre mode.")
+    if sale.status != TransactionStatus.ACTIVE:
+        raise ValueError("Une vente annulée ne peut pas être modifiée.")
+    has_source_payment = PaymentEvent.query.filter_by(
+        source_sale_id=sale.id, status=TransactionStatus.ACTIVE
+    ).first() is not None
+    if sale.cash_paid > 0 or has_source_payment or any(
+        inflow.status == TransactionStatus.ACTIVE for inflow in sale.cash_inflows
+    ):
+        raise ValueError(
+            "Annulez d'abord le paiement de cette vente avant de la modifier."
+        )
+
+    affected_networks = {item.network for item in sale.sale_items}
+    affected_networks.update(item["network"] for item in items)
+    later_purchase = (
+        db.session.query(StockPurchase.id)
+        .join(Stock)
+        .filter(
+            Stock.business_id == business.id,
+            StockPurchase.status == TransactionStatus.ACTIVE,
+            StockPurchase.network.in_(affected_networks),
+            StockPurchase.created_at > sale.created_at,
+        )
+        .first()
+    )
+    if later_purchase is not None:
+        raise ValueError(
+            "Cette vente ne peut pas être modifiée car un achat plus récent "
+            "a changé le coût du stock."
+        )
+
+    for old_item in sale.sale_items:
+        stock = (
+            Stock.query.filter_by(
+                business_id=business.id, network=old_item.network
+            )
+            .with_for_update()
+            .one()
+        )
+        restore_sale_cost(
+            stock=stock,
+            quantity=old_item.quantity,
+            cost_total=old_item.cost_total,
+        )
+    sale.sale_items.clear()
     db.session.flush()
-    apply_payment_to_sale(
-        sale=sale,
-        amount=cash_received,
-        recorded_by=sold_by,
-        payment_date=sale_date,
+
+    prepared_items, total = _consume_wholesale_sale_items(
+        business=business, items=items
     )
-    return sale
+    sale.client = client
+    sale.sale_date = sale_date
+    sale.total_amount_due = total
+    sale.cash_paid = Decimal("0")
+    sale.initial_cash_paid = Decimal("0")
+    sale.debt_amount = total
+    sale.sale_items.extend(prepared_items)
 
 
 def reverse_unpaid_sale(

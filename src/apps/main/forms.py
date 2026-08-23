@@ -634,6 +634,30 @@ class WholesalePurchaseForm(FlaskForm):
     submit = SubmitField("Acheter")
 
 
+class WholesaleSaleItemForm(FlaskForm):
+    class Meta(FlaskForm.Meta):
+        csrf = False
+
+    network = SelectField(
+        "Réseau",
+        choices=[("", "Choisir")]
+        + [(network.name, network.value.capitalize()) for network in NetworkType],
+        validators=[Optional()],
+    )
+    quantity = IntegerField(
+        "Quantité",
+        validators=[Optional(), NumberRange(min=1)],
+        render_kw={"placeholder": "Ex: 10000", "min": "1"},
+    )
+    price_choice = SelectField("Prix de vente", validators=[Optional()])
+    custom_unit_price = DecimalField(
+        "Prix personnalisé ($)",
+        validators=[Optional(), NumberRange(min=Decimal("0.000000000001"))],
+        places=12,
+        render_kw={"placeholder": "Ex: 0.00945", "step": "0.000000000001"},
+    )
+
+
 class WholesaleSaleForm(FlaskForm):
     client_id = SelectField(
         "Client détaillant",
@@ -645,22 +669,9 @@ class WholesaleSaleForm(FlaskForm):
         validators=[Optional(), Length(min=2, max=128)],
         render_kw={"placeholder": "Ex: Boutique Mika"},
     )
-    network = SelectField(
-        "Réseau",
-        choices=[(network.name, network.value.capitalize()) for network in NetworkType],
-        validators=[DataRequired()],
-    )
-    quantity = IntegerField(
-        "Quantité vendue (unités)",
-        validators=[DataRequired(), NumberRange(min=1)],
-        render_kw={"placeholder": "Ex: 10000", "min": "1"},
-    )
-    price_choice = SelectField("Prix de vente", validators=[DataRequired()])
-    custom_unit_price = DecimalField(
-        "Prix personnalisé par unité ($)",
-        validators=[Optional(), NumberRange(min=Decimal("0.000000000001"))],
-        places=12,
-        render_kw={"placeholder": "Ex: 0.00945", "step": "0.000000000001"},
+    sale_items = FieldList(FormField(WholesaleSaleItemForm), min_entries=1)
+    sale_date = DateField(
+        "Date de la vente", validators=[DataRequired()], format="%Y-%m-%d"
     )
     cash_received = DecimalField(
         "Montant reçu maintenant ($)",

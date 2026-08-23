@@ -11,19 +11,30 @@
     <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge correspondant au cash encaissé aujourd'hui</small><div class="h2 text-info">${{ "{:.2f}".format(daily_report.totals.collected_margin) }}</div></div></div></div>
   </div>
   <div class="row">
-    <div class="col-lg-5 mb-4"><div class="card shadow"><div class="card-header"><h3 class="mb-0">Nouvelle vente</h3></div><div class="card-body">
+    <div class="col-lg-5 mb-4"><div class="card shadow"><div class="card-header"><h3 class="mb-0">{{ 'Modifier la vente' if editing_sale else 'Nouvelle vente' }}</h3></div><div class="card-body">
       <form method="post">
         {{ form.hidden_tag() }}
         <div class="form-group">{{ form.client_id.label }}{{ form.client_id(class="form-control", id="saleClient") }}</div>
         <div class="form-group" id="newClientGroup">{{ form.new_client_name.label }}{{ form.new_client_name(class="form-control") }}</div>
-        <div class="form-group">{{ form.network.label }}{{ form.network(class="form-control", id="saleNetwork") }}</div>
-        <div class="form-group">{{ form.quantity.label }}{{ form.quantity(class="form-control", id="saleQuantity") }}</div>
-        <div class="form-group">{{ form.price_choice.label }}{{ form.price_choice(class="form-control", id="salePrice") }}</div>
-        <div class="form-group" id="customSalePriceGroup">{{ form.custom_unit_price.label }}{{ form.custom_unit_price(class="form-control", id="customSalePrice") }}</div>
-        <div class="form-group">{{ form.cash_received.label }}{{ form.cash_received(class="form-control") }}<small class="text-muted">Les anciennes dettes de ce détaillant sont payées en premier.</small></div>
+        <div id="wholesaleSaleItems">
+          {% for item in form.sale_items %}
+          <div class="border rounded p-3 mb-3 wholesale-sale-item">
+            <div class="form-row">
+              <div class="form-group col-md-4">{{ item.form.network.label }}{{ item.form.network(class="form-control sale-network") }}</div>
+              <div class="form-group col-md-4">{{ item.form.quantity.label }}{{ item.form.quantity(class="form-control sale-quantity") }}</div>
+              <div class="form-group col-md-4">{{ item.form.price_choice.label }}{{ item.form.price_choice(class="form-control sale-price") }}</div>
+            </div>
+            <div class="form-group custom-sale-price-group">{{ item.form.custom_unit_price.label }}{{ item.form.custom_unit_price(class="form-control custom-sale-price") }}</div>
+            <div class="small text-muted">Sous-total: <strong class="sale-line-total">—</strong></div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="form-group">{{ form.sale_date.label }}{{ form.sale_date(class="form-control") }}</div>
+        {% if not editing_sale %}<div class="form-group">{{ form.cash_received.label }}{{ form.cash_received(class="form-control") }}<small class="text-muted">Les anciennes dettes de ce détaillant sont payées en premier.</small></div>{% endif %}
         {% for field, errors in form.errors.items() %}{% for error in errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}{% endfor %}
         <div class="alert alert-light border">Total estimé: <strong id="saleTotalPreview">—</strong></div>
-        {{ form.submit(class="btn btn-success btn-block") }}
+        <button class="btn btn-success btn-block" type="submit">{{ 'Enregistrer' if editing_sale else 'Vendre' }}</button>
+        {% if editing_sale %}<a class="btn btn-link btn-block" href="{{ url_for('main_bp.wholesale_sales') }}">Annuler</a>{% endif %}
       </form>
     </div></div></div>
     <div class="col-lg-7">
@@ -33,7 +44,7 @@
       </table></div></div>
       <div class="card shadow"><div class="card-header"><h3 class="mb-0">Ventes récentes</h3></div><div class="table-responsive"><table class="table">
         <thead><tr><th>Client</th><th>Total</th><th>Payé</th><th>Dette</th><th>Date</th><th>Statut / correction</th></tr></thead>
-        <tbody>{% for sale in sales %}<tr class="{% if sale.status.value == 'reversed' %}text-muted{% endif %}"><td>{{ sale.client_display_name }}</td><td>${{ "{:.2f}".format(sale.total_amount_due) }}</td><td>${{ "{:.2f}".format(sale.cash_paid) }}</td><td>${{ "{:.2f}".format(sale.debt_amount) }}</td><td>{{ sale.sale_date.strftime('%d/%m/%Y') }}</td><td>{% if sale.status.value == 'reversed' %}<span class="badge badge-danger">Annulée</span><br><small>{{ sale.reversal_reason }}</small>{% elif sale.cash_paid > 0 %}<small class="text-warning">Paiement à annuler d'abord</small>{% else %}<form method="post" action="{{ url_for('main_bp.reverse_wholesale_sale_route', sale_id=sale.id) }}">{{ reversal_form.csrf_token }}<div class="input-group input-group-sm"><input class="form-control" name="reason" minlength="3" maxlength="255" required placeholder="Raison"><div class="input-group-append"><button class="btn btn-outline-danger" type="submit">Annuler</button></div></div></form>{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Aucune vente enregistrée.</td></tr>{% endfor %}</tbody>
+        <tbody>{% for sale in sales %}<tr class="{% if sale.status.value == 'reversed' %}text-muted{% endif %}"><td>{{ sale.client_display_name }}{% for item in sale.sale_items %}<br><small>{{ item.network.value.capitalize() }}: {{ item.quantity }} @ ${{ "{:.5f}".format(item.price_per_unit_applied) }}</small>{% endfor %}</td><td>${{ "{:.2f}".format(sale.total_amount_due) }}</td><td>${{ "{:.2f}".format(sale.cash_paid) }}</td><td>${{ "{:.2f}".format(sale.debt_amount) }}</td><td>{{ sale.sale_date.strftime('%d/%m/%Y') }}</td><td>{% if sale.status.value == 'reversed' %}<span class="badge badge-danger">Annulée</span><br><small>{{ sale.reversal_reason }}</small>{% elif sale.cash_paid > 0 or sale.id in paid_source_sale_ids %}<small class="text-warning">Paiement à annuler d'abord</small>{% else %}<a class="btn btn-sm btn-primary mb-2" href="{{ url_for('main_bp.wholesale_sale_edit', sale_id=sale.id) }}">Modifier</a><form method="post" action="{{ url_for('main_bp.reverse_wholesale_sale_route', sale_id=sale.id) }}">{{ reversal_form.csrf_token }}<div class="input-group input-group-sm"><input class="form-control" name="reason" minlength="3" maxlength="255" required placeholder="Raison"><div class="input-group-append"><button class="btn btn-outline-danger" type="submit">Annuler</button></div></div></form>{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Aucune vente enregistrée.</td></tr>{% endfor %}</tbody>
       </table></div></div>
     </div>
   </div>
@@ -43,36 +54,45 @@
 {{ super() }}
 <script>
   const salePresets = {{ preset_data | tojson }};
-  const saleNetwork = document.getElementById('saleNetwork');
-  const salePrice = document.getElementById('salePrice');
-  const saleQuantity = document.getElementById('saleQuantity');
-  const customSalePrice = document.getElementById('customSalePrice');
   function updateSalePreview() {
-    const custom = salePrice.value === 'custom';
-    document.getElementById('customSalePriceGroup').style.display = custom ? 'block' : 'none';
-    const option = salePrice.options[salePrice.selectedIndex];
-    const unitPrice = Number(custom ? customSalePrice.value : option?.dataset.unitPrice || 0);
-    const total = Number(saleQuantity.value || 0) * unitPrice;
+    let total = 0;
+    document.querySelectorAll('.wholesale-sale-item').forEach(row => {
+      const price = row.querySelector('.sale-price');
+      const customPrice = row.querySelector('.custom-sale-price');
+      const custom = price.value === 'custom';
+      row.querySelector('.custom-sale-price-group').style.display = custom ? 'block' : 'none';
+      const option = price.options[price.selectedIndex];
+      const unitPrice = Number(custom ? customPrice.value : option?.dataset.unitPrice || 0);
+      const lineTotal = Number(row.querySelector('.sale-quantity').value || 0) * unitPrice;
+      row.querySelector('.sale-line-total').textContent = lineTotal ? `$${lineTotal.toFixed(2)}` : '—';
+      total += lineTotal;
+    });
     document.getElementById('saleTotalPreview').textContent = total ? `$${total.toFixed(2)}` : '—';
   }
-  function loadSalePrices() {
-    const previous = salePrice.value;
-    salePrice.innerHTML = '';
-    (salePresets[saleNetwork.value] || []).forEach(item => {
+  function loadSalePrices(row) {
+    const network = row.querySelector('.sale-network');
+    const price = row.querySelector('.sale-price');
+    const previous = price.value;
+    price.innerHTML = '';
+    price.add(new Option('Choisir un prix', ''));
+    (salePresets[network.value] || []).forEach(item => {
       const option = new Option(item.label, item.value);
       option.dataset.unitPrice = item.unit_price;
-      salePrice.add(option);
+      price.add(option);
     });
-    salePrice.add(new Option('Prix personnalisé', 'custom'));
-    if ([...salePrice.options].some(option => option.value === previous)) salePrice.value = previous;
+    price.add(new Option('Prix personnalisé', 'custom'));
+    if ([...price.options].some(option => option.value === previous)) price.value = previous;
     updateSalePreview();
   }
   function toggleClient() { document.getElementById('newClientGroup').style.display = document.getElementById('saleClient').value === 'new' ? 'block' : 'none'; }
-  saleNetwork.addEventListener('change', loadSalePrices);
-  salePrice.addEventListener('change', updateSalePreview);
-  saleQuantity.addEventListener('input', updateSalePreview);
-  customSalePrice.addEventListener('input', updateSalePreview);
+  document.querySelectorAll('.wholesale-sale-item').forEach(row => {
+    row.querySelector('.sale-network').addEventListener('change', () => loadSalePrices(row));
+    row.querySelector('.sale-price').addEventListener('change', updateSalePreview);
+    row.querySelector('.sale-quantity').addEventListener('input', updateSalePreview);
+    row.querySelector('.custom-sale-price').addEventListener('input', updateSalePreview);
+    loadSalePrices(row);
+  });
   document.getElementById('saleClient').addEventListener('change', toggleClient);
-  loadSalePrices(); toggleClient();
+  toggleClient();
 </script>
 {% endblock %}

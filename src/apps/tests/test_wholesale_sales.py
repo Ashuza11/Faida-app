@@ -20,7 +20,11 @@ from apps.models import (
 )
 from apps.purchases import record_wholesale_purchase
 from apps.payments import collect_client_debt, reverse_payment_event
-from apps.sales import record_wholesale_sale, reverse_unpaid_wholesale_sale
+from apps.sales import (
+    record_wholesale_sale,
+    replace_unpaid_wholesale_sale,
+    reverse_unpaid_wholesale_sale,
+)
 from apps.wholesale_reports import build_wholesale_daily_report
 
 
@@ -348,9 +352,10 @@ def test_wholesale_sales_page_records_new_retailer(app, session):
         data={
             "client_id": "new",
             "new_client_name": "Boutique Nouvelle",
-            "network": NetworkType.AIRTEL.name,
-            "quantity": "1000",
-            "price_choice": f"preset:{preset.id}",
+            "sale_items-0-network": NetworkType.AIRTEL.name,
+            "sale_items-0-quantity": "1000",
+            "sale_items-0-price_choice": f"preset:{preset.id}",
+            "sale_date": date.today().isoformat(),
             "cash_received": "5.00",
         },
     )
@@ -374,6 +379,186 @@ def test_wholesale_sales_page_records_new_retailer(app, session):
     assert report_page.status_code == 200
     assert b"$0.40" in report_page.data
     assert b"$0.21" in report_page.data
+
+
+def test_wholesale_sale_records_multiple_networks_on_one_invoice(session):
+    owner, business, retailer, airtel_preset = setup_wholesale(session, suffix=51)
+    record_wholesale_purchase(
+        business=business,
+        purchased_by=owner,
+        network=NetworkType.ORANGE,
+        quantity=2000,
+        custom_unit_cost=Decimal("0.00900"),
+    )
+    orange_preset = next(
+        preset for preset in business.price_presets
+        if preset.network == NetworkType.ORANGE
+        and preset.operation == PriceOperation.SALE
+    )
+
+    sale = record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=retailer,
+        cash_received=0,
+        sale_date=date.today(),
+        items=[
+            {"network": NetworkType.AIRTEL, "quantity": 500, "preset": airtel_preset},
+            {"network": NetworkType.ORANGE, "quantity": 750, "preset": orange_preset},
+        ],
+    )
+    session.flush()
+
+    assert len(sale.sale_items) == 2
+    assert {item.network for item in sale.sale_items} == {
+        NetworkType.AIRTEL, NetworkType.ORANGE
+    }
+    assert Sale.query.count() == 1
+    assert Stock.query.filter_by(
+        business_id=business.id, network=NetworkType.AIRTEL
+    ).one().balance == 1500
+    assert Stock.query.filter_by(
+        business_id=business.id, network=NetworkType.ORANGE
+    ).one().balance == 1250
+
+
+def test_retyping_existing_wholesale_client_name_reuses_client(app, session):
+    owner, business, retailer, preset = setup_wholesale(session, suffix=52)
+    session.commit()
+    browser = app.test_client()
+    with browser.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    for _ in range(2):
+        response = browser.post(
+            "/businesses/wholesale/sales",
+            data={
+                "client_id": "new",
+                "new_client_name": "  retailer  ",
+                "sale_items-0-network": NetworkType.AIRTEL.name,
+                "sale_items-0-quantity": "500",
+                "sale_items-0-price_choice": f"preset:{preset.id}",
+                "sale_date": date.today().isoformat(),
+                "cash_received": "0",
+            },
+        )
+        assert response.status_code == 302
+
+    assert Client.query.filter_by(business_id=business.id).count() == 1
+    assert Sale.query.filter_by(client_id=retailer.id).count() == 2
+
+
+def test_unpaid_wholesale_sale_can_be_corrected(session):
+    owner, business, retailer, preset = setup_wholesale(session, suffix=53)
+    sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=500, cash_received=0,
+        sale_date=date.today(), preset=preset,
+    )
+    session.flush()
+
+    replace_unpaid_wholesale_sale(
+        sale=sale,
+        business=business,
+        updated_by=owner,
+        client=retailer,
+        sale_date=date.today(),
+        items=[{
+            "network": NetworkType.AIRTEL,
+            "quantity": 300,
+            "custom_unit_price": Decimal("0.01000"),
+        }],
+    )
+    session.flush()
+
+    assert sale.id is not None
+    assert len(sale.sale_items) == 1
+    assert sale.sale_items[0].quantity == 300
+    assert sale.total_amount_due == Decimal("3.00")
+    assert sale.debt_amount == Decimal("3.00")
+    assert Stock.query.filter_by(
+        business_id=business.id, network=NetworkType.AIRTEL
+    ).one().balance == 1700
+
+
+def test_paid_wholesale_sale_cannot_be_edited(session):
+    owner, business, retailer, preset = setup_wholesale(session, suffix=54)
+    sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=500, cash_received=Decimal("1"),
+        sale_date=date.today(), preset=preset,
+    )
+
+    with pytest.raises(ValueError, match="paiement"):
+        replace_unpaid_wholesale_sale(
+            sale=sale, business=business, updated_by=owner, client=retailer,
+            sale_date=date.today(), items=[{
+                "network": NetworkType.AIRTEL,
+                "quantity": 300,
+                "custom_unit_price": Decimal("0.01000"),
+            }],
+        )
+
+
+def test_wholesale_sale_edit_route_updates_invoice(app, session):
+    owner, business, retailer, preset = setup_wholesale(session, suffix=55)
+    sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=500, cash_received=0,
+        sale_date=date.today(), preset=preset,
+    )
+    session.commit()
+    browser = app.test_client()
+    with browser.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    response = browser.post(
+        f"/businesses/wholesale/sales/{sale.id}/edit",
+        data={
+            "client_id": str(retailer.id),
+            "sale_items-0-network": NetworkType.AIRTEL.name,
+            "sale_items-0-quantity": "300",
+            "sale_items-0-price_choice": "custom",
+            "sale_items-0-custom_unit_price": "0.01000",
+            "sale_date": date.today().isoformat(),
+            "cash_received": "0",
+        },
+    )
+
+    assert response.status_code == 302
+    session.refresh(sale)
+    assert Sale.query.count() == 1
+    assert sale.sale_items[0].quantity == 300
+    assert sale.total_amount_due == Decimal("3.00")
+
+
+def test_sale_edit_is_blocked_after_later_purchase_changes_cost(session):
+    owner, business, retailer, preset = setup_wholesale(session, suffix=56)
+    sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=500, cash_received=0,
+        sale_date=date.today(), preset=preset,
+    )
+    session.flush()
+    record_wholesale_purchase(
+        business=business, purchased_by=owner, network=NetworkType.AIRTEL,
+        quantity=1000, custom_unit_cost=Decimal("0.01200"),
+    )
+    session.flush()
+
+    with pytest.raises(ValueError, match="achat plus récent"):
+        replace_unpaid_wholesale_sale(
+            sale=sale, business=business, updated_by=owner, client=retailer,
+            sale_date=date.today(), items=[{
+                "network": NetworkType.AIRTEL,
+                "quantity": 300,
+                "custom_unit_price": Decimal("0.01000"),
+            }],
+        )
 
 
 def test_debt_collection_is_oldest_first_and_keeps_payment_date(session):

@@ -114,10 +114,12 @@ from apps.purchases import (
     record_retail_purchase,
     record_wholesale_purchase,
     replace_retail_purchase,
+    replace_wholesale_purchase,
     reverse_wholesale_purchase,
 )
 from apps.sales import (
     record_wholesale_sale,
+    replace_unpaid_wholesale_sale,
     reverse_unpaid_sale,
     reverse_unpaid_wholesale_sale,
 )
@@ -134,8 +136,10 @@ _WHOLESALE_SAFE_ENDPOINTS = {
     "main_bp.switch_business",
     "main_bp.wholesale_dashboard",
     "main_bp.wholesale_purchases",
+    "main_bp.wholesale_purchase_edit",
     "main_bp.reverse_wholesale_purchase_route",
     "main_bp.wholesale_sales",
+    "main_bp.wholesale_sale_edit",
     "main_bp.reverse_wholesale_sale_route",
     "main_bp.wholesale_clients",
     "main_bp.wholesale_client_management",
@@ -347,6 +351,91 @@ def wholesale_purchases():
     )
 
 
+@bp.route(
+    "/businesses/wholesale/purchases/<int:purchase_id>/edit",
+    methods=["GET", "POST"],
+)
+@login_required
+@vendeur_required
+def wholesale_purchase_edit(purchase_id):
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    if business.owner_user_id != current_user.id:
+        abort(403)
+    purchase = (
+        StockPurchase.query.join(Stock)
+        .filter(StockPurchase.id == purchase_id, Stock.business_id == business.id)
+        .first_or_404()
+    )
+    presets = PricePreset.query.filter_by(
+        business_id=business.id,
+        operation=PriceOperation.PURCHASE,
+        is_active=True,
+    ).order_by(PricePreset.network, PricePreset.display_order, PricePreset.id).all()
+    form = WholesalePurchaseForm()
+    form.price_choice.choices = [
+        (f"preset:{preset.id}", f"{preset.network.value.capitalize()} — {preset.label}")
+        for preset in presets
+    ] + [("custom", "Prix personnalisé")]
+    if request.method == "GET":
+        form.network.data = purchase.network.name
+        form.quantity.data = purchase.amount_purchased
+        form.purchase_date.data = purchase.purchase_date
+        if purchase.price_preset_id and purchase.price_preset and purchase.price_preset.is_active:
+            form.price_choice.data = f"preset:{purchase.price_preset_id}"
+        else:
+            form.price_choice.data = "custom"
+            form.custom_unit_cost.data = purchase.buying_price_at_purchase
+
+    if form.validate_on_submit():
+        try:
+            preset = None
+            custom_unit_cost = None
+            if form.price_choice.data == "custom":
+                custom_unit_cost = form.custom_unit_cost.data
+            else:
+                preset_id = int(form.price_choice.data.removeprefix("preset:"))
+                preset = db.session.get(PricePreset, preset_id)
+            replace_wholesale_purchase(
+                purchase=purchase,
+                business=business,
+                updated_by=current_user,
+                network=NetworkType[form.network.data],
+                quantity=form.quantity.data,
+                preset=preset,
+                custom_unit_cost=custom_unit_cost,
+                purchase_date=form.purchase_date.data,
+            )
+            db.session.commit()
+            flash("Achat modifié.", "success")
+            return redirect(url_for("main_bp.wholesale_purchases"))
+        except (ValueError, PermissionError) as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+
+    preset_data = {network.name: [] for network in NetworkType}
+    for preset in presets:
+        preset_data[preset.network.name].append({
+            "value": f"preset:{preset.id}",
+            "label": preset.label,
+            "unit_price": str(preset.unit_price),
+            "ratio_amount": str(preset.ratio_amount or ""),
+            "ratio_units": str(preset.ratio_units or ""),
+        })
+    return render_template(
+        "main/wholesale_purchases.html",
+        business=business,
+        form=form,
+        purchases=[],
+        editing_purchase=purchase,
+        preset_data=preset_data,
+        reversal_form=TransactionReversalForm(),
+        segment="wholesale",
+        sub_segment="purchases",
+    )
+
+
 @bp.route("/businesses/wholesale/purchases/<int:purchase_id>/reverse", methods=["POST"])
 @login_required
 @vendeur_required
@@ -374,6 +463,87 @@ def reverse_wholesale_purchase_route(purchase_id):
     return redirect(url_for("main_bp.wholesale_purchases"))
 
 
+def _configure_wholesale_sale_form(form, *, clients, presets):
+    form.client_id.choices = [("new", "Nouveau détaillant")] + [
+        (str(client.id), client.name) for client in clients
+    ]
+    price_choices = [("", "Choisir un prix")] + [
+        (
+            f"preset:{preset.id}",
+            f"{preset.network.value.capitalize()} — {preset.label}",
+        )
+        for preset in presets
+    ] + [("custom", "Prix personnalisé")]
+    for entry in form.sale_items.entries:
+        entry.form.price_choice.choices = price_choices
+
+
+def _wholesale_sale_items_from_form(form):
+    items = []
+    for entry in form.sale_items.entries:
+        network_name = entry.form.network.data
+        quantity = entry.form.quantity.data
+        price_choice = entry.form.price_choice.data
+        custom_price = entry.form.custom_unit_price.data
+        if not network_name and quantity is None and not price_choice and custom_price is None:
+            continue
+        if not network_name or quantity is None or not price_choice:
+            raise ValueError("Complétez le réseau, la quantité et le prix de chaque ligne.")
+        network = NetworkType[network_name]
+        preset = None
+        if price_choice == "custom":
+            if custom_price is None:
+                raise ValueError("Saisissez le prix personnalisé.")
+        else:
+            try:
+                preset_id = int(price_choice.removeprefix("preset:"))
+            except (TypeError, ValueError):
+                raise ValueError("Le prix sélectionné est invalide.") from None
+            preset = db.session.get(PricePreset, preset_id)
+        items.append({
+            "network": network,
+            "quantity": quantity,
+            "preset": preset,
+            "custom_unit_price": custom_price if price_choice == "custom" else None,
+        })
+    if not items:
+        raise ValueError("Ajoutez au moins un réseau.")
+    return items
+
+
+def _resolve_wholesale_sale_client(form, *, business):
+    if form.client_id.data != "new":
+        try:
+            client_id = int(form.client_id.data)
+        except (TypeError, ValueError):
+            raise ValueError("Sélectionnez un client.") from None
+        client = Client.query.filter_by(
+            id=client_id, business_id=business.id, is_active=True
+        ).first()
+        if client is None:
+            raise ValueError("Client invalide.")
+        return client
+
+    name = " ".join((form.new_client_name.data or "").split()).strip()
+    if len(name) < 2:
+        raise ValueError("Saisissez le nom du nouveau détaillant.")
+    existing = Client.query.filter(
+        Client.business_id == business.id,
+        Client.is_active.is_(True),
+        func.lower(Client.name) == name.casefold(),
+    ).first()
+    if existing is not None:
+        return existing
+    client = Client(
+        name=ensure_unique_client_name(business_id=business.id, name=name),
+        vendeur_id=current_user.id,
+        business_id=business.id,
+    )
+    db.session.add(client)
+    db.session.flush()
+    return client
+
+
 @bp.route("/businesses/wholesale/sales", methods=["GET", "POST"])
 @login_required
 @vendeur_required
@@ -399,51 +569,23 @@ def wholesale_sales():
         .all()
     )
     form = WholesaleSaleForm()
-    form.client_id.choices = [("new", "Nouveau détaillant")] + [
-        (str(client.id), client.name) for client in clients
-    ]
-    form.price_choice.choices = [
-        (f"preset:{preset.id}", f"{preset.network.value.capitalize()} — {preset.label}")
-        for preset in presets
-    ] + [("custom", "Prix personnalisé")]
+    if request.method == "GET":
+        while len(form.sale_items.entries) < 3:
+            form.sale_items.append_entry()
+        form.sale_date.data = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
+    _configure_wholesale_sale_form(form, clients=clients, presets=presets)
 
     if form.validate_on_submit():
         try:
-            if form.client_id.data == "new":
-                name = (form.new_client_name.data or "").strip()
-                if len(name) < 2:
-                    raise ValueError("Saisissez le nom du nouveau détaillant.")
-                name = ensure_unique_client_name(
-                    business_id=business.id, name=name
-                )
-                client = Client(
-                    name=name,
-                    vendeur_id=current_user.id,
-                    business_id=business.id,
-                )
-                db.session.add(client)
-                db.session.flush()
-            else:
-                client = db.session.get(Client, int(form.client_id.data))
-
-            network = NetworkType[form.network.data]
-            selected_preset = None
-            custom_unit_price = None
-            if form.price_choice.data == "custom":
-                custom_unit_price = form.custom_unit_price.data
-            else:
-                preset_id = int(form.price_choice.data.removeprefix("preset:"))
-                selected_preset = db.session.get(PricePreset, preset_id)
+            client = _resolve_wholesale_sale_client(form, business=business)
+            items = _wholesale_sale_items_from_form(form)
             record_wholesale_sale(
                 business=business,
                 sold_by=current_user,
                 client=client,
-                network=network,
-                quantity=form.quantity.data,
                 cash_received=form.cash_received.data or Decimal("0"),
-                sale_date=datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date(),
-                preset=selected_preset,
-                custom_unit_price=custom_unit_price,
+                sale_date=form.sale_date.data,
+                items=items,
             )
             db.session.commit()
             flash("Vente enregistrée.", "success")
@@ -459,6 +601,12 @@ def wholesale_sales():
         .limit(100)
         .all()
     )
+    paid_source_sale_ids = {
+        row[0] for row in db.session.query(PaymentEvent.source_sale_id).filter(
+            PaymentEvent.source_sale_id.in_([sale.id for sale in sales]),
+            PaymentEvent.status == TransactionStatus.ACTIVE,
+        ).all()
+    } if sales else set()
     daily_report = build_wholesale_daily_report(
         business=business,
         target_date=today,
@@ -476,7 +624,92 @@ def wholesale_sales():
         business=business,
         form=form,
         sales=sales,
+        paid_source_sale_ids=paid_source_sale_ids,
         daily_report=daily_report,
+        preset_data=preset_data,
+        reversal_form=TransactionReversalForm(),
+        segment="wholesale",
+        sub_segment="sales",
+    )
+
+
+@bp.route(
+    "/businesses/wholesale/sales/<int:sale_id>/edit",
+    methods=["GET", "POST"],
+)
+@login_required
+@vendeur_required
+def wholesale_sale_edit(sale_id):
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    if business.owner_user_id != current_user.id:
+        abort(403)
+    sale = Sale.query.filter_by(id=sale_id, business_id=business.id).first_or_404()
+    clients = Client.query.filter_by(
+        business_id=business.id, is_active=True
+    ).order_by(Client.name).all()
+    presets = PricePreset.query.filter_by(
+        business_id=business.id,
+        operation=PriceOperation.SALE,
+        is_active=True,
+    ).order_by(PricePreset.network, PricePreset.display_order, PricePreset.id).all()
+    form = WholesaleSaleForm()
+
+    if request.method == "GET":
+        form.client_id.data = str(sale.client_id)
+        form.sale_date.data = sale.sale_date
+        form.cash_received.data = Decimal("0")
+        while form.sale_items.entries:
+            form.sale_items.pop_entry()
+        for item in sale.sale_items:
+            entry = form.sale_items.append_entry()
+            entry.form.network.data = item.network.name
+            entry.form.quantity.data = item.quantity
+            if item.price_preset_id and item.price_preset and item.price_preset.is_active:
+                entry.form.price_choice.data = f"preset:{item.price_preset_id}"
+            else:
+                entry.form.price_choice.data = "custom"
+                entry.form.custom_unit_price.data = item.price_per_unit_applied
+    _configure_wholesale_sale_form(form, clients=clients, presets=presets)
+
+    if form.validate_on_submit():
+        try:
+            client = _resolve_wholesale_sale_client(form, business=business)
+            items = _wholesale_sale_items_from_form(form)
+            replace_unpaid_wholesale_sale(
+                sale=sale,
+                business=business,
+                updated_by=current_user,
+                client=client,
+                sale_date=form.sale_date.data,
+                items=items,
+            )
+            db.session.commit()
+            flash("Vente modifiée.", "success")
+            return redirect(url_for("main_bp.wholesale_sales"))
+        except (ValueError, PermissionError) as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+
+    preset_data = {network.name: [] for network in NetworkType}
+    for preset in presets:
+        preset_data[preset.network.name].append({
+            "value": f"preset:{preset.id}",
+            "label": preset.label,
+            "unit_price": str(preset.unit_price),
+        })
+    today = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
+    return render_template(
+        "main/wholesale_sales.html",
+        business=business,
+        editing_sale=sale,
+        form=form,
+        sales=[],
+        paid_source_sale_ids=set(),
+        daily_report=build_wholesale_daily_report(
+            business=business, target_date=today
+        ),
         preset_data=preset_data,
         reversal_form=TransactionReversalForm(),
         segment="wholesale",

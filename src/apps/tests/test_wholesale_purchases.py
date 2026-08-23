@@ -21,6 +21,7 @@ from apps.purchases import (
     record_retail_purchase,
     record_wholesale_purchase,
     replace_retail_purchase,
+    replace_wholesale_purchase,
     reverse_wholesale_purchase,
 )
 from apps.sales import record_wholesale_sale
@@ -264,6 +265,105 @@ def test_wholesale_purchase_route_records_selected_preset(app, session):
     ).one()
     assert stock.balance == Decimal("10650")
     assert stock.inventory_value == Decimal("100.000000000000")
+
+
+def test_wholesale_purchase_can_be_corrected_before_stock_is_sold(session):
+    owner = make_owner(session, 61)
+    business = approved_wholesale(session, owner, "Correct purchase")
+    purchase = record_wholesale_purchase(
+        business=business,
+        purchased_by=owner,
+        network=NetworkType.AIRTEL,
+        quantity=1000,
+        custom_unit_cost=Decimal("0.00935"),
+    )
+    session.flush()
+    purchase_id = purchase.id
+
+    replace_wholesale_purchase(
+        purchase=purchase,
+        business=business,
+        updated_by=owner,
+        network=NetworkType.AIRTEL,
+        quantity=1200,
+        custom_unit_cost=Decimal("0.00940"),
+        purchase_date=date.today(),
+    )
+    session.flush()
+
+    assert purchase.id == purchase_id
+    assert StockPurchase.query.count() == 1
+    assert purchase.amount_purchased == 1200
+    assert purchase.actual_total_cost == Decimal("11.280000000000")
+    assert purchase.stock_item.balance == 1200
+    assert purchase.stock_item.inventory_value == Decimal("11.280000000000")
+
+
+def test_wholesale_purchase_edit_is_blocked_after_later_sale(session):
+    owner = make_owner(session, 62)
+    business = approved_wholesale(session, owner, "Consumed correction")
+    purchase = record_wholesale_purchase(
+        business=business,
+        purchased_by=owner,
+        network=NetworkType.AIRTEL,
+        quantity=1000,
+        custom_unit_cost=Decimal("0.00935"),
+    )
+    retailer = Client(name="Retailer", vendeur_id=owner.id, business_id=business.id)
+    session.add(retailer)
+    record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=retailer,
+        network=NetworkType.AIRTEL,
+        quantity=100,
+        cash_received=0,
+        sale_date=date.today(),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    session.flush()
+
+    with pytest.raises(ValueError, match="déjà pu être vendu"):
+        replace_wholesale_purchase(
+            purchase=purchase,
+            business=business,
+            updated_by=owner,
+            network=NetworkType.AIRTEL,
+            quantity=1200,
+            custom_unit_cost=Decimal("0.00940"),
+        )
+
+
+def test_wholesale_purchase_edit_route_updates_existing_record(app, session):
+    owner = make_owner(session, 63)
+    business = approved_wholesale(session, owner, "Route correction")
+    purchase = record_wholesale_purchase(
+        business=business, purchased_by=owner, network=NetworkType.AIRTEL,
+        quantity=1000, custom_unit_cost=Decimal("0.00935"),
+    )
+    session.commit()
+    browser = app.test_client()
+    with browser.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    response = browser.post(
+        f"/businesses/wholesale/purchases/{purchase.id}/edit",
+        data={
+            "network": NetworkType.AIRTEL.name,
+            "quantity": "1200",
+            "purchase_date": date.today().isoformat(),
+            "price_choice": "custom",
+            "custom_unit_cost": "0.00940",
+        },
+    )
+
+    assert response.status_code == 302
+    session.refresh(purchase)
+    assert StockPurchase.query.count() == 1
+    assert purchase.amount_purchased == 1200
+    assert purchase.stock_item.balance == 1200
 
 
 def test_retail_purchase_replace_and_delete_preserve_inventory(session):
