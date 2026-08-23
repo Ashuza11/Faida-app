@@ -291,19 +291,7 @@ def reverse_wholesale_purchase(
     if len(reason) < 3:
         raise ValueError("Indiquez la raison de l'annulation.")
 
-    later_sale_exists = (
-        db.session.query(SaleItem.id)
-        .join(Sale)
-        .filter(
-            Sale.business_id == business.id,
-            Sale.status == TransactionStatus.ACTIVE,
-            SaleItem.network == purchase.network,
-            Sale.sale_date >= purchase.purchase_date,
-        )
-        .first()
-        is not None
-    )
-    if later_sale_exists:
+    if _purchase_has_later_sale(purchase=purchase, business=business):
         raise ValueError(
             "Cet achat ne peut pas être annulé car ce stock a déjà pu être vendu."
         )
@@ -365,6 +353,7 @@ def replace_wholesale_purchase(
 
 
 def _purchase_has_later_sale(*, purchase, business):
+    """Return whether a sale recorded after this purchase may depend on it."""
     return (
         db.session.query(SaleItem.id)
         .join(Sale)
@@ -372,7 +361,7 @@ def _purchase_has_later_sale(*, purchase, business):
             Sale.business_id == business.id,
             Sale.status == TransactionStatus.ACTIVE,
             SaleItem.network == purchase.network,
-            Sale.sale_date >= purchase.purchase_date,
+            Sale.created_at > purchase.created_at,
         )
         .first()
         is not None

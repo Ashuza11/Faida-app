@@ -19,6 +19,9 @@
         <div id="wholesaleSaleItems">
           {% for item in form.sale_items %}
           <div class="border rounded p-3 mb-3 wholesale-sale-item">
+            <div class="d-flex justify-content-end mb-2">
+              <button type="button" class="btn btn-sm btn-outline-danger remove-sale-item" {% if loop.first %}disabled{% endif %} aria-label="Retirer ce réseau">×</button>
+            </div>
             <div class="form-row">
               <div class="form-group col-md-4">{{ item.form.network.label }}{{ item.form.network(class="form-control sale-network") }}</div>
               <div class="form-group col-md-4">{{ item.form.quantity.label }}{{ item.form.quantity(class="form-control sale-quantity") }}</div>
@@ -29,12 +32,13 @@
           </div>
           {% endfor %}
         </div>
+        <button type="button" class="btn btn-sm btn-outline-primary mb-3" id="addWholesaleSaleItem">Ajouter</button>
         <div class="form-group">{{ form.sale_date.label }}{{ form.sale_date(class="form-control") }}</div>
         {% if not editing_sale %}<div class="form-group">{{ form.cash_received.label }}{{ form.cash_received(class="form-control") }}<small class="text-muted">Les anciennes dettes de ce détaillant sont payées en premier.</small></div>{% endif %}
         {% for field, errors in form.errors.items() %}{% for error in errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}{% endfor %}
         <div class="alert alert-light border">Total estimé: <strong id="saleTotalPreview">—</strong></div>
         <button class="btn btn-success btn-block" type="submit">{{ 'Enregistrer' if editing_sale else 'Vendre' }}</button>
-        {% if editing_sale %}<a class="btn btn-link btn-block" href="{{ url_for('main_bp.wholesale_sales') }}">Annuler</a>{% endif %}
+        {% if editing_sale %}<a class="btn btn-link btn-block" href="{{ url_for('main_bp.wholesale_sales') }}">Retour</a>{% endif %}
       </form>
     </div></div></div>
     <div class="col-lg-7">
@@ -44,7 +48,7 @@
       </table></div></div>
       <div class="card shadow"><div class="card-header"><h3 class="mb-0">Ventes récentes</h3></div><div class="table-responsive"><table class="table">
         <thead><tr><th>Client</th><th>Total</th><th>Payé</th><th>Dette</th><th>Date</th><th>Statut / correction</th></tr></thead>
-        <tbody>{% for sale in sales %}<tr class="{% if sale.status.value == 'reversed' %}text-muted{% endif %}"><td>{{ sale.client_display_name }}{% for item in sale.sale_items %}<br><small>{{ item.network.value.capitalize() }}: {{ item.quantity }} @ ${{ "{:.5f}".format(item.price_per_unit_applied) }}</small>{% endfor %}</td><td>${{ "{:.2f}".format(sale.total_amount_due) }}</td><td>${{ "{:.2f}".format(sale.cash_paid) }}</td><td>${{ "{:.2f}".format(sale.debt_amount) }}</td><td>{{ sale.sale_date.strftime('%d/%m/%Y') }}</td><td>{% if sale.status.value == 'reversed' %}<span class="badge badge-danger">Annulée</span><br><small>{{ sale.reversal_reason }}</small>{% elif sale.cash_paid > 0 or sale.id in paid_source_sale_ids %}<small class="text-warning">Paiement à annuler d'abord</small>{% else %}<a class="btn btn-sm btn-primary mb-2" href="{{ url_for('main_bp.wholesale_sale_edit', sale_id=sale.id) }}">Modifier</a><form method="post" action="{{ url_for('main_bp.reverse_wholesale_sale_route', sale_id=sale.id) }}">{{ reversal_form.csrf_token }}<div class="input-group input-group-sm"><input class="form-control" name="reason" minlength="3" maxlength="255" required placeholder="Raison"><div class="input-group-append"><button class="btn btn-outline-danger" type="submit">Annuler</button></div></div></form>{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Aucune vente enregistrée.</td></tr>{% endfor %}</tbody>
+        <tbody>{% for sale in sales %}<tr class="{% if sale.status.value == 'reversed' %}text-muted{% endif %}"><td>{{ sale.client_display_name }}{% for item in sale.sale_items %}<br><small>{{ item.network.value.capitalize() }}: {{ item.quantity }} @ ${{ "{:.5f}".format(item.price_per_unit_applied) }}</small>{% endfor %}</td><td>${{ "{:.2f}".format(sale.total_amount_due) }}</td><td>${{ "{:.2f}".format(sale.cash_paid) }}</td><td>${{ "{:.2f}".format(sale.debt_amount) }}</td><td>{{ sale.sale_date.strftime('%d/%m/%Y') }}</td><td>{% if sale.status.value == 'reversed' %}<span class="badge badge-danger">Annulée</span><br><small>{{ sale.reversal_reason }}</small>{% elif sale.cash_paid > 0 or sale.id in paid_source_sale_ids %}<small class="text-warning">Paiement à annuler d'abord</small>{% else %}<a class="btn btn-sm btn-primary mb-2" href="{{ url_for('main_bp.wholesale_sale_edit', sale_id=sale.id) }}">Modifier</a><form method="post" action="{{ url_for('main_bp.reverse_wholesale_sale_route', sale_id=sale.id) }}" onsubmit="return confirm('Annuler cette vente ? Le stock sera restauré.');">{{ reversal_form.csrf_token }}<div class="input-group input-group-sm"><input class="form-control" name="reason" minlength="3" maxlength="255" required placeholder="Raison"><div class="input-group-append"><button class="btn btn-outline-danger" type="submit">Annuler vente</button></div></div></form>{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Aucune vente enregistrée.</td></tr>{% endfor %}</tbody>
       </table></div></div>
     </div>
   </div>
@@ -84,14 +88,52 @@
     if ([...price.options].some(option => option.value === previous)) price.value = previous;
     updateSalePreview();
   }
-  function toggleClient() { document.getElementById('newClientGroup').style.display = document.getElementById('saleClient').value === 'new' ? 'block' : 'none'; }
-  document.querySelectorAll('.wholesale-sale-item').forEach(row => {
+  function reindexSaleRows() {
+    const rows = [...document.querySelectorAll('.wholesale-sale-item')];
+    rows.forEach((row, index) => {
+      row.querySelectorAll('[name], [id], label[for]').forEach(element => {
+        ['name', 'id', 'for'].forEach(attribute => {
+          const value = element.getAttribute(attribute);
+          if (value) element.setAttribute(attribute, value.replace(/sale_items-\d+-/, `sale_items-${index}-`));
+        });
+      });
+      row.querySelector('.remove-sale-item').disabled = index === 0;
+    });
+    document.getElementById('addWholesaleSaleItem').disabled = rows.length >= 4;
+  }
+  function bindSaleRow(row) {
+    if (row.dataset.bound === 'true') return;
+    row.dataset.bound = 'true';
     row.querySelector('.sale-network').addEventListener('change', () => loadSalePrices(row));
     row.querySelector('.sale-price').addEventListener('change', updateSalePreview);
     row.querySelector('.sale-quantity').addEventListener('input', updateSalePreview);
     row.querySelector('.custom-sale-price').addEventListener('input', updateSalePreview);
+    row.querySelector('.remove-sale-item').addEventListener('click', () => {
+      if (document.querySelectorAll('.wholesale-sale-item').length === 1) return;
+      row.remove();
+      reindexSaleRows();
+      updateSalePreview();
+    });
     loadSalePrices(row);
+  }
+  function toggleClient() { document.getElementById('newClientGroup').style.display = document.getElementById('saleClient').value === 'new' ? 'block' : 'none'; }
+  document.querySelectorAll('.wholesale-sale-item').forEach(bindSaleRow);
+  document.getElementById('addWholesaleSaleItem').addEventListener('click', () => {
+    const container = document.getElementById('wholesaleSaleItems');
+    const rows = container.querySelectorAll('.wholesale-sale-item');
+    if (rows.length >= 4) return;
+    const newRow = rows[0].cloneNode(true);
+    newRow.dataset.bound = 'false';
+    newRow.querySelectorAll('input, select').forEach(field => {
+      field.value = '';
+    });
+    newRow.querySelectorAll('.text-danger').forEach(error => error.remove());
+    newRow.querySelector('.sale-line-total').textContent = '—';
+    container.appendChild(newRow);
+    reindexSaleRows();
+    bindSaleRow(newRow);
   });
+  reindexSaleRows();
   document.getElementById('saleClient').addEventListener('change', toggleClient);
   toggleClient();
 </script>

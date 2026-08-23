@@ -381,6 +381,24 @@ def test_wholesale_sales_page_records_new_retailer(app, session):
     assert b"$0.21" in report_page.data
 
 
+def test_wholesale_sale_form_starts_with_one_dynamic_network_row(app, session):
+    owner, business, _, _ = setup_wholesale(session, suffix=57)
+    session.commit()
+    browser = app.test_client()
+    with browser.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    response = browser.get("/businesses/wholesale/sales")
+
+    assert response.status_code == 200
+    page = response.data.decode()
+    assert page.count('class="border rounded p-3 mb-3 wholesale-sale-item"') == 1
+    assert 'id="addWholesaleSaleItem"' in page
+    assert "rows.length >= 4" in page
+
+
 def test_wholesale_sale_records_multiple_networks_on_one_invoice(session):
     owner, business, retailer, airtel_preset = setup_wholesale(session, suffix=51)
     record_wholesale_purchase(

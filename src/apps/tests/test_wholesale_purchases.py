@@ -266,6 +266,10 @@ def test_wholesale_purchase_route_records_selected_preset(app, session):
     assert stock.balance == Decimal("10650")
     assert stock.inventory_value == Decimal("100.000000000000")
 
+    page = client.get("/businesses/wholesale/purchases")
+    assert b"Annuler achat" in page.data
+    assert "Le stock sera corrigé".encode() in page.data
+
 
 def test_wholesale_purchase_can_be_corrected_before_stock_is_sold(session):
     owner = make_owner(session, 61)
@@ -332,6 +336,53 @@ def test_wholesale_purchase_edit_is_blocked_after_later_sale(session):
             quantity=1200,
             custom_unit_cost=Decimal("0.00940"),
         )
+
+
+def test_same_day_sale_recorded_before_purchase_does_not_block_edit(session):
+    owner = make_owner(session, 64)
+    business = approved_wholesale(session, owner, "Same-day ordering")
+    record_wholesale_purchase(
+        business=business,
+        purchased_by=owner,
+        network=NetworkType.AIRTEL,
+        quantity=2000,
+        custom_unit_cost=Decimal("0.00900"),
+    )
+    retailer = Client(name="Retailer", vendeur_id=owner.id, business_id=business.id)
+    session.add(retailer)
+    record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=retailer,
+        network=NetworkType.AIRTEL,
+        quantity=100,
+        cash_received=0,
+        sale_date=date.today(),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    session.flush()
+    latest_purchase = record_wholesale_purchase(
+        business=business,
+        purchased_by=owner,
+        network=NetworkType.AIRTEL,
+        quantity=1000,
+        custom_unit_cost=Decimal("0.00935"),
+        purchase_date=date.today(),
+    )
+    session.flush()
+
+    replace_wholesale_purchase(
+        purchase=latest_purchase,
+        business=business,
+        updated_by=owner,
+        network=NetworkType.AIRTEL,
+        quantity=1200,
+        custom_unit_cost=Decimal("0.00940"),
+    )
+    session.flush()
+
+    assert latest_purchase.amount_purchased == 1200
+    assert latest_purchase.actual_total_cost == Decimal("11.280000000000")
 
 
 def test_wholesale_purchase_edit_route_updates_existing_record(app, session):

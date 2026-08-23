@@ -570,8 +570,6 @@ def wholesale_sales():
     )
     form = WholesaleSaleForm()
     if request.method == "GET":
-        while len(form.sale_items.entries) < 3:
-            form.sale_items.append_entry()
         form.sale_date.data = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
     _configure_wholesale_sale_form(form, clients=clients, presets=presets)
 
