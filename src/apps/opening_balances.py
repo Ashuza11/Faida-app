@@ -1,13 +1,13 @@
-"""Cost-aware retailer opening stock anchors."""
+"""Cost-aware, business-scoped opening stock anchors."""
 
-from datetime import datetime
 from decimal import Decimal
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import func
 
 from apps import db
+from apps.dates import business_local_date
 from apps.models import (
+    BusinessApprovalStatus,
     BusinessType,
     NetworkType,
     Sale,
@@ -24,18 +24,31 @@ class OpeningBalanceError(ValueError):
     """Raised when an opening balance would rewrite dependent history."""
 
 
-def save_opening_balances(*, business, recorded_by, balance_date, updates):
+def save_opening_balances(
+    *, business, recorded_by, balance_date, updates, exact_totals=None
+):
     """Upsert only submitted networks and reconcile today's inventory value."""
-    if business.business_type != BusinessType.RETAIL:
-        raise OpeningBalanceError("Le stock d'ouverture est réservé au mode détaillant.")
-    current_date = datetime.now(ZoneInfo("Africa/Lubumbashi")).date()
+    if business.business_type not in (BusinessType.RETAIL, BusinessType.WHOLESALE):
+        raise OpeningBalanceError("Ce mode ne permet pas de gérer un stock d'ouverture.")
+    if (
+        business.business_type == BusinessType.WHOLESALE
+        and business.approval_status != BusinessApprovalStatus.APPROVED
+    ):
+        raise OpeningBalanceError("Le mode grossiste doit d'abord être approuvé.")
+    current_date = business_local_date()
     if balance_date > current_date:
         raise OpeningBalanceError("La date ne peut pas être dans le futur.")
 
+    exact_totals = exact_totals or {}
     changed = []
     for network, raw_values in updates.items():
         raw_quantity, raw_unit_cost = raw_values
-        if raw_quantity is None and raw_unit_cost is None:
+        raw_total_cost = exact_totals.get(network)
+        if (
+            raw_quantity is None
+            and raw_unit_cost is None
+            and raw_total_cost is None
+        ):
             continue
         entry = StockOpeningBalance.query.filter_by(
             business_id=business.id,
@@ -55,7 +68,17 @@ def save_opening_balances(*, business, recorded_by, balance_date, updates):
             raise OpeningBalanceError("Les quantités doivent être des nombres entiers positifs.")
 
         if quantity == 0:
+            if raw_total_cost is not None and as_decimal(raw_total_cost) != 0:
+                raise OpeningBalanceError(
+                    "Une quantité nulle doit avoir une valeur totale nulle."
+                )
             unit_cost = Decimal("0")
+            total_cost = Decimal("0")
+        elif raw_total_cost is not None:
+            total_cost = as_decimal(raw_total_cost).quantize(INTERNAL_MONEY_QUANTUM)
+            if total_cost <= 0:
+                raise OpeningBalanceError("La valeur totale du stock doit être positive.")
+            unit_cost = quantize_unit_price(total_cost / quantity)
         elif raw_unit_cost is not None:
             unit_cost = quantize_unit_price(raw_unit_cost)
         elif entry is not None and entry.unit_cost > 0:
@@ -72,18 +95,23 @@ def save_opening_balances(*, business, recorded_by, balance_date, updates):
                 )
         if quantity > 0 and unit_cost <= 0:
             raise OpeningBalanceError("Le coût par unité doit être positif.")
-        total_cost = (quantity * unit_cost).quantize(INTERNAL_MONEY_QUANTUM)
+        if quantity > 0 and raw_total_cost is None:
+            total_cost = (quantity * unit_cost).quantize(INTERNAL_MONEY_QUANTUM)
         if (
             entry is not None
             and entry.is_cost_estimated
             and raw_unit_cost is None
+            and raw_total_cost is None
             and as_decimal(entry.quantity) != quantity
         ):
             raise OpeningBalanceError(
                 f"Confirmez le coût par unité de {network.value}."
             )
         remains_estimated = bool(
-            entry is not None and entry.is_cost_estimated and raw_unit_cost is None
+            entry is not None
+            and entry.is_cost_estimated
+            and raw_unit_cost is None
+            and raw_total_cost is None
         )
 
         is_changed = entry is None or any((
@@ -124,6 +152,53 @@ def save_opening_balances(*, business, recorded_by, balance_date, updates):
                 business=business, network=network, opening=entry
             )
     return [entry for _, entry in changed]
+
+
+def opening_quantity_for_date(*, business_id, network, target_date):
+    """Roll an opening quantity forward from the latest dated stock anchor."""
+    anchor = (
+        StockOpeningBalance.query.filter(
+            StockOpeningBalance.business_id == business_id,
+            StockOpeningBalance.network == network,
+            StockOpeningBalance.balance_date <= target_date,
+        )
+        .order_by(StockOpeningBalance.balance_date.desc())
+        .first()
+    )
+    start_date = anchor.balance_date if anchor is not None else None
+
+    purchase_filters = [
+        Stock.business_id == business_id,
+        StockPurchase.network == network,
+        StockPurchase.purchase_date < target_date,
+        StockPurchase.status == TransactionStatus.ACTIVE,
+    ]
+    sale_filters = [
+        Sale.business_id == business_id,
+        SaleItem.network == network,
+        Sale.sale_date < target_date,
+        Sale.status == TransactionStatus.ACTIVE,
+    ]
+    if start_date is not None:
+        purchase_filters.append(StockPurchase.purchase_date >= start_date)
+        sale_filters.append(Sale.sale_date >= start_date)
+
+    purchased = (
+        db.session.query(func.sum(StockPurchase.amount_purchased))
+        .join(Stock)
+        .filter(*purchase_filters)
+        .scalar()
+        or 0
+    )
+    sold = (
+        db.session.query(func.sum(SaleItem.quantity))
+        .join(Sale)
+        .filter(*sale_filters)
+        .scalar()
+        or 0
+    )
+    opening = as_decimal(anchor.quantity) if anchor is not None else Decimal("0")
+    return opening + as_decimal(purchased) - as_decimal(sold)
 
 
 def _ensure_history_is_safe(

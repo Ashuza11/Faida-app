@@ -19,6 +19,7 @@ from apps.models import (
     StockPurchase,
     TransactionStatus,
 )
+from apps.opening_balances import opening_quantity_for_date
 
 
 ZERO = Decimal("0")
@@ -37,30 +38,6 @@ def build_wholesale_daily_report(
 
     rows = {}
     for network in NetworkType:
-        purchases_before = (
-            db.session.query(func.sum(StockPurchase.amount_purchased))
-            .join(Stock)
-            .filter(
-                Stock.business_id == business.id,
-                StockPurchase.network == network,
-                StockPurchase.purchase_date < target_date,
-                StockPurchase.status == TransactionStatus.ACTIVE,
-            )
-            .scalar()
-            or 0
-        )
-        sales_before = (
-            db.session.query(func.sum(SaleItem.quantity))
-            .join(Sale)
-            .filter(
-                Sale.business_id == business.id,
-                SaleItem.network == network,
-                Sale.sale_date < target_date,
-                Sale.status == TransactionStatus.ACTIVE,
-            )
-            .scalar()
-            or 0
-        )
         purchase = (
             db.session.query(
                 func.sum(StockPurchase.amount_purchased).label("quantity"),
@@ -91,7 +68,11 @@ def build_wholesale_daily_report(
             )
             .one()
         )
-        opening = Decimal(purchases_before) - Decimal(sales_before)
+        opening = opening_quantity_for_date(
+            business_id=business.id,
+            network=network,
+            target_date=target_date,
+        )
         purchased_quantity = Decimal(purchase.quantity or 0)
         sold_quantity = Decimal(sold.quantity or 0)
         rows[network.name] = {

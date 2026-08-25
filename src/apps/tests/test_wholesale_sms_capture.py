@@ -1,6 +1,8 @@
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from apps.businesses import create_business
+from apps.dates import business_local_date
 from apps.models import (
     BusinessApprovalStatus,
     BusinessType,
@@ -37,6 +39,12 @@ def owner_with_modes(session):
 
 def auth_headers():
     return {"X-Api-Token": "android-wholesale-token"}
+
+
+def test_business_date_uses_local_day_at_utc_day_boundary():
+    assert business_local_date(
+        datetime(2026, 8, 18, 22, 30, tzinfo=timezone.utc)
+    ) == date(2026, 8, 19)
 
 
 def test_android_lists_approved_modes_for_explicit_capture_selection(app, session):
@@ -87,6 +95,9 @@ def test_wholesale_purchase_sms_uses_exact_default_usd_cost(app, session):
     purchase = session.get(StockPurchase, payload["purchase_id"])
     assert purchase.stock_item.business_id == wholesale.id
     assert purchase.actual_total_cost == Decimal("100.000000000000")
+    assert purchase.purchase_date == business_local_date(
+        datetime.fromtimestamp(1787061600000 / 1000, tz=timezone.utc)
+    )
     assert Stock.query.filter_by(business_id=retail.id).count() == 0
     from apps.models import Client
     assert Client.query.filter_by(business_id=wholesale.id).count() == 0
@@ -126,6 +137,9 @@ def test_wholesale_sale_sms_creates_retailer_debt_at_default_price(app, session)
     assert payload["mode"] == "wholesale"
     assert payload["payment_status"] == "debt"
     sale = session.get(Sale, payload["sale_id"])
+    assert sale.sale_date == business_local_date(
+        datetime.fromtimestamp(1787061601000 / 1000, tz=timezone.utc)
+    )
     assert sale.business_id == wholesale.id
     assert sale.client.business_id == wholesale.id
     assert sale.client.phone_airtel == "+243972067057"

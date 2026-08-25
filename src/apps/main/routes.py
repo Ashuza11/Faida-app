@@ -37,6 +37,7 @@ from apps.payments import (
 )
 from apps.inventory import consume_stock
 from apps.opening_balances import OpeningBalanceError, save_opening_balances
+from apps.dates import business_local_date
 from apps.client_identities import (
     ClientIdentityError,
     ensure_unique_client_name,
@@ -75,6 +76,7 @@ from apps.models import (
     normalize_phone,
     validate_drc_phone,
     BusinessType,
+    BusinessApprovalStatus,
     CurrencyCode,
     PriceOperation,
     PricePreset,
@@ -90,6 +92,7 @@ from apps.main.forms import (
     ClientEditForm,
     StockPurchaseForm,
     StockOpeningBalanceForm,
+    WholesaleOpeningBalanceForm,
     SaleForm,
     CashOutflowForm,
     DebtCollectionForm,
@@ -136,6 +139,7 @@ _WHOLESALE_SAFE_ENDPOINTS = {
     "main_bp.create_wholesale_business",
     "main_bp.switch_business",
     "main_bp.wholesale_dashboard",
+    "main_bp.wholesale_opening_stock",
     "main_bp.wholesale_purchases",
     "main_bp.wholesale_purchase_edit",
     "main_bp.reverse_wholesale_purchase_route",
@@ -267,6 +271,126 @@ def wholesale_dashboard():
         stocks=stocks,
         segment="wholesale",
         sub_segment="dashboard",
+    )
+
+
+@bp.route("/businesses/wholesale/opening-stock", methods=["GET", "POST"])
+@login_required
+@vendeur_required
+def wholesale_opening_stock():
+    """Confirm a dated physical opening stock for one wholesale ledger."""
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    if business.owner_user_id != current_user.id:
+        abort(403)
+    if business.approval_status != BusinessApprovalStatus.APPROVED:
+        flash("Le mode grossiste doit d'abord être approuvé.", "warning")
+        return redirect(url_for("main_bp.wholesale_dashboard"))
+
+    form = WholesaleOpeningBalanceForm()
+    today_local = business_local_date()
+    selected_date = today_local
+    if request.method == "GET":
+        date_value = request.args.get("date", "").strip()
+        if date_value:
+            try:
+                selected_date = datetime.strptime(date_value, "%Y-%m-%d").date()
+            except ValueError:
+                flash("Date invalide.", "danger")
+        form.balance_date.data = selected_date
+        existing = StockOpeningBalance.query.filter_by(
+            business_id=business.id,
+            balance_date=selected_date,
+        ).all()
+        existing_map = {entry.network.name.lower(): entry for entry in existing}
+        for field_name in ("airtel", "africel", "orange", "vodacom"):
+            entry = existing_map.get(field_name)
+            if entry is not None:
+                getattr(form, field_name).data = int(entry.quantity)
+                if not entry.is_cost_estimated:
+                    getattr(form, f"{field_name}_total").data = entry.actual_total_cost
+
+    if form.validate_on_submit():
+        updates = {
+            NetworkType.AIRTEL: (form.airtel.data, None),
+            NetworkType.AFRICEL: (form.africel.data, None),
+            NetworkType.ORANGE: (form.orange.data, None),
+            NetworkType.VODACOM: (form.vodacom.data, None),
+        }
+        exact_totals = {
+            NetworkType.AIRTEL: form.airtel_total.data,
+            NetworkType.AFRICEL: form.africel_total.data,
+            NetworkType.ORANGE: form.orange_total.data,
+            NetworkType.VODACOM: form.vodacom_total.data,
+        }
+        try:
+            save_opening_balances(
+                business=business,
+                recorded_by=current_user,
+                balance_date=form.balance_date.data,
+                updates=updates,
+                exact_totals=exact_totals,
+            )
+            db.session.commit()
+            flash(
+                "Stock d'ouverture grossiste enregistré.",
+                "success",
+            )
+            return redirect(url_for(
+                "main_bp.wholesale_opening_stock",
+                date=form.balance_date.data.isoformat(),
+            ))
+        except OpeningBalanceError as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+        selected_date = form.balance_date.data or selected_date
+
+    previous_date = selected_date - timedelta(days=1)
+    previous_report = build_wholesale_daily_report(
+        business=business,
+        target_date=previous_date,
+    )
+    previous_closing = {
+        row["network"].name.lower(): int(row["closing"])
+        for row in previous_report["networks"].values()
+    }
+    suggestion_label = f"Clôture du {previous_date.strftime('%d/%m/%Y')}"
+
+    history_dates = [
+        row[0]
+        for row in db.session.query(StockOpeningBalance.balance_date)
+        .filter_by(business_id=business.id)
+        .distinct()
+        .order_by(StockOpeningBalance.balance_date.desc())
+        .limit(30)
+        .all()
+    ]
+    history = (
+        StockOpeningBalance.query.filter(
+            StockOpeningBalance.business_id == business.id,
+            StockOpeningBalance.balance_date.in_(history_dates),
+        )
+        .order_by(StockOpeningBalance.balance_date.desc())
+        .all()
+        if history_dates else []
+    )
+    return render_template(
+        "main/stock_ouverture.html",
+        form=form,
+        yesterday_map=previous_closing,
+        suggestion_label=suggestion_label,
+        yesterday=previous_date,
+        history=history,
+        business=business,
+        is_wholesale=True,
+        currency_label="USD",
+        cost_placeholder="Ex: 100",
+        action_url=url_for("main_bp.wholesale_opening_stock"),
+        return_url=url_for("main_bp.wholesale_dashboard"),
+        segment="wholesale",
+        sub_segment="opening_stock",
+        page_title="Stock d'ouverture grossiste",
     )
 
 
@@ -1943,6 +2067,11 @@ def stock_ouverture():
         suggestion_label=suggestion_label,
         yesterday=yesterday,
         history=history,
+        is_wholesale=False,
+        currency_label="FC",
+        cost_placeholder="Ex: 20",
+        action_url=url_for("main_bp.stock_ouverture"),
+        return_url=url_for("main_bp.achat_stock"),
         segment="stock",
         sub_segment="stock_ouverture",
         page_title="Stock d'ouverture",

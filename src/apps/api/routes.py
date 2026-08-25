@@ -6,7 +6,7 @@ from flask import jsonify, request, current_app
 from flask_login import login_required, current_user
 from sqlalchemy.exc import IntegrityError
 from decimal import Decimal, InvalidOperation
-from datetime import date
+from datetime import date, datetime, timezone
 from uuid import uuid4
 from hashlib import sha256
 
@@ -37,6 +37,7 @@ from apps.main.utils import custom_round_up, calculate_sale_total
 from apps.payments import apply_payment_to_sale
 from apps.inventory import consume_stock
 from apps.purchases import record_retail_purchase, record_wholesale_purchase
+from apps.dates import business_local_date
 from apps.sales import record_wholesale_sale
 from apps.client_identities import ClientIdentityError, resolve_sms_sale_client
 
@@ -611,6 +612,16 @@ def _sms_wholesale_client(parsed, business, owner):
     return client
 
 
+def _sms_business_date(ingestion=None):
+    if ingestion is None:
+        return business_local_date()
+    received_at = datetime.fromtimestamp(
+        ingestion.received_at_ms / 1000,
+        tz=timezone.utc,
+    )
+    return business_local_date(received_at)
+
+
 def _sms_create_wholesale_sale(parsed, business, owner, *, ingestion=None):
     preset = _default_wholesale_preset(
         business=business,
@@ -629,7 +640,7 @@ def _sms_create_wholesale_sale(parsed, business, owner, *, ingestion=None):
         network=parsed.network,
         quantity=parsed.quantity,
         cash_received=Decimal("0"),
-        sale_date=date.today(),
+        sale_date=_sms_business_date(ingestion),
         preset=preset,
     )
     if ingestion is not None:
@@ -664,7 +675,7 @@ def _sms_create_wholesale_purchase(parsed, business, owner, *, ingestion=None):
         network=parsed.network,
         quantity=parsed.quantity,
         preset=preset,
-        purchase_date=date.today(),
+        purchase_date=_sms_business_date(ingestion),
     )
     db.session.flush()
     if ingestion is not None:

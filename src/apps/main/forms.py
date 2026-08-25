@@ -620,6 +620,35 @@ class StockOpeningBalanceForm(FlaskForm):
     submit = SubmitField("Enregistrer")
 
 
+class WholesaleOpeningBalanceForm(StockOpeningBalanceForm):
+    """Wholesale opening quantities with exact total inventory values in USD."""
+
+    airtel_total = DecimalField(
+        "Valeur totale Airtel (USD)",
+        validators=[Optional(), NumberRange(min=Decimal("0"))],
+        places=12,
+        render_kw={"placeholder": "Ex: 100", "step": "0.000000000001"},
+    )
+    africel_total = DecimalField(
+        "Valeur totale Africell (USD)",
+        validators=[Optional(), NumberRange(min=Decimal("0"))],
+        places=12,
+        render_kw={"placeholder": "Ex: 100", "step": "0.000000000001"},
+    )
+    orange_total = DecimalField(
+        "Valeur totale Orange (USD)",
+        validators=[Optional(), NumberRange(min=Decimal("0"))],
+        places=12,
+        render_kw={"placeholder": "Ex: 100", "step": "0.000000000001"},
+    )
+    vodacom_total = DecimalField(
+        "Valeur totale Vodacom (USD)",
+        validators=[Optional(), NumberRange(min=Decimal("0"))],
+        places=12,
+        render_kw={"placeholder": "Ex: 100", "step": "0.000000000001"},
+    )
+
+
 class WholesaleBusinessForm(FlaskForm):
     name = StringField(
         "Nom du commerce grossiste",

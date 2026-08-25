@@ -6,6 +6,7 @@ import pytest
 from apps.businesses import create_business
 from apps.main.utils import get_daily_report_data, get_utc_range_for_date
 from apps.models import (
+    BusinessApprovalStatus,
     BusinessType,
     DailyStockReport,
     NetworkType,
@@ -334,23 +335,52 @@ def test_opening_route_refreshes_existing_archived_report(app, session):
     assert archived.final_stock_balance == 300
 
 
-def test_wholesale_mode_cannot_use_retail_opening_balances(session):
+def test_wholesale_opening_balance_is_stored_in_its_own_business(session):
     owner, retail = setup_retail(session, suffix=9)
     wholesale = create_business(
         owner=owner, name="Wholesale opening",
+        business_type=BusinessType.WHOLESALE,
+        approval_status=BusinessApprovalStatus.APPROVED,
+    )
+    session.flush()
+    updates = empty_updates()
+    updates[NetworkType.AIRTEL] = (100, Decimal("0.009"))
+
+    entries = save_opening_balances(
+        business=wholesale, recorded_by=owner,
+        balance_date=date.today(), updates=updates,
+    )
+    session.flush()
+
+    assert StockOpeningBalance.query.filter_by(business_id=retail.id).count() == 0
+    assert entries[0].business_id == wholesale.id
+    assert entries[0].unit_cost == Decimal("0.009000000000")
+    wholesale_stock = Stock.query.filter_by(
+        business_id=wholesale.id,
+        network=NetworkType.AIRTEL,
+    ).one()
+    assert wholesale_stock.balance == 100
+    assert wholesale_stock.inventory_value == Decimal("0.900000000000")
+
+
+def test_pending_wholesale_cannot_set_opening_stock(session):
+    owner, _ = setup_retail(session, suffix=13)
+    wholesale = create_business(
+        owner=owner,
+        name="Pending wholesale opening",
         business_type=BusinessType.WHOLESALE,
     )
     session.flush()
     updates = empty_updates()
     updates[NetworkType.AIRTEL] = (100, Decimal("0.009"))
 
-    with pytest.raises(OpeningBalanceError, match="détaillant"):
+    with pytest.raises(OpeningBalanceError, match="approuvé"):
         save_opening_balances(
-            business=wholesale, recorded_by=owner,
-            balance_date=date.today(), updates=updates,
+            business=wholesale,
+            recorded_by=owner,
+            balance_date=date.today(),
+            updates=updates,
         )
-
-    assert StockOpeningBalance.query.filter_by(business_id=retail.id).count() == 0
 
 
 def test_opening_history_limits_by_date_not_network_entry(app, session):

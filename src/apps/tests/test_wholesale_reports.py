@@ -8,9 +8,12 @@ from apps.models import (
     Client,
     NetworkType,
     RoleType,
+    Stock,
+    StockOpeningBalance,
     User,
 )
 from apps.payments import collect_client_debt
+from apps.opening_balances import save_opening_balances
 from apps.purchases import record_wholesale_purchase
 from apps.sales import record_wholesale_sale
 from apps.wholesale_reports import build_wholesale_daily_report
@@ -167,3 +170,114 @@ def test_daily_report_is_business_isolated_and_route_renders(app, session):
     assert pdf.status_code == 200
     assert pdf.mimetype == "application/pdf"
     assert pdf.data.startswith(b"%PDF")
+
+
+def test_dated_opening_anchor_separates_incomplete_previous_day(session):
+    owner, business, client = setup_report_business(session, 4)
+    first_day = date.today() - timedelta(days=1)
+    second_day = first_day + timedelta(days=1)
+    third_day = second_day + timedelta(days=1)
+    record_wholesale_purchase(
+        business=business,
+        purchased_by=owner,
+        network=NetworkType.AIRTEL,
+        quantity=1000,
+        custom_unit_cost=Decimal("0.00900"),
+        purchase_date=first_day,
+    )
+    record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=100,
+        cash_received=Decimal("0"),
+        sale_date=first_day,
+        custom_unit_price=Decimal("0.01000"),
+    )
+    updates = {network: (None, None) for network in NetworkType}
+    updates[NetworkType.AIRTEL] = (700, Decimal("0.00900"))
+    save_opening_balances(
+        business=business,
+        recorded_by=owner,
+        balance_date=second_day,
+        updates=updates,
+    )
+    record_wholesale_purchase(
+        business=business,
+        purchased_by=owner,
+        network=NetworkType.AIRTEL,
+        quantity=100,
+        custom_unit_cost=Decimal("0.00900"),
+        purchase_date=second_day,
+    )
+    record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=50,
+        cash_received=Decimal("0"),
+        sale_date=second_day,
+        custom_unit_price=Decimal("0.01000"),
+    )
+    session.flush()
+
+    first = build_wholesale_daily_report(
+        business=business, target_date=first_day
+    )["networks"][NetworkType.AIRTEL.name]
+    second = build_wholesale_daily_report(
+        business=business, target_date=second_day
+    )["networks"][NetworkType.AIRTEL.name]
+    third = build_wholesale_daily_report(
+        business=business, target_date=third_day
+    )["networks"][NetworkType.AIRTEL.name]
+
+    assert first["opening"] == 0
+    assert first["closing"] == 900
+    assert second["opening"] == 700
+    assert second["closing"] == 750
+    assert third["opening"] == 750
+
+
+def test_wholesale_opening_stock_route_uses_usd_ui(app, session):
+    owner, business, _ = setup_report_business(session, 5)
+    session.commit()
+    browser = app.test_client()
+    with browser.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    response = browser.get("/businesses/wholesale/opening-stock")
+
+    assert response.status_code == 200
+    assert b"Stock d'ouverture" in response.data
+    assert b"Grossiste" in response.data
+    assert b"Valeur totale (USD)" in response.data
+    assert b"Co\xc3\xbbt par unit\xc3\xa9 (FC)" not in response.data
+
+    saved = browser.post(
+        "/businesses/wholesale/opening-stock",
+        data={
+            "balance_date": date.today().isoformat(),
+            "airtel": "10650",
+            "airtel_total": "100",
+        },
+    )
+    assert saved.status_code == 302
+    opening = StockOpeningBalance.query.filter_by(
+        business_id=business.id,
+        network=NetworkType.AIRTEL,
+        balance_date=date.today(),
+    ).one()
+    assert opening.business_id == business.id
+    assert opening.quantity == 10650
+    assert opening.unit_cost == Decimal("0.009389671362")
+    assert opening.actual_total_cost == Decimal("100.000000000000")
+    stock = Stock.query.filter_by(
+        business_id=business.id,
+        network=NetworkType.AIRTEL,
+    ).one()
+    assert stock.balance == 10650
+    assert stock.inventory_value == Decimal("100.000000000000")
