@@ -578,20 +578,44 @@ class StockOpeningBalanceForm(FlaskForm):
         validators=[Optional(), NumberRange(min=0, message="La quantité doit être ≥ 0.")],
         render_kw={"placeholder": "0"},
     )
+    airtel_cost = DecimalField(
+        "Coût/unité Airtel (FC)",
+        validators=[Optional(), NumberRange(min=Decimal("0.000000000001"))],
+        places=12,
+        render_kw={"placeholder": "Ex: 20", "step": "0.000000000001"},
+    )
     africel = IntegerField(
         "Africel (unités)",
         validators=[Optional(), NumberRange(min=0)],
         render_kw={"placeholder": "0"},
+    )
+    africel_cost = DecimalField(
+        "Coût/unité Africell (FC)",
+        validators=[Optional(), NumberRange(min=Decimal("0.000000000001"))],
+        places=12,
+        render_kw={"placeholder": "Ex: 20", "step": "0.000000000001"},
     )
     orange = IntegerField(
         "Orange (unités)",
         validators=[Optional(), NumberRange(min=0)],
         render_kw={"placeholder": "0"},
     )
+    orange_cost = DecimalField(
+        "Coût/unité Orange (FC)",
+        validators=[Optional(), NumberRange(min=Decimal("0.000000000001"))],
+        places=12,
+        render_kw={"placeholder": "Ex: 20", "step": "0.000000000001"},
+    )
     vodacom = IntegerField(
         "Vodacom (unités)",
         validators=[Optional(), NumberRange(min=0)],
         render_kw={"placeholder": "0"},
+    )
+    vodacom_cost = DecimalField(
+        "Coût/unité Vodacom (FC)",
+        validators=[Optional(), NumberRange(min=Decimal("0.000000000001"))],
+        places=12,
+        render_kw={"placeholder": "Ex: 20", "step": "0.000000000001"},
     )
     submit = SubmitField("Enregistrer")
 

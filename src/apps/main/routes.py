@@ -36,6 +36,7 @@ from apps.payments import (
     reverse_payment_event,
 )
 from apps.inventory import consume_stock
+from apps.opening_balances import OpeningBalanceError, save_opening_balances
 from apps.client_identities import (
     ClientIdentityError,
     ensure_unique_client_name,
@@ -1829,120 +1830,86 @@ def stock_ouverture():
     business_id = business.id if business is not None else None
     form = StockOpeningBalanceForm()
 
-    # Default to today
+    today_local = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
+    selected_date = today_local
     if request.method == "GET":
-        from datetime import date as _date
-        form.balance_date.data = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
-        # Pre-fill with any existing entry for today
+        date_value = request.args.get("date")
+        if date_value:
+            try:
+                selected_date = datetime.strptime(date_value, "%Y-%m-%d").date()
+            except ValueError:
+                flash("Date invalide.", "danger")
+        form.balance_date.data = selected_date
         if vendeur_id:
             existing = StockOpeningBalance.query.filter_by(
                 business_id=business_id,
-                balance_date=form.balance_date.data,
+                balance_date=selected_date,
             ).all()
-            existing_map = {ob.network.name.lower(): ob.quantity for ob in existing}
+            existing_map = {ob.network.name.lower(): ob for ob in existing}
             for field_name in ('airtel', 'africel', 'orange', 'vodacom'):
-                field = getattr(form, field_name)
-                val = existing_map.get(field_name)
-                if val is not None:
-                    field.data = int(val)
+                entry = existing_map.get(field_name)
+                if entry is not None:
+                    getattr(form, field_name).data = int(entry.quantity)
+                    if not entry.is_cost_estimated:
+                        getattr(form, f"{field_name}_cost").data = entry.unit_cost
 
     if form.validate_on_submit():
         if not vendeur_id:
             flash("Mode introuvable.", "danger")
             return redirect(url_for('main_bp.stock_ouverture'))
 
-        balance_date = form.balance_date.data
-        network_fields = {
-            NetworkType.AIRTEL:   form.airtel.data,
-            NetworkType.AFRICEL:  form.africel.data,
-            NetworkType.ORANGE:   form.orange.data,
-            NetworkType.VODACOM:  form.vodacom.data,
+        updates = {
+            NetworkType.AIRTEL: (form.airtel.data, form.airtel_cost.data),
+            NetworkType.AFRICEL: (form.africel.data, form.africel_cost.data),
+            NetworkType.ORANGE: (form.orange.data, form.orange_cost.data),
+            NetworkType.VODACOM: (form.vodacom.data, form.vodacom_cost.data),
         }
 
         try:
-            today_local = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
-            is_today = (balance_date == today_local)
-
-            for network, qty in network_fields.items():
-                if qty is None:
-                    qty = 0
-                opening_qty = Decimal(str(qty))
-
-                # Upsert the StockOpeningBalance anchor
-                entry = StockOpeningBalance.query.filter_by(
-                    business_id=business_id,
-                    network=network,
-                    balance_date=balance_date,
-                ).first()
-                if entry:
-                    entry.quantity = opening_qty
-                    entry.set_by_id = current_user.id
-                else:
-                    entry = StockOpeningBalance(
+            save_opening_balances(
+                business=business,
+                recorded_by=current_user,
+                balance_date=form.balance_date.data,
+                updates=updates,
+            )
+            db.session.commit()
+            archived_dates = [row[0] for row in db.session.query(
+                DailyStockReport.report_date
+            ).filter(
+                DailyStockReport.business_id == business_id,
+                DailyStockReport.report_date >= form.balance_date.data,
+            ).distinct().order_by(DailyStockReport.report_date).all()]
+            try:
+                for archived_date in archived_dates:
+                    update_daily_reports(
+                        current_app._get_current_object(),
+                        report_date_to_update=archived_date,
                         vendeur_id=vendeur_id,
                         business_id=business_id,
-                        network=network,
-                        balance_date=balance_date,
-                        quantity=opening_qty,
-                        set_by_id=current_user.id,
                     )
-                    db.session.add(entry)
-
-                # For today: recalculate Stock.balance so sales/display stay correct.
-                # new_balance = opening − already_sold_today + already_purchased_today
-                if is_today:
-                    sold_today = db.session.query(
-                        func.coalesce(func.sum(SaleItem.quantity), 0)
-                    ).join(Sale).filter(
-                        Sale.sale_date == today_local,
-                        Sale.business_id == business_id,
-                        Sale.status == TransactionStatus.ACTIVE,
-                        SaleItem.network == network,
-                    ).scalar()
-
-                    day_start_utc, day_end_utc = get_utc_range_for_date(today_local)
-                    purchased_today = db.session.query(
-                        func.coalesce(func.sum(StockPurchase.amount_purchased), 0)
-                    ).join(Stock, StockPurchase.stock_item_id == Stock.id).filter(
-                        Stock.business_id == business_id,
-                        StockPurchase.network == network,
-                        StockPurchase.status == TransactionStatus.ACTIVE,
-                        StockPurchase.created_at >= day_start_utc,
-                        StockPurchase.created_at <= day_end_utc,
-                    ).scalar()
-
-                    new_balance = opening_qty - Decimal(str(sold_today)) + Decimal(str(purchased_today))
-                    stock_item = Stock.query.filter_by(
-                        business_id=business_id, network=network
-                    ).first()
-                    if stock_item:
-                        stock_item.balance = max(new_balance, Decimal("0.00"))
-                    else:
-                        stock_item = Stock(
-                            vendeur_id=vendeur_id,
-                            business_id=business_id,
-                            network=network,
-                            balance=max(new_balance, Decimal("0.00")),
-                            buying_price_per_unit=Decimal("0.94"),
-                            selling_price_per_unit=Decimal("1.00"),
-                        )
-                        db.session.add(stock_item)
-
-            db.session.commit()
+            except Exception as error:
+                current_app.logger.error(
+                    "Opening balance saved but archive refresh failed: %s",
+                    error,
+                    exc_info=True,
+                )
+                flash("Stock enregistré. Actualisez le rapport archivé.", "warning")
             flash(
-                f"Stock initial du {balance_date.strftime('%d/%m/%Y')} enregistré avec succès.",
+                f"Stock d'ouverture du {form.balance_date.data.strftime('%d/%m/%Y')} enregistré.",
                 "success",
             )
-            return redirect(url_for('main_bp.stock_ouverture'))
+            return redirect(url_for(
+                'main_bp.stock_ouverture', date=form.balance_date.data.isoformat()
+            ))
 
-        except Exception as e:
+        except OpeningBalanceError as error:
             db.session.rollback()
-            current_app.logger.error(f"Error saving opening balance: {e}")
-            flash("Une erreur est survenue lors de l'enregistrement.", "danger")
+            flash(str(error), "danger")
 
     # Fetch yesterday's data to show as suggestion
     yesterday = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date() - timedelta(days=1)
     yesterday_map = {}
+    suggestion_label = None
     if vendeur_id:
         prev_reports = DailyStockReport.query.filter_by(
             report_date=yesterday, business_id=business_id
@@ -1950,30 +1917,35 @@ def stock_ouverture():
         if prev_reports:
             yesterday_map = {r.network.name.lower(): int(r.final_stock_balance or 0)
                              for r in prev_reports}
+            suggestion_label = f"Solde d'hier ({yesterday.strftime('%d/%m/%Y')})"
         else:
-            # Fall back to live Stock.balance if no archive
             live_stocks = Stock.query.filter_by(business_id=business_id).all()
             yesterday_map = {s.network.name.lower(): int(s.balance or 0)
                              for s in live_stocks}
+            if yesterday_map:
+                suggestion_label = "Stock actuel estimé"
 
-    # Existing entries (all dates) for the history table
-    history_q = (
-        StockOpeningBalance.query.filter_by(business_id=business_id)
-        if business_id is not None else StockOpeningBalance.query
+    date_query = db.session.query(StockOpeningBalance.balance_date).filter_by(
+        business_id=business_id
     )
-    history = history_q.order_by(
+    history_dates = [row[0] for row in date_query.distinct().order_by(
         StockOpeningBalance.balance_date.desc()
-    ).limit(30).all()
+    ).limit(30).all()]
+    history = StockOpeningBalance.query.filter(
+        StockOpeningBalance.business_id == business_id,
+        StockOpeningBalance.balance_date.in_(history_dates),
+    ).order_by(StockOpeningBalance.balance_date.desc()).all() if history_dates else []
 
     return render_template(
         "main/stock_ouverture.html",
         form=form,
         yesterday_map=yesterday_map,
+        suggestion_label=suggestion_label,
         yesterday=yesterday,
         history=history,
         segment="stock",
         sub_segment="stock_ouverture",
-        page_title="Stock Initial",
+        page_title="Stock d'ouverture",
     )
 
 

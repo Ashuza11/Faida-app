@@ -986,6 +986,15 @@ class StockOpeningBalance(db.Model):
     quantity: so.Mapped[Decimal] = so.mapped_column(
         sa.Numeric(15, 2), nullable=False, default=Decimal("0.00")
     )
+    unit_cost: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=False, default=Decimal("0.00")
+    )
+    actual_total_cost: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=False, default=Decimal("0.00")
+    )
+    is_cost_estimated: so.Mapped[bool] = so.mapped_column(
+        sa.Boolean, nullable=False, default=False
+    )
 
     set_by_id: so.Mapped[Optional[int]] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=True

@@ -365,8 +365,7 @@ def get_daily_report_data(
         )
         .join(Stock, StockPurchase.stock_item_id == Stock.id)
         .filter(
-            StockPurchase.created_at >= filter_start_dt,
-            StockPurchase.created_at < filter_end_dt,
+            StockPurchase.purchase_date == target_date,
             StockPurchase.status == TransactionStatus.ACTIVE,
         )
     )

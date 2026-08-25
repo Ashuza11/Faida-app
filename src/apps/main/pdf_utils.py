@@ -208,7 +208,7 @@ def generate_daily_report_pdf(
     else:
         network_names = list(report_data.keys())
 
-    jt_headers = ['Réseau', 'Stock Initial', 'Stock Acheté',
+    jt_headers = ['Réseau', "Stock d'ouverture", 'Stock Acheté',
                   'Stock Vendu', 'Stock Final', 'Valeur Virtuelle (FC)']
     jt_data = [jt_headers]
     for nn in network_names:
