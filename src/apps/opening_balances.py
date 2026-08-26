@@ -18,6 +18,7 @@ from apps.models import (
     TransactionStatus,
 )
 from apps.money import INTERNAL_MONEY_QUANTUM, as_decimal, quantize_unit_price
+from apps.user_messages import user_message
 
 
 class OpeningBalanceError(ValueError):
@@ -90,8 +91,13 @@ def save_opening_balances(
             if stock is not None and stock.average_cost_per_unit > 0:
                 unit_cost = quantize_unit_price(stock.average_cost_per_unit)
             else:
+                required_value = (
+                    "la valeur totale"
+                    if business.business_type == BusinessType.WHOLESALE
+                    else "le coût par unité"
+                )
                 raise OpeningBalanceError(
-                    f"Indiquez le coût par unité de {network.value}."
+                    f"Indiquez {required_value} du stock {network.value}."
                 )
         if quantity > 0 and unit_cost <= 0:
             raise OpeningBalanceError("Le coût par unité doit être positif.")
@@ -104,8 +110,13 @@ def save_opening_balances(
             and raw_total_cost is None
             and as_decimal(entry.quantity) != quantity
         ):
+            required_value = (
+                "la valeur totale"
+                if business.business_type == BusinessType.WHOLESALE
+                else "le coût réel par unité"
+            )
             raise OpeningBalanceError(
-                f"Confirmez le coût par unité de {network.value}."
+                f"Indiquez {required_value} du stock {network.value} pour confirmer cette correction."
             )
         remains_estimated = bool(
             entry is not None
@@ -144,7 +155,14 @@ def save_opening_balances(
         changed.append((network, entry))
 
     if not changed:
-        raise OpeningBalanceError("Saisissez au moins une quantité ou un coût à modifier.")
+        value_name = (
+            "une valeur totale"
+            if business.business_type == BusinessType.WHOLESALE
+            else "un coût par unité"
+        )
+        raise OpeningBalanceError(
+            f"Saisissez une quantité ou {value_name} pour au moins un réseau."
+        )
     db.session.flush()
     if balance_date == current_date:
         for network, entry in changed:
@@ -217,8 +235,10 @@ def _ensure_history_is_safe(
     )
     if dependent_sale is not None:
         raise OpeningBalanceError(
-            f"Le stock {network.value} a déjà été vendu. "
-            "Le stock d'ouverture ne peut plus être modifié."
+            user_message(
+                f"Des ventes utilisent déjà le stock {network.value}.",
+                "Corrigez ou annulez ces ventes avant de modifier l'ouverture.",
+            )
         )
     if balance_date < current_date:
         later_purchase = (
@@ -234,8 +254,10 @@ def _ensure_history_is_safe(
         )
         if later_purchase is not None:
             raise OpeningBalanceError(
-                f"Le stock {network.value} a des achats plus récents. "
-                "Le stock d'ouverture ne peut plus être modifié."
+                user_message(
+                    f"Un achat {network.value} a été enregistré après cette ouverture.",
+                    "Corrigez d'abord cet achat.",
+                )
             )
 
 

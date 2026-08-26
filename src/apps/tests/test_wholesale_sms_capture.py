@@ -71,7 +71,7 @@ def test_token_sms_requires_explicit_business_id(app, session):
     )
 
     assert response.status_code == 400
-    assert "mode Android" in response.get_json()["error"]
+    assert "mode détail ou grossiste" in response.get_json()["error"]
 
 
 def test_wholesale_purchase_sms_uses_exact_default_usd_cost(app, session):

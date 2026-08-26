@@ -34,7 +34,7 @@ def build_wholesale_daily_report(
 ) -> dict:
     """Build one USD daily report scoped to a single wholesale business."""
     if business.business_type != BusinessType.WHOLESALE:
-        raise ValueError("Ce rapport est réservé au registre grossiste.")
+        raise ValueError("Ce rapport est disponible uniquement en mode grossiste.")
 
     rows = {}
     for network in NetworkType:

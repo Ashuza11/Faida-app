@@ -394,7 +394,7 @@ def test_legacy_payment_is_visible_but_cannot_be_guessed_or_cancelled(app, sessi
     details = client.get(f"/view_sale_details/{sale.id}")
 
     assert details.status_code == 200
-    assert b"Paiements historiques en lecture seule" in details.data
+    assert b"Anciens paiements non annulables" in details.data
     assert b"Ancien paiement" in details.data
     assert f"/payments/".encode() not in details.data
 
@@ -405,7 +405,8 @@ def test_legacy_payment_is_visible_but_cannot_be_guessed_or_cancelled(app, sessi
     )
 
     assert cancellation.status_code == 200
-    assert "réconciliation administrateur".encode() in cancellation.data
+    assert "ancienne vente contient un paiement non annulable".encode() in cancellation.data
+    assert b"Contactez l&#39;administrateur" in cancellation.data
     session.refresh(sale)
     assert sale.status == TransactionStatus.ACTIVE
     assert sale.cash_paid == Decimal("25.00")

@@ -180,7 +180,7 @@ def test_sale_blocks_rewriting_dependent_opening_cost(session):
     correction = empty_updates()
     correction[NetworkType.AIRTEL] = (900, Decimal("20"))
 
-    with pytest.raises(OpeningBalanceError, match="ne peut plus être modifié"):
+    with pytest.raises(OpeningBalanceError, match="ventes utilisent déjà"):
         save_opening_balances(
             business=business, recorded_by=owner,
             balance_date=date.today(), updates=correction,
@@ -217,7 +217,7 @@ def test_past_purchase_blocks_rewriting_historical_opening(session):
     correction = empty_updates()
     correction[NetworkType.AIRTEL] = (900, Decimal("20"))
 
-    with pytest.raises(OpeningBalanceError, match="achats plus récents"):
+    with pytest.raises(OpeningBalanceError, match="enregistré après cette ouverture"):
         save_opening_balances(
             business=business, recorded_by=owner,
             balance_date=target, updates=correction,

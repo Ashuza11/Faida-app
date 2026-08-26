@@ -72,7 +72,7 @@ def get_stock():
     """
     business = get_current_business()
     if business is None or current_user.business_vendeur_id is None:
-        return jsonify({"error": "Platform admins have no single stock view"}), 400
+        return jsonify({"error": "Choisissez un compte vendeur pour consulter son stock."}), 400
 
     stocks = Stock.query.filter_by(business_id=business.id).all()
     data = [
@@ -105,14 +105,14 @@ def create_sale():
     """
     payload = request.get_json(silent=True)
     if not payload:
-        return jsonify({"error": "Invalid JSON body"}), 400
+        return jsonify({"error": "Les données envoyées sont incomplètes. Réessayez."}), 400
 
     local_id = payload.get("local_id")
     vendeur_id = current_user.business_vendeur_id
     business = get_current_business()
 
     if vendeur_id is None or business is None:
-        return jsonify({"error": "Platform admins cannot submit sales via API"}), 403
+        return jsonify({"error": "Un administrateur ne peut pas enregistrer une vente à la place d'un vendeur."}), 403
 
     try:
         # ── Resolve client ───────────────────────────────────────────────────
@@ -128,7 +128,7 @@ def create_sale():
                     id=int(cid), business_id=business.id
                 ).first()
                 if not client:
-                    return jsonify({"error": "Client introuvable ou inaccessible"}), 400
+                    return jsonify({"error": "Le client sélectionné n'est plus disponible. Choisissez un autre client."}), 400
         else:
             selected_key = (payload.get("adhoc_customer_key") or "").strip()
             if selected_key:
@@ -139,7 +139,7 @@ def create_sale():
                     Sale.status == TransactionStatus.ACTIVE,
                 ).order_by(Sale.created_at.desc()).first()
                 if not prior_identity:
-                    return jsonify({"error": "Client ad-hoc introuvable ou inaccessible"}), 400
+                    return jsonify({"error": "Ce client occasionnel n'a pas pu être identifié. Sélectionnez-le de nouveau."}), 400
                 client_name_adhoc = prior_identity.client_display_name
                 adhoc_customer_key = selected_key
             else:
@@ -149,7 +149,7 @@ def create_sale():
         # ── Process sale items ───────────────────────────────────────────────
         items_payload = payload.get("sale_items", [])
         if not items_payload:
-            return jsonify({"error": "Aucun article de vente fourni"}), 400
+            return jsonify({"error": "Ajoutez au moins un réseau à la vente."}), 400
 
         raw_subtotals = []
         sale_items_to_add = []
@@ -159,17 +159,17 @@ def create_sale():
             try:
                 network_enum = NetworkType(network_str)
             except ValueError:
-                return jsonify({"error": f"Réseau invalide: {network_str}"}), 400
+                return jsonify({"error": f"Le réseau '{network_str}' n'est pas reconnu. Sélectionnez-le de nouveau."}), 400
 
             quantity = int(item.get("quantity", 0))
             if quantity < 1:
-                return jsonify({"error": "Quantité invalide"}), 400
+                return jsonify({"error": "La quantité doit être un nombre entier positif."}), 400
 
             stock_item = Stock.query.filter_by(
                 business_id=business.id, network=network_enum
             ).first()
             if not stock_item:
-                return jsonify({"error": f"Stock '{network_str}' introuvable"}), 400
+                return jsonify({"error": f"Le stock {network_str} n'est pas configuré. Enregistrez d'abord un stock d'ouverture ou un achat."}), 400
 
             if quantity > stock_item.balance:
                 return jsonify({
@@ -183,7 +183,7 @@ def create_sale():
                 try:
                     final_unit_price = Decimal(str(price_override))
                 except InvalidOperation:
-                    return jsonify({"error": "Prix unitaire invalide"}), 400
+                    return jsonify({"error": "Le prix unitaire saisi n'est pas valide."}), 400
             elif stock_item.selling_price_per_unit and stock_item.selling_price_per_unit > 0:
                 final_unit_price = stock_item.selling_price_per_unit
             else:
@@ -274,12 +274,12 @@ def create_stock_purchase():
     """
     payload = request.get_json(silent=True)
     if not payload:
-        return jsonify({"error": "Invalid JSON body"}), 400
+        return jsonify({"error": "Les données envoyées sont incomplètes. Réessayez."}), 400
 
     vendeur_id = current_user.business_vendeur_id
     business = get_current_business()
     if vendeur_id is None or business is None:
-        return jsonify({"error": "Platform admins cannot submit purchases via API"}), 403
+        return jsonify({"error": "Un administrateur ne peut pas enregistrer un achat à la place d'un vendeur."}), 403
 
     # Only vendeurs (not stockeurs) can purchase stock — match vendeur_required decorator
     from apps.models import RoleType
@@ -365,12 +365,12 @@ def create_cash_outflow():
     """
     payload = request.get_json(silent=True)
     if not payload:
-        return jsonify({"error": "Invalid JSON body"}), 400
+        return jsonify({"error": "Les données envoyées sont incomplètes. Réessayez."}), 400
 
     vendeur_id = current_user.business_vendeur_id
     business = get_current_business()
     if vendeur_id is None or business is None:
-        return jsonify({"error": "Platform admins cannot submit outflows via API"}), 403
+        return jsonify({"error": "Un administrateur ne peut pas enregistrer une sortie de caisse à la place d'un vendeur."}), 403
 
     local_id = payload.get("local_id")
 
@@ -486,16 +486,16 @@ def sms_ingest():
     else:
         authed_user = _authenticate_android_token()
         if not authed_user:
-            return jsonify({"error": "Token invalide ou compte désactivé"}), 401
+            return jsonify({"error": "Code Android incorrect ou compte désactivé. Vérifiez le code dans l'application."}), 401
 
     payload = request.get_json(silent=True)
     if not payload:
-        return jsonify({"error": "Invalid JSON body"}), 400
+        return jsonify({"error": "Le message envoyé par l'application Android est incomplet. Réessayez."}), 400
 
     sender = payload.get("sender", "").strip()
     body = payload.get("body", "").strip()
     if not sender or not body:
-        return jsonify({"error": "sender and body are required"}), 400
+        return jsonify({"error": "Le numéro de l'expéditeur ou le contenu du SMS est manquant."}), 400
 
     try:
         if current_user.is_authenticated:
@@ -503,15 +503,15 @@ def sms_ingest():
         else:
             business_id = payload.get("business_id")
             if business_id is None:
-                return jsonify({"error": "Sélectionnez le mode Android à utiliser"}), 400
+                return jsonify({"error": "Choisissez le mode détail ou grossiste avant d'activer la capture."}), 400
             business = resolve_business_for_user(
                 user=authed_user, business_id=business_id
             )
     except (PermissionError, TypeError, ValueError):
-        return jsonify({"error": "Mode Android invalide ou inaccessible"}), 403
+        return jsonify({"error": "Le mode sélectionné n'est plus disponible. Choisissez-le de nouveau dans l'application."}), 403
     vendeur_id = authed_user.business_vendeur_id
     if vendeur_id is None or business is None:
-        return jsonify({"error": "Platform admins cannot use SMS ingest"}), 403
+        return jsonify({"error": "La capture SMS est disponible uniquement pour les comptes vendeurs."}), 403
     if business.owner_user_id != authed_user.id:
         return jsonify({"error": "La capture SMS est réservée au propriétaire"}), 403
 
@@ -523,7 +523,7 @@ def sms_ingest():
         return jsonify({"type": "unknown", "status": "ignored"}), 200
 
     if parsed.quantity <= 0:
-        return jsonify({"error": "Parsed quantity is zero — message format may have changed"}), 400
+        return jsonify({"error": "La quantité n'a pas pu être lue dans ce SMS. Enregistrez l'opération manuellement."}), 400
 
     ingestion = None
     if not current_user.is_authenticated:
@@ -532,7 +532,7 @@ def sms_ingest():
             if received_at <= 0:
                 raise ValueError
         except (TypeError, ValueError):
-            return jsonify({"error": "Horodatage SMS Android manquant"}), 400
+            return jsonify({"error": "La date de réception du SMS est manquante. Réessayez la synchronisation."}), 400
         fingerprint = sha256(
             f"{business.id}\0{sender.strip().lower()}\0{body}\0{received_at}".encode("utf-8")
         ).hexdigest()
@@ -584,10 +584,13 @@ def sms_ingest():
             return _sms_create_sale(parsed, business, vendeur_id, authed_user)
         else:
             return _sms_create_purchase(parsed, business, vendeur_id, authed_user)
+    except (ValueError, PermissionError) as error:
+        db.session.rollback()
+        return jsonify({"error": str(error).replace("\n", " ")}), 400
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"[SMS ingest] Unhandled error: {e}", exc_info=True)
-        return jsonify({"error": "Erreur serveur lors du traitement SMS"}), 500
+        return jsonify({"error": "Ce SMS n'a pas pu être enregistré. Vérifiez les informations puis réessayez."}), 500
 
 
 def _default_wholesale_preset(*, business, network, operation):
@@ -630,7 +633,7 @@ def _sms_create_wholesale_sale(parsed, business, owner, *, ingestion=None):
     )
     if preset is None:
         return jsonify({
-            "error": f"Aucun prix de vente grossiste par défaut pour {parsed.network.value}"
+            "error": f"La vente {parsed.network.value} n'a pas été enregistrée. Choisissez d'abord un prix de vente par défaut."
         }), 400
     client = _sms_wholesale_client(parsed, business, owner)
     sale = record_wholesale_sale(
@@ -667,7 +670,7 @@ def _sms_create_wholesale_purchase(parsed, business, owner, *, ingestion=None):
     )
     if preset is None:
         return jsonify({
-            "error": f"Aucun prix d'achat grossiste par défaut pour {parsed.network.value}"
+            "error": f"L'achat {parsed.network.value} n'a pas été enregistré. Choisissez d'abord un prix d'achat par défaut."
         }), 400
     purchase = record_wholesale_purchase(
         business=business,
@@ -708,7 +711,7 @@ def _sms_create_sale(parsed, business, vendeur_id: int, authed_user):
         business_id=business.id, network=parsed.network
     ).first()
     if not stock_item:
-        return jsonify({"error": f"Stock {parsed.network.value} introuvable"}), 400
+        return jsonify({"error": f"Le stock {parsed.network.value} n'est pas configuré. Enregistrez d'abord un stock d'ouverture ou un achat."}), 400
 
     if parsed.quantity > stock_item.balance:
         return jsonify({
@@ -784,7 +787,7 @@ def _sms_create_purchase(parsed, business, vendeur_id: int, authed_user):
         business_id=business.id, network=parsed.network
     ).first()
     if not stock_item:
-        return jsonify({"error": f"Stock {parsed.network.value} introuvable"}), 400
+        return jsonify({"error": f"Le stock {parsed.network.value} n'est pas configuré. Enregistrez d'abord un stock d'ouverture ou un achat."}), 400
 
     buying_price = stock_item.buying_price_per_unit or Decimal("0.00")
     selling_price = stock_item.selling_price_per_unit or Decimal("1.00")

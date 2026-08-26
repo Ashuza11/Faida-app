@@ -23,6 +23,7 @@ from apps.models import (
     User,
 )
 from apps.money import as_decimal, calculate_invoice_total, quantize_unit_price
+from apps.user_messages import user_message
 
 
 def record_wholesale_sale(
@@ -81,7 +82,7 @@ def record_wholesale_sale(
 
 def _validate_wholesale_sale_access(*, business, sold_by, client):
     if business.business_type != BusinessType.WHOLESALE:
-        raise ValueError("Cette opération est réservée au registre grossiste.")
+        raise ValueError("Cette opération est disponible uniquement en mode grossiste.")
     if business.approval_status != BusinessApprovalStatus.APPROVED:
         raise PermissionError("Le mode grossiste n'est pas encore approuvé.")
     if business.owner_user_id != sold_by.id:
@@ -98,7 +99,10 @@ def _wholesale_unit_price(*, business, network, preset, custom_unit_price):
             or preset.operation != PriceOperation.SALE
             or not preset.is_active
         ):
-            raise ValueError("Le prix sélectionné ne correspond pas à cette vente.")
+            raise ValueError(user_message(
+                f"Le prix sélectionné n'est plus disponible pour {network.value}.",
+                "Choisissez un autre prix.",
+            ))
         unit_price = preset.unit_price
     else:
         if custom_unit_price is None:
@@ -136,7 +140,15 @@ def _consume_wholesale_sale_items(*, business, items):
             .one_or_none()
         )
         if stock is None:
-            raise ValueError(f"Stock {network.value} introuvable.")
+            raise ValueError(user_message(
+                f"Le stock {network.value} n'est pas encore configuré.",
+                "Enregistrez d'abord un stock d'ouverture ou un achat.",
+            ))
+        if quantity > stock.balance:
+            raise ValueError(user_message(
+                f"Stock {network.value} insuffisant.",
+                f"Disponible : {stock.balance} unités. Demandé : {quantity} unités.",
+            ))
         cost_per_unit, cost_total = consume_stock(
             stock=stock, quantity=quantity
         )
@@ -176,7 +188,10 @@ def replace_unpaid_wholesale_sale(
         inflow.status == TransactionStatus.ACTIVE for inflow in sale.cash_inflows
     ):
         raise ValueError(
-            "Annulez d'abord le paiement de cette vente avant de la modifier."
+            user_message(
+                "Cette vente est liée à un paiement actif.",
+                "Ouvrez Dettes, annulez le reçu concerné, puis réessayez.",
+            )
         )
 
     affected_networks = {item.network for item in sale.sale_items}
@@ -194,8 +209,10 @@ def replace_unpaid_wholesale_sale(
     )
     if later_purchase is not None:
         raise ValueError(
-            "Cette vente ne peut pas être modifiée car un achat plus récent "
-            "a changé le coût du stock."
+            user_message(
+                "Un achat plus récent a changé le coût du stock.",
+                "Corrigez d'abord cet achat avant de modifier la vente.",
+            )
         )
 
     for old_item in sale.sale_items:
@@ -247,8 +264,10 @@ def reverse_unpaid_sale(
     )
     if has_legacy_payment:
         raise ValueError(
-            "Cette vente contient un paiement historique non groupé; "
-            "une réconciliation administrateur est nécessaire."
+            user_message(
+                "Cette ancienne vente contient un paiement non annulable.",
+                "Contactez l'administrateur pour effectuer la correction.",
+            )
         )
     has_grouped_payment = any(
         inflow.status == TransactionStatus.ACTIVE
@@ -256,7 +275,10 @@ def reverse_unpaid_sale(
     )
     if has_grouped_payment or sale.cash_paid > 0:
         raise ValueError(
-            "Cette vente a déjà reçu un paiement; annulez d'abord le paiement."
+            user_message(
+                "Cette vente est liée à un paiement actif.",
+                "Ouvrez Dettes, annulez le reçu concerné, puis réessayez.",
+            )
         )
     reason = (reason or "").strip()
     if len(reason) < 3:
@@ -284,7 +306,7 @@ def reverse_unpaid_wholesale_sale(
 ) -> None:
     """Compatibility wrapper enforcing the wholesale ledger type."""
     if business.business_type != BusinessType.WHOLESALE:
-        raise ValueError("Cette opération est réservée au registre grossiste.")
+        raise ValueError("Cette opération est disponible uniquement en mode grossiste.")
     reverse_unpaid_sale(
         sale=sale,
         business=business,

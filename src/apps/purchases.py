@@ -21,6 +21,7 @@ from apps.models import (
 )
 from apps.money import as_decimal, quantize_unit_price
 from apps.pricing import calculate_preset_cost
+from apps.user_messages import user_message
 
 
 def record_wholesale_purchase(
@@ -68,7 +69,7 @@ def record_wholesale_purchase(
 
 def _validate_wholesale_purchase_access(*, business, purchased_by):
     if business.business_type != BusinessType.WHOLESALE:
-        raise ValueError("Cette opération est réservée au registre grossiste.")
+        raise ValueError("Cette opération est disponible uniquement en mode grossiste.")
     if business.approval_status != BusinessApprovalStatus.APPROVED:
         raise PermissionError("Le mode grossiste n'est pas encore approuvé.")
     if business.owner_user_id != purchased_by.id:
@@ -89,7 +90,10 @@ def _wholesale_purchase_values(
             or preset.operation != PriceOperation.PURCHASE
             or not preset.is_active
         ):
-            raise ValueError("Le prix sélectionné ne correspond pas à cet achat.")
+            raise ValueError(user_message(
+                f"Le prix sélectionné n'est plus disponible pour {network.value}.",
+                "Choisissez un autre prix.",
+            ))
         unit_cost = preset.unit_price
         total_cost = calculate_preset_cost(preset, quantity)
     else:
@@ -134,7 +138,7 @@ def _apply_wholesale_purchase_stock(
 
 def _validate_retail_owner(*, business: Business, user: User) -> None:
     if business.business_type != BusinessType.RETAIL:
-        raise ValueError("Cette opération est réservée au registre de détail.")
+        raise ValueError("Cette opération est disponible uniquement en mode détail.")
     if business.owner_user_id != user.id:
         raise PermissionError("Seul le propriétaire peut gérer les achats.")
 
@@ -280,7 +284,7 @@ def reverse_wholesale_purchase(
 ) -> None:
     """Reverse an unconsumed wholesale purchase without deleting its audit row."""
     if business.business_type != BusinessType.WHOLESALE:
-        raise ValueError("Cette opération est réservée au registre grossiste.")
+        raise ValueError("Cette opération est disponible uniquement en mode grossiste.")
     if business.owner_user_id != reversed_by.id:
         raise PermissionError("Seul le propriétaire peut annuler cet achat.")
     if purchase.stock_item.business_id != business.id:
@@ -293,7 +297,10 @@ def reverse_wholesale_purchase(
 
     if _purchase_has_later_sale(purchase=purchase, business=business):
         raise ValueError(
-            "Cet achat ne peut pas être annulé car ce stock a déjà pu être vendu."
+            user_message(
+                "Cet achat ne peut plus être annulé.",
+                "Des ventes plus récentes dépendent de son coût. Corrigez-les d'abord.",
+            )
         )
     reverse_purchase(
         stock=purchase.stock_item,
@@ -320,7 +327,10 @@ def replace_wholesale_purchase(
         raise ValueError("Un achat annulé ne peut pas être modifié.")
     if _purchase_has_later_sale(purchase=purchase, business=business):
         raise ValueError(
-            "Cet achat ne peut pas être modifié car ce stock a déjà pu être vendu."
+            user_message(
+                "Cet achat ne peut plus être modifié.",
+                "Des ventes plus récentes dépendent de son coût. Corrigez-les d'abord.",
+            )
         )
 
     reverse_purchase(

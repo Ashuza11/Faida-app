@@ -228,7 +228,10 @@ def register():
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Registration error: {e}", exc_info=True)
-            flash("Une erreur est survenue lors de la création du compte", "danger")
+            flash(
+                "Le compte n'a pas pu être créé. Vérifiez les informations puis réessayez.",
+                "danger",
+            )
 
     return render_template(
         "auth/register.html",

@@ -21,7 +21,7 @@
             {% for field, errors in form.errors.items() %}{% for error in errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}{% endfor %}
             <div class="alert alert-light border mt-3">
               <div>Coût unitaire affiché: <strong id="unitCostPreview">—</strong></div>
-              <div>Total exact estimé: <strong id="totalCostPreview">—</strong></div>
+              <div>Total calculé: <strong id="totalCostPreview">—</strong></div>
             </div>
             <button class="btn btn-primary btn-block" type="submit">{{ 'Enregistrer' if editing_purchase else 'Acheter' }}</button>
             {% if editing_purchase %}<a class="btn btn-link btn-block" href="{{ url_for('main_bp.wholesale_purchases') }}">Retour</a>{% endif %}
@@ -39,7 +39,7 @@
             <td>${{ "{:.2f}".format(purchase.actual_total_cost) }}</td>
             <td>${{ "{:.8f}".format(purchase.buying_price_at_purchase) }}</td>
             <td>{{ purchase.purchase_date.strftime('%d/%m/%Y') }}</td>
-            <td>{% if purchase.status.value == 'reversed' %}<span class="badge badge-danger">Annulé</span><br><small>{{ purchase.reversal_reason }}</small>{% else %}<a class="btn btn-sm btn-primary mb-2" href="{{ url_for('main_bp.wholesale_purchase_edit', purchase_id=purchase.id) }}">Modifier</a><form method="post" action="{{ url_for('main_bp.reverse_wholesale_purchase_route', purchase_id=purchase.id) }}" onsubmit="return confirm('Annuler cet achat ? Le stock sera corrigé.');">{{ reversal_form.csrf_token }}<div class="input-group input-group-sm"><input class="form-control" name="reason" minlength="3" maxlength="255" required placeholder="Raison"><div class="input-group-append"><button class="btn btn-outline-danger" type="submit">Annuler achat</button></div></div></form>{% endif %}</td>
+            <td>{% if purchase.status.value == 'reversed' %}<span class="badge badge-danger">Annulé</span><br><small>{{ purchase.reversal_reason }}</small>{% else %}<a class="btn btn-sm btn-primary mb-2" href="{{ url_for('main_bp.wholesale_purchase_edit', purchase_id=purchase.id) }}">Modifier</a><form method="post" action="{{ url_for('main_bp.reverse_wholesale_purchase_route', purchase_id=purchase.id) }}" onsubmit="return confirm('Annuler cet achat retirera ses unités et son coût du stock. Continuer ?');">{{ reversal_form.csrf_token }}<div class="input-group input-group-sm"><input class="form-control" name="reason" minlength="3" maxlength="255" required placeholder="Raison"><div class="input-group-append"><button class="btn btn-outline-danger" type="submit">Annuler achat</button></div></div></form>{% endif %}</td>
           </tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Aucun achat enregistré.</td></tr>{% endfor %}</tbody>
         </table></div>
       </div>

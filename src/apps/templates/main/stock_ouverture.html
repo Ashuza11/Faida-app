@@ -153,7 +153,7 @@
                 {% endfor %}
               </tbody>
             </table>
-            <small class="d-block px-4 pb-3 text-muted">{% if is_wholesale %}Format : unités · valeur totale · coût moyen/unité.{% else %}Format : unités @ coût/unité {{ currency_label }}.{% endif %} * coût historique estimé.</small>
+            <small class="d-block px-4 pb-3 text-muted">{% if is_wholesale %}Format : unités · valeur totale · coût moyen/unité.{% else %}Format : unités @ coût/unité {{ currency_label }}.{% endif %}<br>* Le coût exact n'était pas disponible ; la valeur affichée est une estimation.</small>
           </div>
         </div>
       </div>

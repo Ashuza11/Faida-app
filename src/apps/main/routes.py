@@ -38,6 +38,7 @@ from apps.payments import (
 from apps.inventory import consume_stock
 from apps.opening_balances import OpeningBalanceError, save_opening_balances
 from apps.dates import business_local_date
+from apps.user_messages import user_message
 from apps.client_identities import (
     ClientIdentityError,
     ensure_unique_client_name,
@@ -169,7 +170,10 @@ def protect_unmigrated_wholesale_routes():
         and business.business_type == BusinessType.WHOLESALE
         and request.endpoint not in _WHOLESALE_SAFE_ENDPOINTS
     ):
-        flash("Cette page n'est pas disponible ici.", "info")
+        flash(user_message(
+            "Cette page appartient au mode détail.",
+            "Changez de mode pour y accéder.",
+        ), "info")
         return redirect(url_for("main_bp.wholesale_dashboard"))
     return None
 
@@ -297,7 +301,7 @@ def wholesale_opening_stock():
             try:
                 selected_date = datetime.strptime(date_value, "%Y-%m-%d").date()
             except ValueError:
-                flash("Date invalide.", "danger")
+                flash("La date sélectionnée est invalide. Choisissez-la dans le calendrier.", "danger")
         form.balance_date.data = selected_date
         existing = StockOpeningBalance.query.filter_by(
             business_id=business.id,
@@ -571,7 +575,7 @@ def reverse_wholesale_purchase_route(purchase_id):
     purchase = db.get_or_404(StockPurchase, purchase_id)
     form = TransactionReversalForm()
     if not form.validate_on_submit():
-        flash("Ajoutez une raison.", "danger")
+        flash("Indiquez brièvement pourquoi vous annulez cet achat.", "danger")
         return redirect(url_for("main_bp.wholesale_purchases"))
     try:
         reverse_wholesale_purchase(
@@ -613,7 +617,10 @@ def _wholesale_sale_items_from_form(form):
         if not network_name and quantity is None and not price_choice and custom_price is None:
             continue
         if not network_name or quantity is None or not price_choice:
-            raise ValueError("Complétez le réseau, la quantité et le prix de chaque ligne.")
+            raise ValueError(user_message(
+                "Une ligne de vente est incomplète.",
+                "Indiquez son réseau, sa quantité et son prix, ou supprimez-la.",
+            ))
         network = NetworkType[network_name]
         preset = None
         if price_choice == "custom":
@@ -623,7 +630,10 @@ def _wholesale_sale_items_from_form(form):
             try:
                 preset_id = int(price_choice.removeprefix("preset:"))
             except (TypeError, ValueError):
-                raise ValueError("Le prix sélectionné est invalide.") from None
+                raise ValueError(user_message(
+                    "Le prix sélectionné n'est plus disponible.",
+                    "Choisissez un autre prix pour ce réseau.",
+                )) from None
             preset = db.session.get(PricePreset, preset_id)
         items.append({
             "network": network,
@@ -646,7 +656,10 @@ def _resolve_wholesale_sale_client(form, *, business):
             id=client_id, business_id=business.id, is_active=True
         ).first()
         if client is None:
-            raise ValueError("Client invalide.")
+            raise ValueError(user_message(
+                "Le client sélectionné n'est plus disponible.",
+                "Choisissez un autre client et réessayez.",
+            ))
         return client
 
     name = " ".join((form.new_client_name.data or "").split()).strip()
@@ -850,7 +863,7 @@ def reverse_wholesale_sale_route(sale_id):
     sale = db.get_or_404(Sale, sale_id)
     form = TransactionReversalForm()
     if not form.validate_on_submit():
-        flash("Ajoutez une raison.", "danger")
+        flash("Indiquez brièvement pourquoi vous annulez cette vente.", "danger")
         return redirect(url_for("main_bp.wholesale_sales"))
     try:
         reverse_unpaid_wholesale_sale(
@@ -1077,7 +1090,7 @@ def wholesale_client_detail(client_id):
                 description=form.description.data,
             )
             db.session.commit()
-            flash("Paiement appliqué.", "success")
+            flash("Paiement enregistré et appliqué aux dettes les plus anciennes.", "success")
             return redirect(
                 url_for("main_bp.wholesale_client_detail", client_id=client.id)
             )
@@ -1129,7 +1142,7 @@ def reverse_wholesale_payment_route(payment_event_id):
     client_id = payment_event.client_id
     form = TransactionReversalForm()
     if not form.validate_on_submit():
-        flash("Ajoutez une raison.", "danger")
+        flash("Indiquez brièvement pourquoi vous annulez ce paiement.", "danger")
         return redirect(
             url_for("main_bp.wholesale_client_detail", client_id=client_id)
         )
@@ -1167,7 +1180,7 @@ def wholesale_report():
             else datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
         )
     except ValueError:
-        flash("Date invalide.", "danger")
+        flash("La date sélectionnée est invalide. Choisissez-la dans le calendrier.", "danger")
         return redirect(url_for("main_bp.wholesale_report"))
     report = build_wholesale_daily_report(
         business=business, target_date=target_date
@@ -1403,7 +1416,10 @@ def stocker_management():
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Error creating stockeur: {e}")
-            flash("Une erreur est survenue lors de la création.", "danger")
+            flash(user_message(
+                "Le stockeur n'a pas pu être créé.",
+                "Vérifiez ses informations puis réessayez.",
+            ), "danger")
 
     # --- Handle GET: Fetch users for display ---
 
@@ -1652,10 +1668,10 @@ def client_edit(client_id):
             db.session.rollback()
             flash(str(error), "danger")
     else:
-        flash(
-            "Vérifiez les champs.",
-            "danger",
-        )
+        flash(user_message(
+            "Certains champs sont incomplets ou incorrects.",
+            "Consultez les indications affichées sous le formulaire.",
+        ), "danger")
     return redirect(url_for("main_bp.client_management"))
 
 
@@ -1744,17 +1760,23 @@ def achat_stock():
             # Redirect to Clear the POST request
             return redirect(url_for("main_bp.achat_stock"))
 
-        except ValueError as e:
+        except (ValueError, PermissionError) as error:
             db.session.rollback()
-            flash(str(e), "danger")
+            flash(str(error), "danger")
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Error recording stock purchase: {e}")
-            flash("Une erreur est survenue.", "danger")
+            flash(user_message(
+                "L'achat n'a pas pu être enregistré.",
+                "Vérifiez les informations puis réessayez.",
+            ), "danger")
 
     elif form.errors:
         current_app.logger.debug("achat_stock form errors: %s", form.errors)
-        flash("Vérifiez les champs.", "danger")
+        flash(user_message(
+            "Certains champs sont incomplets ou incorrects.",
+            "Consultez les indications affichées sous le formulaire.",
+        ), "danger")
 
     # --- 2. HANDLE GET (Data Fetching & Pagination) ---
 
@@ -1884,13 +1906,18 @@ def edit_stock_purchase(purchase_id):
             flash("Achat mis à jour.", "success")
             return redirect(url_for("main_bp.achat_stock"))
 
+        except (ValueError, PermissionError) as error:
+            db.session.rollback()
+            flash(str(error), "danger")
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(
                 f"Error updating stock purchase {purchase_id}: {e}"
             )
-            flash(
-                f"Une erreur est survenue lors de la mise à jour: {e}", "danger")
+            flash(user_message(
+                "L'achat n'a pas pu être modifié.",
+                "Vérifiez les informations puis réessayez.",
+            ), "danger")
 
     return render_template(
         "main/edit_stock_purchase.html",
@@ -1921,13 +1948,19 @@ def delete_stock_purchase(purchase_id):
             flash("Achat supprimé.", "success")
             return redirect(url_for("main_bp.achat_stock"))
 
+        except (ValueError, PermissionError) as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+            return redirect(url_for("main_bp.achat_stock"))
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(
                 f"Error deleting stock purchase {purchase_id}: {e}"
             )
-            flash(
-                f"Une erreur est survenue lors de la suppression: {e}", "danger")
+            flash(user_message(
+                "L'achat n'a pas pu être supprimé.",
+                "Vérifiez qu'aucune vente ne dépend de ce stock.",
+            ), "danger")
             return redirect(url_for("main_bp.achat_stock"))
 
     flash("Confirmez la suppression.", "warning")
@@ -1962,7 +1995,7 @@ def stock_ouverture():
             try:
                 selected_date = datetime.strptime(date_value, "%Y-%m-%d").date()
             except ValueError:
-                flash("Date invalide.", "danger")
+                flash("La date sélectionnée est invalide. Choisissez-la dans le calendrier.", "danger")
         form.balance_date.data = selected_date
         if vendeur_id:
             existing = StockOpeningBalance.query.filter_by(
@@ -1979,7 +2012,10 @@ def stock_ouverture():
 
     if form.validate_on_submit():
         if not vendeur_id:
-            flash("Mode introuvable.", "danger")
+            flash(user_message(
+                "Aucun mode actif n'est sélectionné.",
+                "Choisissez un mode puis réessayez.",
+            ), "danger")
             return redirect(url_for('main_bp.stock_ouverture'))
 
         updates = {
@@ -2017,7 +2053,10 @@ def stock_ouverture():
                     error,
                     exc_info=True,
                 )
-                flash("Stock enregistré. Actualisez le rapport archivé.", "warning")
+                flash(user_message(
+                    "Le stock est enregistré, mais l'ancien rapport n'a pas été actualisé.",
+                    "Ouvrez la page Rapport et réessayez.",
+                ), "warning")
             flash(
                 f"Stock d'ouverture du {form.balance_date.data.strftime('%d/%m/%Y')} enregistré.",
                 "success",
@@ -2149,7 +2188,10 @@ def vente_stock():
                     business_id=business.id,
                 ).first()
                 if not client:
-                    raise ValueError("Client invalide.")
+                    raise ValueError(user_message(
+                        "Le client sélectionné n'est plus disponible.",
+                        "Choisissez un autre client et réessayez.",
+                    ))
 
             elif form.client_choice.data == "new":
                 selected_key = (form.adhoc_customer_key.data or "").strip()
@@ -2161,7 +2203,10 @@ def vente_stock():
                         Sale.status == TransactionStatus.ACTIVE,
                     ).order_by(Sale.created_at.desc()).first()
                     if not prior_identity:
-                        raise ValueError("Client temporaire invalide.")
+                        raise ValueError(user_message(
+                            "Ce client occasionnel n'a pas pu être identifié.",
+                            "Sélectionnez-le de nouveau ou créez un client.",
+                        ))
                     client_name_adhoc = prior_identity.client_display_name
                     adhoc_customer_key = selected_key
                 else:
@@ -2196,13 +2241,16 @@ def vente_stock():
                     business_id=business.id, network=network_type).first()
 
                 if not stock_item:
-                    raise ValueError(
-                        f"Stock introuvable pour {network_type.value}.")
+                    raise ValueError(user_message(
+                        f"Le stock {network_type.value} n'est pas encore configuré.",
+                        "Enregistrez d'abord un stock d'ouverture ou un achat.",
+                    ))
 
                 if quantity > stock_item.balance:
-                    raise ValueError(
-                        f"Stock insuffisant pour {network_type.value}."
-                    )
+                    raise ValueError(user_message(
+                        f"Stock {network_type.value} insuffisant.",
+                        f"Disponible : {stock_item.balance} unités. Demandé : {quantity} unités.",
+                    ))
 
                 # Determine Price
                 final_unit_price = None
@@ -2211,9 +2259,10 @@ def vente_stock():
                 elif stock_item.selling_price_per_unit and stock_item.selling_price_per_unit > 0:
                     final_unit_price = stock_item.selling_price_per_unit
                 else:
-                    raise ValueError(
-                        f"Prix introuvable pour {network_type.value}."
-                    )
+                    raise ValueError(user_message(
+                        f"Aucun prix de vente n'est défini pour {network_type.value}.",
+                        "Configurez un prix avant d'enregistrer la vente.",
+                    ))
 
                 # Calculate Line Totals
                 subtotal_raw = quantity * final_unit_price
@@ -2281,11 +2330,17 @@ def vente_stock():
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Sale Error: {e}")
-            flash("Une erreur est survenue.", "danger")
+            flash(user_message(
+                "La vente n'a pas pu être enregistrée.",
+                "Vérifiez les informations puis réessayez.",
+            ), "danger")
 
     # Handle Form Validation Errors (if submit failed but no exception raised)
     elif form.errors:
-        flash("Vérifiez les champs.", "danger")
+        flash(user_message(
+            "Certains champs sont incomplets ou incorrects.",
+            "Consultez les indications affichées sous le formulaire.",
+        ), "danger")
         # Optional: Detailed error logging to flash can be done here if desired
 
     # --- 3. HANDLE GET (Data Fetching & Pagination) ---
@@ -2333,7 +2388,10 @@ def update_sale_cash(sale_id):
         return redirect(url_for("main_bp.vente_stock"))
 
     if new_cash < sale.cash_paid:
-        flash("Annulez ce paiement avant de le réduire.", "danger")
+        flash(user_message(
+            "Un paiement enregistré ne peut pas être réduit directement.",
+            "Annulez le reçu concerné, puis enregistrez le bon montant.",
+        ), "danger")
         return redirect(url_for("main_bp.vente_stock"))
 
     try:
@@ -2347,10 +2405,16 @@ def update_sale_cash(sale_id):
             )
         db.session.commit()
         flash("Paiement mis à jour.", "success")
+    except (ValueError, PermissionError) as error:
+        db.session.rollback()
+        flash(str(error), "danger")
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error updating sale cash {sale_id}: {e}")
-        flash("Une erreur est survenue.", "danger")
+        flash(user_message(
+            "Le paiement n'a pas pu être mis à jour.",
+            "Vérifiez le montant puis réessayez.",
+        ), "danger")
 
     return redirect(url_for("main_bp.vente_stock"))
 
@@ -2381,7 +2445,7 @@ def delete_sale(sale_id):
 
         try:
             if not confirm_form.validate_on_submit():
-                raise ValueError("Ajoutez une raison.")
+                raise ValueError("Indiquez brièvement pourquoi vous annulez cette vente.")
             reverse_unpaid_sale(
                 sale=sale,
                 business=business,
@@ -2395,12 +2459,19 @@ def delete_sale(sale_id):
             )
             return redirect(url_for("main_bp.vente_stock"))
 
+        except (ValueError, PermissionError) as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+            return redirect(url_for("main_bp.vente_stock"))
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(
                 f"Error deleting sale {sale_id}: {e}", exc_info=True
             )
-            flash("Une erreur est survenue.", "danger")
+            flash(user_message(
+                "La vente n'a pas pu être annulée.",
+                "Réessayez ou contactez l'administrateur si le problème continue.",
+            ), "danger")
             return redirect(url_for("main_bp.vente_stock"))
 
     flash("Confirmez l'annulation.", "warning")
@@ -2467,7 +2538,7 @@ def reverse_retail_payment_route(payment_event_id):
         redirect_sale_id = payment_event.allocations[0].sale_id
     try:
         if not form.validate_on_submit():
-            raise ValueError("Ajoutez une raison.")
+            raise ValueError("Indiquez brièvement pourquoi vous annulez ce paiement.")
         reverse_payment_event(
             payment_event=payment_event,
             business=business,
@@ -2475,7 +2546,10 @@ def reverse_retail_payment_route(payment_event_id):
             reason=form.reason.data,
         )
         db.session.commit()
-        flash("Paiement annulé et dettes restaurées.", "success")
+        flash(user_message(
+            "Paiement annulé.",
+            "Les montants concernés sont de nouveau enregistrés comme dettes.",
+        ), "success")
     except (ValueError, PermissionError, RuntimeError) as error:
         db.session.rollback()
         flash(str(error), "danger")
@@ -2617,9 +2691,10 @@ def enregistrer_sortie():
             except Exception as e:
                 db.session.rollback()
                 current_app.logger.error(f"Error saving cash outflow: {e}")
-                flash(
-                    "Une erreur est survenue.", "danger"
-                )
+                flash(user_message(
+                    "La sortie de caisse n'a pas été enregistrée.",
+                    "Vérifiez les informations puis réessayez.",
+                ), "danger")
 
         else:
             for field, errors in form.errors.items():
@@ -2687,7 +2762,10 @@ def encaisser_dette():
                     Sale.adhoc_customer_key == adhoc_key,
                 )
             else:
-                raise ValueError("Clé client invalide.")
+                raise ValueError(user_message(
+                    "Le client sélectionné n'a pas pu être identifié.",
+                    "Actualisez la page puis réessayez.",
+                ))
 
             unpaid_sales = unpaid_q.order_by(Sale.sale_date.asc(), Sale.created_at.asc()).all()
             if not unpaid_sales:
@@ -2772,7 +2850,10 @@ def encaisser_dette():
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Error recording debt collection: {e}")
-            flash("Une erreur est survenue.", "danger")
+            flash(user_message(
+                "Le paiement de la dette n'a pas été enregistré.",
+                "Vérifiez le montant puis réessayez.",
+            ), "danger")
 
     # Count unique clients with any outstanding debt (for the "Voir toutes" link)
     all_debt_choices = get_clients_with_debt(vendeur_id=_vendeur_id, sale_date=None)
@@ -3063,7 +3144,7 @@ def archive_daily_report():
     date_str = request.form.get('date_to_archive')
 
     if not date_str:
-        flash("Date manquante.", "danger")
+        flash("Choisissez la date du rapport à archiver.", "danger")
         return redirect(url_for('main_bp.rapports'))
 
     try:
@@ -3076,7 +3157,10 @@ def archive_daily_report():
         business_id = business.id if business is not None else None
 
         if not vendeur_id:
-            flash("Mode introuvable.", "danger")
+            flash(user_message(
+                "Aucun mode actif n'est sélectionné.",
+                "Choisissez un mode puis réessayez.",
+            ), "danger")
             return redirect(url_for('main_bp.rapports', date=date_str))
 
         # 3. Call helper function WITH vendeur_id
@@ -3092,7 +3176,10 @@ def archive_daily_report():
     except Exception as e:
         current_app.logger.error(
             f"Erreur d'archivage: {str(e)}", exc_info=True)
-        flash("Une erreur est survenue.", "danger")
+        flash(user_message(
+            "Le rapport n'a pas pu être archivé.",
+            "Actualisez la page puis réessayez.",
+        ), "danger")
 
     return redirect(url_for('main_bp.rapports', date=date_str))
 
@@ -3143,7 +3230,10 @@ def profile():
             return redirect(url_for("main_bp.profile"))
         except Exception as e:
             db.session.rollback()
-            flash("Une erreur est survenue.", "danger")
+            flash(user_message(
+                "Le profil n'a pas pu être mis à jour.",
+                "Actualisez la page puis réessayez.",
+            ), "danger")
 
     elif request.method == "GET":
         # Pre-populate form fields when page is loaded (GET request)

@@ -15,7 +15,7 @@
                     </div>
                     <div class="card-body">
                         <p class="lead">Confirmez l'annulation de cette vente.</p>
-                        {% if sale.cash_paid > 0 %}<div class="alert alert-warning">Annulez d'abord les paiements liés.</div>{% endif %}
+                        {% if sale.cash_paid > 0 %}<div class="alert alert-warning"><strong>Paiement actif</strong><small class="d-block mt-1">Ouvrez les détails de la vente et annulez le reçu concerné avant de continuer.</small></div>{% endif %}
                         <p><strong>Détails de la vente:</strong></p>
                         <ul>
                             <li><strong>ID Vente:</strong> {{ sale.id }}</li>

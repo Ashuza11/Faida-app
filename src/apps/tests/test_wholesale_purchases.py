@@ -189,7 +189,7 @@ def test_wholesale_purchase_reversal_rejects_possibly_consumed_stock(session):
     )
     session.flush()
 
-    with pytest.raises(ValueError, match="déjà pu être vendu"):
+    with pytest.raises(ValueError, match="ventes plus récentes"):
         reverse_wholesale_purchase(
             purchase=purchase,
             business=business,
@@ -206,7 +206,7 @@ def test_purchase_rejects_preset_from_another_business(session):
     first_business = approved_wholesale(session, first_owner, "First")
     second_business = approved_wholesale(session, second_owner, "Second")
 
-    with pytest.raises(ValueError, match="ne correspond pas"):
+    with pytest.raises(ValueError, match="n'est plus disponible"):
         record_wholesale_purchase(
             business=first_business,
             purchased_by=first_owner,
@@ -268,7 +268,7 @@ def test_wholesale_purchase_route_records_selected_preset(app, session):
 
     page = client.get("/businesses/wholesale/purchases")
     assert b"Annuler achat" in page.data
-    assert "Le stock sera corrigé".encode() in page.data
+    assert "retirera ses unités et son coût".encode() in page.data
 
 
 def test_wholesale_purchase_can_be_corrected_before_stock_is_sold(session):
@@ -327,7 +327,7 @@ def test_wholesale_purchase_edit_is_blocked_after_later_sale(session):
     )
     session.flush()
 
-    with pytest.raises(ValueError, match="déjà pu être vendu"):
+    with pytest.raises(ValueError, match="ventes plus récentes"):
         replace_wholesale_purchase(
             purchase=purchase,
             business=business,

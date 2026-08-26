@@ -74,7 +74,7 @@
                     {% if payment.status.value == 'reversed' %}
                       <span class="badge badge-danger ml-2">Annulé</span><br><small>{{ payment.reversal_reason }}</small>
                     {% else %}
-                      <div class="small mb-2">Allocations: {% for allocation in payment.allocations %}vente #{{ allocation.sale_id }} ({{ "{:,.2f}".format(allocation.amount) }} FC){% if not loop.last %}, {% endif %}{% endfor %}</div>
+                      <div class="small mb-2">Répartition du paiement : {% for allocation in payment.allocations %}vente du {{ allocation.sale.sale_date.strftime('%d/%m/%Y') if allocation.sale else '—' }} ({{ "{:,.2f}".format(allocation.amount) }} FC){% if not loop.last %}, {% endif %}{% endfor %}</div>
                       {% if current_user.is_vendeur %}<form method="post" action="{{ url_for('main_bp.reverse_retail_payment_route', payment_event_id=payment.id) }}">{{ reversal_form.csrf_token }}<div class="input-group input-group-sm"><input class="form-control" name="reason" minlength="3" maxlength="255" required placeholder="Raison de l'annulation"><div class="input-group-append"><button class="btn btn-outline-danger" type="submit">Annuler</button></div></div></form>{% endif %}
                     {% endif %}
                   </div>
@@ -82,8 +82,8 @@
 
                 {% if legacy_allocations %}
                   <div class="alert alert-warning mt-3">
-                    <strong>Paiements historiques en lecture seule</strong><br>
-                    Ces lignes précèdent le regroupement des reçus. Elles restent incluses dans les soldes et rapports, mais ne peuvent pas être annulées automatiquement.
+                    <strong>Anciens paiements non annulables</strong><br>
+                    <small>Ces paiements restent inclus dans les soldes et rapports. Contactez l'administrateur pour les corriger.</small>
                   </div>
                   {% for allocation in legacy_allocations %}
                     <div class="border rounded p-2 mb-2 text-muted">

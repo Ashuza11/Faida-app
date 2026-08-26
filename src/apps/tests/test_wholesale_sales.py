@@ -520,6 +520,37 @@ def test_paid_wholesale_sale_cannot_be_edited(session):
         )
 
 
+def test_wholesale_sales_page_explains_active_and_redirected_payments(app, session):
+    owner, business, retailer, preset = setup_wholesale(session, suffix=540)
+    first_sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=500, cash_received=0,
+        sale_date=date.today(), preset=preset,
+    )
+    second_sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=500, cash_received=Decimal("1"),
+        sale_date=date.today(), preset=preset,
+    )
+    session.commit()
+    assert first_sale.cash_paid == Decimal("1.000000000000")
+    assert second_sale.cash_paid == 0
+
+    browser = app.test_client()
+    with browser.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    page = browser.get("/businesses/wholesale/sales")
+
+    assert page.status_code == 200
+    assert b"Paiement actif" in page.data
+    assert b"Re\xc3\xa7u li\xc3\xa9" in page.data
+    assert b"Voir les paiements" in page.data
+    assert b"Paiement \xc3\xa0 annuler d'abord" not in page.data
+
+
 def test_wholesale_sale_edit_route_updates_invoice(app, session):
     owner, business, retailer, preset = setup_wholesale(session, suffix=55)
     sale = record_wholesale_sale(

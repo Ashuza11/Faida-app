@@ -3,7 +3,7 @@
 {% if messages %}
 <div id="faida-toasts"
      style="position:fixed;top:5rem;right:1rem;z-index:9050;
-            width:min(320px,calc(100vw - 1.5rem));
+            width:min(380px,calc(100vw - 1.5rem));
             display:flex;flex-direction:column;gap:6px;pointer-events:none;">
   {% for category, message in messages %}
   <div class="faida-toast alert alert-{{ category }} alert-dismissible fade show mb-0"
@@ -18,7 +18,13 @@
         {%- else -%}ℹ️
         {%- endif -%}
       </span>
-      <span class="faida-toast-text" style="flex:1;min-width:0;overflow-wrap:break-word;">{{ message }}</span>
+      {% set message_lines = message.split('\n', 1) %}
+      <span class="faida-toast-text" style="flex:1;min-width:0;overflow-wrap:break-word;">
+        <span{% if message_lines|length > 1 %} class="font-weight-bold"{% endif %}>{{ message_lines[0] }}</span>
+        {% if message_lines|length > 1 %}
+          <small class="d-block mt-1" style="font-size:12px;line-height:1.35;opacity:.9;">{{ message_lines[1] }}</small>
+        {% endif %}
+      </span>
       <button type="button" class="close p-0" data-dismiss="alert" aria-label="Fermer"
               style="font-size:18px;line-height:1;opacity:.6;flex-shrink:0;margin-top:-1px;">
         <span aria-hidden="true">&times;</span>
@@ -47,7 +53,7 @@
     setTimeout(function () {
       toast.classList.remove('show');
       setTimeout(function () { if (toast.parentNode) toast.remove(); }, 350);
-    }, 4000 + i * 600);
+    }, (toast.querySelector('.faida-toast-text small') ? 6500 : 4000) + i * 600);
   });
 })();
 </script>

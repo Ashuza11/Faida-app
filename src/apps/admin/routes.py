@@ -232,7 +232,7 @@ def toggle_vendeur_status(vendeur_id):
     vendeur = User.query.get_or_404(vendeur_id)
 
     if vendeur.role != RoleType.VENDEUR:
-        flash("Action refusée.", "danger")
+        flash("Seuls les comptes vendeurs peuvent être activés ou désactivés.", "danger")
         return redirect(url_for('admin_bp.vendeurs_list'))
 
     vendeur.is_active = not vendeur.is_active
@@ -251,7 +251,7 @@ def approve_wholesale(business_id):
     """Approve a pending wholesale request for operational access."""
     business = db.get_or_404(Business, business_id)
     if business.business_type != BusinessType.WHOLESALE:
-        flash("Ce mode n'est pas en grossiste.", "warning")
+        flash("Ce commerce est en mode détail et ne nécessite pas d'approbation grossiste.", "warning")
     elif business.approval_status == BusinessApprovalStatus.APPROVED:
         flash("Ce mode est déjà approuvé.", "info")
     else:

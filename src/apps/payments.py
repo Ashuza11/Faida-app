@@ -14,6 +14,7 @@ from apps.models import (
     Sale,
     TransactionStatus,
 )
+from apps.user_messages import user_message
 
 
 def allocate_registered_client_payment(
@@ -354,10 +355,16 @@ def reverse_payment_event(
         if allocation.status == TransactionStatus.ACTIVE
     ]
     if not allocations:
-        raise ValueError("Ce paiement ne contient aucune allocation annulable.")
+        raise ValueError(user_message(
+            "Ce paiement ne peut pas être annulé automatiquement.",
+            "Contactez l'administrateur pour le corriger.",
+        ))
 
     if any(allocation.sale_id is None for allocation in allocations):
-        raise RuntimeError("Une allocation de paiement n'est liée à aucune vente.")
+        raise RuntimeError(user_message(
+            "Ce paiement contient des informations incomplètes.",
+            "Contactez l'administrateur avant de le modifier.",
+        ))
     sale_ids = {allocation.sale_id for allocation in allocations}
     sales = {
         sale.id: sale
@@ -369,13 +376,22 @@ def reverse_payment_event(
             raise PermissionError("Une allocation appartient à un autre mode.")
         if sale.status != TransactionStatus.ACTIVE:
             raise ValueError(
-                "Une vente liée est annulée; ce paiement ne peut pas être modifié."
+                user_message(
+                    "Ce paiement concerne une vente déjà annulée.",
+                    "Contactez l'administrateur pour le corriger.",
+                )
             )
         if sale.cash_paid < allocation.amount:
-            raise RuntimeError("Le solde payé de la vente est incohérent.")
+            raise RuntimeError(user_message(
+                "Les montants de la vente ne correspondent pas au paiement.",
+                "Contactez l'administrateur avant de continuer.",
+            ))
         if allocation.allocation_kind == PaymentAllocationKind.CURRENT_SALE:
             if sale.initial_cash_paid < allocation.amount:
-                raise RuntimeError("Le paiement initial de la vente est incohérent.")
+                raise RuntimeError(user_message(
+                    "Le paiement enregistré avec cette vente est incomplet.",
+                    "Contactez l'administrateur avant de continuer.",
+                ))
 
     for allocation in allocations:
         sale = sales[allocation.sale_id]
