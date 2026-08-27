@@ -240,12 +240,12 @@ def _wholesale_unit_price(*, business, network, preset, custom_unit_price):
     return unit_price
 
 
-def _consume_wholesale_sale_items(*, business, items):
+def _prepare_wholesale_sale_items(*, business, items):
+    """Validate wholesale lines and calculate prices without changing stock."""
     if not items:
         raise ValueError("Ajoutez au moins un réseau.")
     seen_networks = set()
     prepared = []
-    subtotals = []
     for item in items:
         network = item["network"]
         if network in seen_networks:
@@ -261,6 +261,28 @@ def _consume_wholesale_sale_items(*, business, items):
             preset=preset,
             custom_unit_price=item.get("custom_unit_price"),
         )
+        subtotal = calculate_invoice_total(
+            [quantity * unit_price], business.currency_code
+        )
+        prepared.append({
+            "network": network,
+            "quantity": int(quantity),
+            "preset": preset,
+            "unit_price": unit_price,
+            "subtotal": subtotal,
+        })
+    return prepared
+
+
+def _consume_wholesale_sale_items(*, business, items):
+    prepared_inputs = _prepare_wholesale_sale_items(
+        business=business, items=items
+    )
+    prepared_items = []
+    subtotals = []
+    for item in prepared_inputs:
+        network = item["network"]
+        quantity = item["quantity"]
         stock = (
             Stock.query.filter_by(business_id=business.id, network=network)
             .with_for_update()
@@ -279,22 +301,19 @@ def _consume_wholesale_sale_items(*, business, items):
         cost_per_unit, cost_total = consume_stock(
             stock=stock, quantity=quantity
         )
-        subtotal = calculate_invoice_total(
-            [quantity * unit_price], business.currency_code
-        )
-        prepared.append(SaleItem(
+        prepared_items.append(SaleItem(
             network=network,
-            price_preset=preset,
-            quantity=int(quantity),
-            price_per_unit_applied=unit_price,
-            subtotal=subtotal,
+            price_preset=item["preset"],
+            quantity=quantity,
+            price_per_unit_applied=item["unit_price"],
+            subtotal=item["subtotal"],
             cost_per_unit_snapshot=cost_per_unit,
             cost_total=cost_total,
-            margin_amount=subtotal - cost_total,
+            margin_amount=item["subtotal"] - cost_total,
             is_cost_estimated=False,
         ))
-        subtotals.append(subtotal)
-    return prepared, sum(subtotals, Decimal("0"))
+        subtotals.append(item["subtotal"])
+    return prepared_items, sum(subtotals, Decimal("0"))
 
 
 def replace_unpaid_wholesale_sale(
@@ -321,10 +340,40 @@ def replace_unpaid_wholesale_sale(
             )
         )
 
+    prepared_inputs = _prepare_wholesale_sale_items(
+        business=business, items=items
+    )
+    old_items_by_network = {item.network: item for item in sale.sale_items}
+    inventory_unchanged = (
+        len(old_items_by_network) == len(prepared_inputs)
+        and all(
+            prepared["network"] in old_items_by_network
+            and old_items_by_network[prepared["network"]].quantity
+            == prepared["quantity"]
+            for prepared in prepared_inputs
+        )
+    )
+    if inventory_unchanged:
+        total = Decimal("0")
+        for prepared in prepared_inputs:
+            sale_item = old_items_by_network[prepared["network"]]
+            sale_item.price_preset = prepared["preset"]
+            sale_item.price_per_unit_applied = prepared["unit_price"]
+            sale_item.subtotal = prepared["subtotal"]
+            sale_item.margin_amount = prepared["subtotal"] - sale_item.cost_total
+            total += prepared["subtotal"]
+        sale.client = client
+        sale.sale_date = sale_date
+        sale.total_amount_due = total
+        sale.cash_paid = Decimal("0")
+        sale.initial_cash_paid = Decimal("0")
+        sale.debt_amount = total
+        return
+
     affected_networks = {item.network for item in sale.sale_items}
-    affected_networks.update(item["network"] for item in items)
+    affected_networks.update(item["network"] for item in prepared_inputs)
     later_purchase = (
-        db.session.query(StockPurchase.id)
+        StockPurchase.query
         .join(Stock)
         .filter(
             Stock.business_id == business.id,
@@ -332,13 +381,18 @@ def replace_unpaid_wholesale_sale(
             StockPurchase.network.in_(affected_networks),
             StockPurchase.created_at > sale.created_at,
         )
+        .order_by(StockPurchase.created_at.asc(), StockPurchase.id.asc())
         .first()
     )
     if later_purchase is not None:
         raise ValueError(
             user_message(
-                "Un achat plus récent a changé le coût du stock.",
-                "Corrigez d'abord cet achat avant de modifier la vente.",
+                "La quantité ou le réseau ne peut pas être modifié.",
+                (
+                    f"Un achat {later_purchase.network.value.capitalize()} "
+                    f"#{later_purchase.id} a été enregistré ensuite. "
+                    "Le prix et le client restent modifiables."
+                ),
             )
         )
 

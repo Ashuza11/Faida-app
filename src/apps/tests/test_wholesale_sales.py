@@ -894,6 +894,74 @@ def test_wholesale_sale_edit_route_updates_invoice(app, session):
     assert sale.total_amount_due == Decimal("3.00")
 
 
+def test_price_client_and_date_edit_after_later_purchase_preserves_cost(session):
+    owner, business, retailer, preset = setup_wholesale(session, suffix=551)
+    other_client = Client(
+        name="Other retailer",
+        vendeur_id=owner.id,
+        business_id=business.id,
+    )
+    session.add(other_client)
+    sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=500, cash_received=0,
+        sale_date=date.today(), preset=preset,
+    )
+    session.flush()
+    original_item = sale.sale_items[0]
+    original_item_id = original_item.id
+    original_cost_per_unit = original_item.cost_per_unit_snapshot
+    original_cost_total = original_item.cost_total
+
+    record_wholesale_purchase(
+        business=business, purchased_by=owner, network=NetworkType.AIRTEL,
+        quantity=1000, custom_unit_cost=Decimal("0.01200"),
+    )
+    session.flush()
+    stock = Stock.query.filter_by(
+        business_id=business.id, network=NetworkType.AIRTEL
+    ).one()
+    stock_state = (
+        stock.balance,
+        stock.inventory_value,
+        stock.average_cost_per_unit,
+    )
+    corrected_date = date.today() - timedelta(days=1)
+
+    replace_unpaid_wholesale_sale(
+        sale=sale,
+        business=business,
+        updated_by=owner,
+        client=other_client,
+        sale_date=corrected_date,
+        items=[{
+            "network": NetworkType.AIRTEL,
+            "quantity": 500,
+            "custom_unit_price": Decimal("0.009455"),
+        }],
+    )
+    session.flush()
+
+    assert len(sale.sale_items) == 1
+    corrected_item = sale.sale_items[0]
+    assert corrected_item.id == original_item_id
+    assert corrected_item.price_preset_id is None
+    assert corrected_item.price_per_unit_applied == Decimal("0.009455000000")
+    assert corrected_item.subtotal == Decimal("4.73")
+    assert corrected_item.cost_per_unit_snapshot == original_cost_per_unit
+    assert corrected_item.cost_total == original_cost_total
+    assert corrected_item.margin_amount == Decimal("0.230000000000")
+    assert sale.client_id == other_client.id
+    assert sale.sale_date == corrected_date
+    assert sale.total_amount_due == Decimal("4.73")
+    assert sale.debt_amount == Decimal("4.73")
+    assert (
+        stock.balance,
+        stock.inventory_value,
+        stock.average_cost_per_unit,
+    ) == stock_state
+
+
 def test_sale_edit_is_blocked_after_later_purchase_changes_cost(session):
     owner, business, retailer, preset = setup_wholesale(session, suffix=56)
     sale = record_wholesale_sale(
@@ -902,13 +970,13 @@ def test_sale_edit_is_blocked_after_later_purchase_changes_cost(session):
         sale_date=date.today(), preset=preset,
     )
     session.flush()
-    record_wholesale_purchase(
+    later_purchase = record_wholesale_purchase(
         business=business, purchased_by=owner, network=NetworkType.AIRTEL,
         quantity=1000, custom_unit_cost=Decimal("0.01200"),
     )
     session.flush()
 
-    with pytest.raises(ValueError, match="achat plus récent"):
+    with pytest.raises(ValueError) as error:
         replace_unpaid_wholesale_sale(
             sale=sale, business=business, updated_by=owner, client=retailer,
             sale_date=date.today(), items=[{
@@ -917,6 +985,15 @@ def test_sale_edit_is_blocked_after_later_purchase_changes_cost(session):
                 "custom_unit_price": Decimal("0.01000"),
             }],
         )
+
+    message = str(error.value)
+    assert "quantité ou le réseau" in message
+    assert f"achat Airtel #{later_purchase.id}" in message
+    assert "Le prix et le client restent modifiables" in message
+    assert sale.sale_items[0].quantity == 500
+    assert Stock.query.filter_by(
+        business_id=business.id, network=NetworkType.AIRTEL
+    ).one().balance == 2500
 
 
 def test_debt_collection_is_oldest_first_and_keeps_payment_date(session):
