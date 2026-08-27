@@ -15,6 +15,7 @@ from flask import (
 )
 from flask_login import login_required, current_user
 from sqlalchemy import func
+from sqlalchemy.orm import selectinload
 from jinja2 import TemplateNotFound
 from apps.main.utils import (
     custom_round_up,
@@ -123,6 +124,7 @@ from apps.purchases import (
     reverse_wholesale_purchase,
 )
 from apps.sales import (
+    build_wholesale_sale_groups,
     record_wholesale_sale,
     replace_unpaid_wholesale_sale,
     reverse_unpaid_sale,
@@ -733,6 +735,7 @@ def wholesale_sales():
     today = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
     sales = (
         Sale.query.filter_by(business_id=business.id)
+        .options(selectinload(Sale.client), selectinload(Sale.sale_items))
         .order_by(Sale.created_at.desc())
         .limit(100)
         .all()
@@ -759,7 +762,7 @@ def wholesale_sales():
         "main/wholesale_sales.html",
         business=business,
         form=form,
-        sales=sales,
+        sale_groups=build_wholesale_sale_groups(sales),
         paid_source_sale_ids=paid_source_sale_ids,
         daily_report=daily_report,
         preset_data=preset_data,
@@ -841,7 +844,7 @@ def wholesale_sale_edit(sale_id):
         business=business,
         editing_sale=sale,
         form=form,
-        sales=[],
+        sale_groups=[],
         paid_source_sale_ids=set(),
         daily_report=build_wholesale_daily_report(
             business=business, target_date=today

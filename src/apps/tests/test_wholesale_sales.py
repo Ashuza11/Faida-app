@@ -21,6 +21,7 @@ from apps.models import (
 from apps.purchases import record_wholesale_purchase
 from apps.payments import collect_client_debt, reverse_payment_event
 from apps.sales import (
+    build_wholesale_sale_groups,
     record_wholesale_sale,
     replace_unpaid_wholesale_sale,
     reverse_unpaid_wholesale_sale,
@@ -94,6 +95,94 @@ def test_wholesale_sale_preserves_price_cost_and_margin(session):
         business_id=business.id, network=NetworkType.AIRTEL
     ).one().balance == 1000
     assert CashInflow.query.filter_by(sale_id=sale.id).one().amount == Decimal("9.40")
+
+
+def test_wholesale_sale_groups_use_client_identity_and_business_date(session):
+    owner, business, first_client, _ = setup_wholesale(session, suffix=501)
+    second_client = Client(
+        name=first_client.name,
+        vendeur_id=owner.id,
+        business_id=business.id,
+    )
+    session.add(second_client)
+    session.flush()
+    today = date.today()
+    first = record_wholesale_sale(
+        business=business, sold_by=owner, client=first_client,
+        network=NetworkType.AIRTEL, quantity=300, cash_received=0,
+        sale_date=today, custom_unit_price=Decimal("0.01000"),
+    )
+    second = record_wholesale_sale(
+        business=business, sold_by=owner, client=first_client,
+        network=NetworkType.AIRTEL, quantity=200, cash_received=Decimal("1.00"),
+        sale_date=today, custom_unit_price=Decimal("0.01000"),
+    )
+    next_day = record_wholesale_sale(
+        business=business, sold_by=owner, client=first_client,
+        network=NetworkType.AIRTEL, quantity=100, cash_received=0,
+        sale_date=today + timedelta(days=1), custom_unit_price=Decimal("0.01000"),
+    )
+    namesake = record_wholesale_sale(
+        business=business, sold_by=owner, client=second_client,
+        network=NetworkType.AIRTEL, quantity=100, cash_received=0,
+        sale_date=today, custom_unit_price=Decimal("0.01000"),
+    )
+
+    groups = build_wholesale_sale_groups([namesake, next_day, second, first])
+
+    assert len(groups) == 3
+    assert {
+        group["client_id"] for group in groups if group["sale_date"] == today
+    } == {first_client.id, second_client.id}
+    same_client_day = next(
+        group for group in groups
+        if group["client_id"] == first_client.id and group["sale_date"] == today
+    )
+    assert same_client_day["sales"] == [second, first]
+    assert same_client_day["active_sale_count"] == 2
+    assert same_client_day["total_amount_due"] == Decimal("5.00")
+    assert same_client_day["cash_paid"] == Decimal("1.00")
+    assert same_client_day["debt_amount"] == Decimal("4.00")
+    assert same_client_day["item_groups"] == [{
+        "network": NetworkType.AIRTEL,
+        "price_per_unit": Decimal("0.010000000000"),
+        "quantity": 500,
+        "subtotal": Decimal("5.00"),
+    }]
+
+
+def test_wholesale_sales_page_renders_one_summary_per_client_and_day(app, session):
+    owner, business, retailer, preset = setup_wholesale(session, suffix=502)
+    first = record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=500, cash_received=0,
+        sale_date=date.today(), preset=preset,
+    )
+    second = record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=500, cash_received=0,
+        sale_date=date.today(), preset=preset,
+    )
+    session.commit()
+    browser = app.test_client()
+    with browser.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    response = browser.get("/businesses/wholesale/sales")
+    page = response.data.decode()
+    group_key = f'c:{retailer.id}:{date.today().isoformat()}'
+
+    assert response.status_code == 200
+    assert page.count(f'data-client-group="{group_key}"') == 1
+    assert "2 ventes" in page
+    assert "Airtel</strong>: 1000 @ $0.00940" in page
+    assert "<small>Total</small><strong>$9.40</strong>" in page
+    assert f'data-sale-id="{first.id}"' in page
+    assert f'data-sale-id="{second.id}"' in page
+    assert f"/businesses/wholesale/sales/{first.id}/edit" in page
+    assert f"/businesses/wholesale/sales/{second.id}/edit" in page
 
 
 def test_wholesale_cash_pays_old_debt_before_current_sale(session):

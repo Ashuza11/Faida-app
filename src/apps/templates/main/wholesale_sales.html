@@ -1,5 +1,49 @@
 {% extends "layouts/base.html" %}
+{% macro sale_correction(sale, paid_source_sale_ids, reversal_form) %}
+  {% if sale.status.value == 'reversed' %}
+    <span class="badge badge-danger">Annulée</span>
+    <small class="d-block mt-1 text-muted">{{ sale.reversal_reason }}</small>
+  {% elif sale.cash_paid > 0 %}
+    <span class="badge badge-warning">Paiement actif</span>
+    <small class="d-block mt-1 text-muted">${{ "{:.2f}".format(sale.cash_paid) }} déjà reçu. Annulez le reçu avant de corriger la vente.</small>
+    <a class="small font-weight-bold" href="{{ url_for('main_bp.wholesale_client_detail', client_id=sale.client_id) }}">Voir les paiements</a>
+  {% elif sale.id in paid_source_sale_ids %}
+    <span class="badge badge-warning">Reçu lié</span>
+    <small class="d-block mt-1 text-muted">Le paiement saisi ici a payé une ancienne dette. Annulez ce reçu avant de corriger la vente.</small>
+    <a class="small font-weight-bold" href="{{ url_for('main_bp.wholesale_client_detail', client_id=sale.client_id) }}">Voir les paiements</a>
+  {% else %}
+    <a class="btn btn-sm btn-primary mb-2" href="{{ url_for('main_bp.wholesale_sale_edit', sale_id=sale.id) }}">Modifier</a>
+    <form method="post" action="{{ url_for('main_bp.reverse_wholesale_sale_route', sale_id=sale.id) }}" onsubmit="return confirm('Annuler cette vente remettra les unités en stock et annulera sa dette. Continuer ?');">
+      {{ reversal_form.csrf_token }}
+      <div class="input-group input-group-sm">
+        <input class="form-control" name="reason" minlength="3" maxlength="255" required placeholder="Raison">
+        <div class="input-group-append"><button class="btn btn-outline-danger" type="submit">Annuler vente</button></div>
+      </div>
+    </form>
+  {% endif %}
+{% endmacro %}
 {% block title %}Ventes grossiste{% endblock %}
+{% block stylesheets %}
+<style>
+  .wholesale-client-card { border-left: 4px solid #5e72e4; }
+  .wholesale-client-card .client-heading { min-width: 0; }
+  .wholesale-client-card .client-name { overflow-wrap: anywhere; }
+  .client-sale-breakdown { display: flex; flex-wrap: wrap; gap: .35rem .75rem; }
+  .client-sale-breakdown span { white-space: nowrap; }
+  .client-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
+  .client-total { border-radius: .375rem; background: #f6f9fc; padding: .55rem .65rem; }
+  .client-total small { display: block; color: #8898aa; }
+  .client-transactions summary { cursor: pointer; color: #5e72e4; font-weight: 600; }
+  .client-transaction { border-top: 1px solid #e9ecef; padding-top: .85rem; margin-top: .85rem; }
+  @media (max-width: 575.98px) {
+    .wholesale-client-card .card-body { padding: 1rem; }
+    .client-total { padding: .45rem; text-align: center; }
+    .client-total strong { font-size: .9rem; }
+    .client-sale-breakdown { display: block; }
+    .client-sale-breakdown span { display: block; white-space: normal; }
+  }
+</style>
+{% endblock stylesheets %}
 {% block content %}
 <div class="container-fluid mt-4">
   <div class="d-flex justify-content-between align-items-center mb-4">
@@ -46,10 +90,58 @@
         <thead><tr><th>Réseau</th><th>Prix</th><th>Unités</th><th>Ventes</th><th>Marge</th></tr></thead>
         <tbody>{% for group in daily_report.price_groups %}<tr><td>{{ group.network.value.capitalize() }}</td><td>${{ "{:.5f}".format(group.price_per_unit_applied) }}</td><td>{{ group.quantity }}</td><td>${{ "{:.2f}".format(group.revenue) }}</td><td class="text-success">${{ "{:.2f}".format(group.margin) }}</td></tr>{% else %}<tr><td colspan="5" class="text-center text-muted">Aucune vente aujourd'hui.</td></tr>{% endfor %}</tbody>
       </table></div></div>
-      <div class="card shadow"><div class="card-header"><h3 class="mb-0">Ventes récentes</h3></div><div class="table-responsive"><table class="table">
-        <thead><tr><th>Client</th><th>Total</th><th>Payé</th><th>Dette</th><th>Date</th><th>Statut / correction</th></tr></thead>
-        <tbody>{% for sale in sales %}<tr class="{% if sale.status.value == 'reversed' %}text-muted{% endif %}"><td>{{ sale.client_display_name }}{% for item in sale.sale_items %}<br><small>{{ item.network.value.capitalize() }}: {{ item.quantity }} @ ${{ "{:.5f}".format(item.price_per_unit_applied) }}</small>{% endfor %}</td><td>${{ "{:.2f}".format(sale.total_amount_due) }}</td><td>${{ "{:.2f}".format(sale.cash_paid) }}</td><td>${{ "{:.2f}".format(sale.debt_amount) }}</td><td>{{ sale.sale_date.strftime('%d/%m/%Y') }}</td><td>{% if sale.status.value == 'reversed' %}<span class="badge badge-danger">Annulée</span><br><small>{{ sale.reversal_reason }}</small>{% elif sale.cash_paid > 0 %}<span class="badge badge-warning">Paiement actif</span><small class="d-block mt-1 text-muted">${{ "{:.2f}".format(sale.cash_paid) }} déjà reçu. Annulez le reçu avant de corriger la vente.</small><a class="small font-weight-bold" href="{{ url_for('main_bp.wholesale_client_detail', client_id=sale.client_id) }}">Voir les paiements</a>{% elif sale.id in paid_source_sale_ids %}<span class="badge badge-warning">Reçu lié</span><small class="d-block mt-1 text-muted">Le paiement saisi ici a payé une ancienne dette. Annulez ce reçu avant de corriger la vente.</small><a class="small font-weight-bold" href="{{ url_for('main_bp.wholesale_client_detail', client_id=sale.client_id) }}">Voir les paiements</a>{% else %}<a class="btn btn-sm btn-primary mb-2" href="{{ url_for('main_bp.wholesale_sale_edit', sale_id=sale.id) }}">Modifier</a><form method="post" action="{{ url_for('main_bp.reverse_wholesale_sale_route', sale_id=sale.id) }}" onsubmit="return confirm('Annuler cette vente remettra les unités en stock et annulera sa dette. Continuer ?');">{{ reversal_form.csrf_token }}<div class="input-group input-group-sm"><input class="form-control" name="reason" minlength="3" maxlength="255" required placeholder="Raison"><div class="input-group-append"><button class="btn btn-outline-danger" type="submit">Annuler vente</button></div></div></form>{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Aucune vente enregistrée.</td></tr>{% endfor %}</tbody>
-      </table></div></div>
+      <div class="card shadow"><div class="card-header"><h3 class="mb-0">Ventes récentes par client</h3></div><div class="card-body">
+        {% for group in sale_groups %}
+          <article class="card wholesale-client-card shadow-sm mb-3" data-client-group="{{ group.key }}">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="client-heading pr-2">
+                  <h4 class="client-name mb-0">{{ group.client_name }}</h4>
+                  {% if group.client_id %}<small class="text-muted">Client #{{ group.client_id }}</small>{% endif %}
+                </div>
+                <div class="text-right flex-shrink-0">
+                  <span class="badge badge-primary">{{ group.active_sale_count }} vente{{ 's' if group.active_sale_count != 1 }}</span>
+                  <small class="d-block mt-1 text-muted">{{ group.sale_date.strftime('%d/%m/%Y') }}</small>
+                </div>
+              </div>
+
+              <div class="client-sale-breakdown small mb-3">
+                {% for item in group.item_groups %}
+                  <span><strong>{{ item.network.value.capitalize() }}</strong>: {{ item.quantity }} @ ${{ "{:.5f}".format(item.price_per_unit) }}</span>
+                {% else %}
+                  <span class="text-muted">Aucune vente active.</span>
+                {% endfor %}
+              </div>
+
+              <div class="client-totals mb-3">
+                <div class="client-total"><small>Total</small><strong>${{ "{:.2f}".format(group.total_amount_due) }}</strong></div>
+                <div class="client-total"><small>Payé</small><strong class="text-success">${{ "{:.2f}".format(group.cash_paid) }}</strong></div>
+                <div class="client-total"><small>Dette</small><strong class="text-danger">${{ "{:.2f}".format(group.debt_amount) }}</strong></div>
+              </div>
+
+              <details class="client-transactions">
+                <summary>Voir {{ group.sales|length }} transaction{{ 's' if group.sales|length != 1 }}</summary>
+                {% for sale in group.sales %}
+                  <div class="client-transaction {% if sale.status.value == 'reversed' %}text-muted{% endif %}" data-sale-id="{{ sale.id }}">
+                    <div class="d-flex flex-wrap justify-content-between mb-2">
+                      <strong>Vente #{{ sale.id }}</strong>
+                      <span>Total ${{ "{:.2f}".format(sale.total_amount_due) }} · Payé ${{ "{:.2f}".format(sale.cash_paid) }} · Dette ${{ "{:.2f}".format(sale.debt_amount) }}</span>
+                    </div>
+                    <div class="small mb-2">
+                      {% for item in sale.sale_items %}
+                        <span class="d-block">{{ item.network.value.capitalize() }}: {{ item.quantity }} @ ${{ "{:.5f}".format(item.price_per_unit_applied) }}</span>
+                      {% endfor %}
+                    </div>
+                    {{ sale_correction(sale, paid_source_sale_ids, reversal_form) }}
+                  </div>
+                {% endfor %}
+              </details>
+            </div>
+          </article>
+        {% else %}
+          <p class="text-center text-muted mb-0">Aucune vente enregistrée.</p>
+        {% endfor %}
+      </div></div>
     </div>
   </div>
 </div>

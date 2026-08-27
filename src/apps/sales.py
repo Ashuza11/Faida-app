@@ -26,6 +26,55 @@ from apps.money import as_decimal, calculate_invoice_total, quantize_unit_price
 from apps.user_messages import user_message
 
 
+def build_wholesale_sale_groups(sales) -> list[dict]:
+    """Group displayed wholesale sales by customer identity and business date.
+
+    Names are deliberately not used as keys: two registered clients may share a
+    name, while every sale belonging to one client must stay together. Reversed
+    transactions remain visible for audit purposes but do not affect summaries.
+    """
+    groups = {}
+    for sale in sales:
+        key = (sale.customer_group_key, sale.sale_date)
+        group = groups.setdefault(key, {
+            "key": f"{sale.customer_group_key}:{sale.sale_date.isoformat()}",
+            "client_id": sale.client_id,
+            "client_name": sale.client_display_name,
+            "sale_date": sale.sale_date,
+            "sales": [],
+            "active_sale_count": 0,
+            "total_amount_due": Decimal("0"),
+            "cash_paid": Decimal("0"),
+            "debt_amount": Decimal("0"),
+            "item_groups": {},
+        })
+        group["sales"].append(sale)
+
+        if sale.status != TransactionStatus.ACTIVE:
+            continue
+
+        group["active_sale_count"] += 1
+        group["total_amount_due"] += as_decimal(sale.total_amount_due)
+        group["cash_paid"] += as_decimal(sale.cash_paid)
+        group["debt_amount"] += as_decimal(sale.debt_amount)
+        for item in sale.sale_items:
+            item_key = (item.network, as_decimal(item.price_per_unit_applied))
+            item_group = group["item_groups"].setdefault(item_key, {
+                "network": item.network,
+                "price_per_unit": as_decimal(item.price_per_unit_applied),
+                "quantity": 0,
+                "subtotal": Decimal("0"),
+            })
+            item_group["quantity"] += item.quantity
+            item_group["subtotal"] += as_decimal(item.subtotal)
+
+    result = []
+    for group in groups.values():
+        group["item_groups"] = list(group["item_groups"].values())
+        result.append(group)
+    return result
+
+
 def record_wholesale_sale(
     *,
     business: Business,
