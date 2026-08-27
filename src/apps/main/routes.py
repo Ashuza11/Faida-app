@@ -694,6 +694,9 @@ def wholesale_sales():
     if business.owner_user_id != current_user.id:
         abort(403)
 
+    date_context = get_date_context()
+    selected_date = date_context["selected_date"]
+
     clients = (
         Client.query.filter_by(business_id=business.id, is_active=True)
         .order_by(Client.name)
@@ -732,12 +735,13 @@ def wholesale_sales():
             db.session.rollback()
             flash(str(error), "danger")
 
-    today = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
     sales = (
-        Sale.query.filter_by(business_id=business.id)
+        Sale.query.filter_by(
+            business_id=business.id,
+            sale_date=selected_date,
+        )
         .options(selectinload(Sale.client), selectinload(Sale.sale_items))
         .order_by(Sale.created_at.desc())
-        .limit(100)
         .all()
     )
     paid_source_sale_ids = {
@@ -748,7 +752,7 @@ def wholesale_sales():
     } if sales else set()
     daily_report = build_wholesale_daily_report(
         business=business,
-        target_date=today,
+        target_date=selected_date,
     )
 
     preset_data = {network.name: [] for network in NetworkType}
@@ -765,6 +769,8 @@ def wholesale_sales():
         sale_groups=build_wholesale_sale_groups(sales),
         paid_source_sale_ids=paid_source_sale_ids,
         daily_report=daily_report,
+        selected_date=selected_date,
+        is_today=date_context["is_today"],
         preset_data=preset_data,
         reversal_form=TransactionReversalForm(),
         segment="wholesale",
@@ -849,6 +855,8 @@ def wholesale_sale_edit(sale_id):
         daily_report=build_wholesale_daily_report(
             business=business, target_date=today
         ),
+        selected_date=today,
+        is_today=True,
         preset_data=preset_data,
         reversal_form=TransactionReversalForm(),
         segment="wholesale",

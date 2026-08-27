@@ -51,8 +51,8 @@
     <a class="btn btn-outline-primary" href="{{ url_for('main_bp.wholesale_dashboard') }}">Accueil</a>
   </div>
   <div class="row mb-4">
-    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge des ventes du jour</small><div class="h2 text-success">${{ "{:.2f}".format(daily_report.totals.sales_margin) }}</div></div></div></div>
-    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge correspondant au cash encaissé aujourd'hui</small><div class="h2 text-info">${{ "{:.2f}".format(daily_report.totals.collected_margin) }}</div></div></div></div>
+    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge des ventes {{ 'du jour' if is_today else 'du ' ~ selected_date.strftime('%d/%m/%Y') }}</small><div class="h2 text-success">${{ "{:.2f}".format(daily_report.totals.sales_margin) }}</div></div></div></div>
+    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge du cash encaissé {{ "aujourd'hui" if is_today else 'le ' ~ selected_date.strftime('%d/%m/%Y') }}</small><div class="h2 text-info">${{ "{:.2f}".format(daily_report.totals.collected_margin) }}</div></div></div></div>
   </div>
   <div class="row">
     <div class="col-lg-5 mb-4"><div class="card shadow"><div class="card-header"><h3 class="mb-0">{{ 'Modifier la vente' if editing_sale else 'Nouvelle vente' }}</h3></div><div class="card-body">
@@ -86,11 +86,14 @@
       </form>
     </div></div></div>
     <div class="col-lg-7">
-      <div class="card shadow mb-4"><div class="card-header"><h3 class="mb-0">Marge du jour par prix</h3></div><div class="table-responsive"><table class="table">
-        <thead><tr><th>Réseau</th><th>Prix</th><th>Unités</th><th>Ventes</th><th>Marge</th></tr></thead>
-        <tbody>{% for group in daily_report.price_groups %}<tr><td>{{ group.network.value.capitalize() }}</td><td>${{ "{:.5f}".format(group.price_per_unit_applied) }}</td><td>{{ group.quantity }}</td><td>${{ "{:.2f}".format(group.revenue) }}</td><td class="text-success">${{ "{:.2f}".format(group.margin) }}</td></tr>{% else %}<tr><td colspan="5" class="text-center text-muted">Aucune vente aujourd'hui.</td></tr>{% endfor %}</tbody>
-      </table></div></div>
-      <div class="card shadow"><div class="card-header"><h3 class="mb-0">Ventes récentes par client</h3></div><div class="card-body">
+      <div class="card shadow"><div class="card-header d-flex flex-wrap justify-content-between align-items-center" style="gap:10px;">
+        <h3 class="mb-0">Ventes par client</h3>
+        {% if not editing_sale %}
+          <form method="get" action="{{ url_for('main_bp.wholesale_sales') }}" class="m-0">
+            <input type="date" name="date" value="{{ selected_date.isoformat() }}" class="form-control form-control-sm bg-white" aria-label="Date des ventes" onchange="this.form.submit()">
+          </form>
+        {% endif %}
+      </div><div class="card-body">
         {% for group in sale_groups %}
           <article class="card wholesale-client-card shadow-sm mb-3" data-client-group="{{ group.key }}">
             <div class="card-body">
@@ -139,7 +142,7 @@
             </div>
           </article>
         {% else %}
-          <p class="text-center text-muted mb-0">Aucune vente enregistrée.</p>
+          <p class="text-center text-muted mb-0">Aucune vente pour le {{ selected_date.strftime('%d/%m/%Y') }}.</p>
         {% endfor %}
       </div></div>
     </div>

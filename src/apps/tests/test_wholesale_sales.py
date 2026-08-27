@@ -185,6 +185,66 @@ def test_wholesale_sales_page_renders_one_summary_per_client_and_day(app, sessio
     assert f"/businesses/wholesale/sales/{second.id}/edit" in page
 
 
+def test_wholesale_sales_page_defaults_to_today_and_filters_by_date(app, session):
+    owner, business, retailer, _ = setup_wholesale(session, suffix=503)
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    today_sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=100, cash_received=0,
+        sale_date=today, custom_unit_price=Decimal("0.01000"),
+    )
+    yesterday_sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=200, cash_received=0,
+        sale_date=yesterday, custom_unit_price=Decimal("0.01100"),
+    )
+    other_owner, other_business, other_client, _ = setup_wholesale(
+        session, suffix=504
+    )
+    other_sale = record_wholesale_sale(
+        business=other_business, sold_by=other_owner, client=other_client,
+        network=NetworkType.AIRTEL, quantity=100, cash_received=0,
+        sale_date=today, custom_unit_price=Decimal("0.01000"),
+    )
+    session.commit()
+    browser = app.test_client()
+    with browser.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    current_page = browser.get("/businesses/wholesale/sales")
+    current_html = current_page.data.decode()
+    assert current_page.status_code == 200
+    assert f'data-sale-id="{today_sale.id}"' in current_html
+    assert f'data-sale-id="{yesterday_sale.id}"' not in current_html
+    assert f'data-sale-id="{other_sale.id}"' not in current_html
+    assert f'value="{today.isoformat()}"' in current_html
+    assert "Marge des ventes du jour" in current_html
+    assert "$0.10" in current_html
+
+    old_page = browser.get(
+        "/businesses/wholesale/sales", query_string={"date": yesterday.isoformat()}
+    )
+    old_html = old_page.data.decode()
+    assert old_page.status_code == 200
+    assert f'data-sale-id="{yesterday_sale.id}"' in old_html
+    assert f'data-sale-id="{today_sale.id}"' not in old_html
+    assert f'value="{yesterday.isoformat()}"' in old_html
+    assert f"Marge des ventes du {yesterday.strftime('%d/%m/%Y')}" in old_html
+    assert "$0.40" in old_html
+
+    invalid_page = browser.get(
+        "/businesses/wholesale/sales", query_string={"date": "incorrecte"}
+    )
+    invalid_html = invalid_page.data.decode()
+    assert invalid_page.status_code == 200
+    assert f'data-sale-id="{today_sale.id}"' in invalid_html
+    assert f'data-sale-id="{yesterday_sale.id}"' not in invalid_html
+    assert f'value="{today.isoformat()}"' in invalid_html
+
+
 def test_wholesale_cash_pays_old_debt_before_current_sale(session):
     owner, business, client, _ = setup_wholesale(session, suffix=2)
     first = record_wholesale_sale(
@@ -460,12 +520,13 @@ def test_wholesale_sales_page_records_new_retailer(app, session):
 
     page = client.get("/businesses/wholesale/sales")
     assert page.status_code == 200
-    assert b"Marge du jour par prix" in page.data
+    assert b"Marge du jour par prix" not in page.data
     assert b"$0.40" in page.data
     assert b"$0.21" in page.data
 
     report_page = client.get("/businesses/wholesale/report")
     assert report_page.status_code == 200
+    assert b"Marge par prix de vente" in report_page.data
     assert b"$0.40" in report_page.data
     assert b"$0.21" in report_page.data
 
