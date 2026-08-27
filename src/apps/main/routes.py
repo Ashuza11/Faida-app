@@ -14,7 +14,7 @@ from flask import (
     url_for,
 )
 from flask_login import login_required, current_user
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import selectinload
 from jinja2 import TemplateNotFound
 from apps.main.utils import (
@@ -684,6 +684,34 @@ def _resolve_wholesale_sale_client(form, *, business):
     return client
 
 
+def _wholesale_payment_events_for_sales(*, business_id, sales):
+    """Load active receipts initiated by or allocated to displayed sales."""
+    sale_ids = [sale.id for sale in sales]
+    if not sale_ids:
+        return []
+    return (
+        PaymentEvent.query
+        .options(selectinload(PaymentEvent.allocations))
+        .outerjoin(
+            CashInflow,
+            CashInflow.payment_event_id == PaymentEvent.id,
+        )
+        .filter(
+            PaymentEvent.business_id == business_id,
+            PaymentEvent.status == TransactionStatus.ACTIVE,
+            or_(
+                PaymentEvent.source_sale_id.in_(sale_ids),
+                and_(
+                    CashInflow.sale_id.in_(sale_ids),
+                    CashInflow.status == TransactionStatus.ACTIVE,
+                ),
+            ),
+        )
+        .distinct()
+        .all()
+    )
+
+
 @bp.route("/businesses/wholesale/sales", methods=["GET", "POST"])
 @login_required
 @vendeur_required
@@ -720,7 +748,7 @@ def wholesale_sales():
         try:
             client = _resolve_wholesale_sale_client(form, business=business)
             items = _wholesale_sale_items_from_form(form)
-            record_wholesale_sale(
+            recorded_sale = record_wholesale_sale(
                 business=business,
                 sold_by=current_user,
                 client=client,
@@ -728,8 +756,25 @@ def wholesale_sales():
                 sale_date=form.sale_date.data,
                 items=items,
             )
+            payment_events = _wholesale_payment_events_for_sales(
+                business_id=business.id,
+                sales=[recorded_sale],
+            )
+            recorded_group = build_wholesale_sale_groups(
+                [recorded_sale], payment_events
+            )[0]
+            payment_detail = recorded_group["payment_details"][recorded_sale.id]
             db.session.commit()
-            flash("Vente enregistrée.", "success")
+            if payment_detail["received_from_sale"] > 0:
+                flash(user_message(
+                    "Vente enregistrée · "
+                    f"${payment_detail['received_from_sale']:.2f} reçu.",
+                    "Affectation : "
+                    f"${payment_detail['redirected_to_other_sales']:.2f} aux anciennes dettes · "
+                    f"${payment_detail['applied_from_own_receipts']:.2f} à cette vente.",
+                ), "success")
+            else:
+                flash("Vente enregistrée.", "success")
             return redirect(url_for("main_bp.wholesale_sales"))
         except (ValueError, PermissionError) as error:
             db.session.rollback()
@@ -744,12 +789,10 @@ def wholesale_sales():
         .order_by(Sale.created_at.desc())
         .all()
     )
-    paid_source_sale_ids = {
-        row[0] for row in db.session.query(PaymentEvent.source_sale_id).filter(
-            PaymentEvent.source_sale_id.in_([sale.id for sale in sales]),
-            PaymentEvent.status == TransactionStatus.ACTIVE,
-        ).all()
-    } if sales else set()
+    payment_events = _wholesale_payment_events_for_sales(
+        business_id=business.id,
+        sales=sales,
+    )
     daily_report = build_wholesale_daily_report(
         business=business,
         target_date=selected_date,
@@ -766,8 +809,7 @@ def wholesale_sales():
         "main/wholesale_sales.html",
         business=business,
         form=form,
-        sale_groups=build_wholesale_sale_groups(sales),
-        paid_source_sale_ids=paid_source_sale_ids,
+        sale_groups=build_wholesale_sale_groups(sales, payment_events),
         daily_report=daily_report,
         selected_date=selected_date,
         is_today=date_context["is_today"],
@@ -851,7 +893,6 @@ def wholesale_sale_edit(sale_id):
         editing_sale=sale,
         form=form,
         sale_groups=[],
-        paid_source_sale_ids=set(),
         daily_report=build_wholesale_daily_report(
             business=business, target_date=today
         ),
@@ -1115,7 +1156,11 @@ def wholesale_client_detail(client_id):
         .all()
     )
     payments = (
-        PaymentEvent.query.filter_by(business_id=business.id, client_id=client.id)
+        PaymentEvent.query
+        .options(
+            selectinload(PaymentEvent.allocations).selectinload(CashInflow.sale)
+        )
+        .filter_by(business_id=business.id, client_id=client.id)
         .order_by(PaymentEvent.payment_date.desc(), PaymentEvent.created_at.desc())
         .all()
     )

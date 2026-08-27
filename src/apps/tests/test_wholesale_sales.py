@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 
 from apps.businesses import create_business
+from apps.dates import business_local_date
 from apps.models import (
     BusinessApprovalStatus,
     BusinessType,
@@ -146,6 +147,7 @@ def test_wholesale_sale_groups_use_client_identity_and_business_date(session):
     assert same_client_day["item_groups"] == [{
         "network": NetworkType.AIRTEL,
         "price_per_unit": Decimal("0.010000000000"),
+        "display_price": "0.01000",
         "quantity": 500,
         "subtotal": Decimal("5.00"),
     }]
@@ -153,15 +155,16 @@ def test_wholesale_sale_groups_use_client_identity_and_business_date(session):
 
 def test_wholesale_sales_page_renders_one_summary_per_client_and_day(app, session):
     owner, business, retailer, preset = setup_wholesale(session, suffix=502)
+    today = business_local_date()
     first = record_wholesale_sale(
         business=business, sold_by=owner, client=retailer,
         network=NetworkType.AIRTEL, quantity=500, cash_received=0,
-        sale_date=date.today(), preset=preset,
+        sale_date=today, preset=preset,
     )
     second = record_wholesale_sale(
         business=business, sold_by=owner, client=retailer,
         network=NetworkType.AIRTEL, quantity=500, cash_received=0,
-        sale_date=date.today(), preset=preset,
+        sale_date=today, preset=preset,
     )
     session.commit()
     browser = app.test_client()
@@ -172,22 +175,48 @@ def test_wholesale_sales_page_renders_one_summary_per_client_and_day(app, sessio
 
     response = browser.get("/businesses/wholesale/sales")
     page = response.data.decode()
-    group_key = f'c:{retailer.id}:{date.today().isoformat()}'
+    group_key = f'c:{retailer.id}:{today.isoformat()}'
 
     assert response.status_code == 200
     assert page.count(f'data-client-group="{group_key}"') == 1
     assert "2 ventes" in page
-    assert "Airtel</strong>: 1000 @ $0.00940" in page
-    assert "<small>Total</small><strong>$9.40</strong>" in page
+    assert "Airtel</strong>: 1000 @ $0.00940 = $9.40" in page
+    assert "<small>Total ventes</small><strong>$9.40</strong>" in page
     assert f'data-sale-id="{first.id}"' in page
     assert f'data-sale-id="{second.id}"' in page
     assert f"/businesses/wholesale/sales/{first.id}/edit" in page
     assert f"/businesses/wholesale/sales/{second.id}/edit" in page
 
 
+def test_wholesale_sales_page_shows_exact_price_and_reconciled_subtotal(
+    app, session
+):
+    owner, business, retailer, _ = setup_wholesale(session, suffix=507)
+    today = business_local_date()
+    sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=2000, cash_received=0,
+        sale_date=today, custom_unit_price=Decimal("0.009455"),
+    )
+    session.commit()
+    assert sale.total_amount_due == Decimal("18.91")
+
+    browser = app.test_client()
+    with browser.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    page = browser.get("/businesses/wholesale/sales")
+    html = page.data.decode()
+    assert page.status_code == 200
+    assert "Airtel</strong>: 2000 @ $0.009455 = $18.91" in html
+    assert "Airtel: 2000 @ $0.009455 = $18.91" in html
+
+
 def test_wholesale_sales_page_defaults_to_today_and_filters_by_date(app, session):
     owner, business, retailer, _ = setup_wholesale(session, suffix=503)
-    today = date.today()
+    today = business_local_date()
     yesterday = today - timedelta(days=1)
     today_sale = record_wholesale_sale(
         business=business, sold_by=owner, client=retailer,
@@ -245,6 +274,96 @@ def test_wholesale_sales_page_defaults_to_today_and_filters_by_date(app, session
     assert f'value="{today.isoformat()}"' in invalid_html
 
 
+def test_wholesale_sales_page_reconciles_receipts_redirected_to_old_debt(
+    app, session
+):
+    owner, business, retailer, _ = setup_wholesale(session, suffix=505)
+    today = business_local_date()
+    first_old_sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=500, cash_received=Decimal("4.00"),
+        sale_date=today - timedelta(days=2),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    second_old_sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=500, cash_received=0,
+        sale_date=today - timedelta(days=1),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    first_new_sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=100, cash_received=Decimal("3.00"),
+        sale_date=today, custom_unit_price=Decimal("0.01000"),
+    )
+    second_new_sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=100, cash_received=Decimal("3.00"),
+        sale_date=today, custom_unit_price=Decimal("0.01000"),
+    )
+    session.commit()
+    assert first_old_sale.cash_paid == Decimal("5.00")
+    assert second_old_sale.cash_paid == Decimal("5.00")
+    assert first_new_sale.cash_paid == 0
+    assert second_new_sale.cash_paid == 0
+
+    browser = app.test_client()
+    with browser.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    page = browser.get("/businesses/wholesale/sales")
+    html = page.data.decode()
+    assert page.status_code == 200
+    assert "<small>Reçu lors des ventes</small><strong class=\"text-info\">$6.00" in html
+    assert "<small>Payé sur ces ventes</small><strong class=\"text-success\">$0.00" in html
+    assert "$6.00 reçu ici et appliqué aux anciennes dettes" in html
+    assert html.count("Reçu ici $3.00") == 2
+    assert html.count("$3.00 appliqué aux anciennes dettes") == 2
+
+    client_page = browser.get(
+        f"/businesses/wholesale/clients/{retailer.id}"
+    )
+    client_html = client_page.data.decode()
+    assert client_page.status_code == 200
+    assert f"Vente #{first_old_sale.id} du" in client_html
+    assert f"Vente #{second_old_sale.id} du" in client_html
+
+
+def test_wholesale_sale_confirmation_explains_old_debt_allocation(app, session):
+    owner, business, retailer, preset = setup_wholesale(session, suffix=506)
+    today = business_local_date()
+    record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=500, cash_received=0,
+        sale_date=today - timedelta(days=1), preset=preset,
+    )
+    session.commit()
+    browser = app.test_client()
+    with browser.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    response = browser.post(
+        "/businesses/wholesale/sales",
+        data={
+            "client_id": str(retailer.id),
+            "sale_items-0-network": NetworkType.AIRTEL.name,
+            "sale_items-0-quantity": "100",
+            "sale_items-0-price_choice": f"preset:{preset.id}",
+            "sale_date": today.isoformat(),
+            "cash_received": "2.00",
+        },
+        follow_redirects=True,
+    )
+    html = response.data.decode()
+    assert response.status_code == 200
+    assert "Vente enregistrée · $2.00 reçu." in html
+    assert "$2.00 aux anciennes dettes · $0.00 à cette vente." in html
+
+
 def test_wholesale_cash_pays_old_debt_before_current_sale(session):
     owner, business, client, _ = setup_wholesale(session, suffix=2)
     first = record_wholesale_sale(
@@ -281,6 +400,13 @@ def test_wholesale_cash_pays_old_debt_before_current_sale(session):
         first.id,
         second.id,
     }
+    group = build_wholesale_sale_groups([second], [event])[0]
+    detail = group["payment_details"][second.id]
+    assert group["cash_received_from_sales"] == Decimal("7.00")
+    assert detail["redirected_to_other_sales"] == Decimal("5.00")
+    assert detail["applied_from_own_receipts"] == Decimal("2.00")
+    assert detail["applied_from_other_receipts"] == 0
+    assert detail["blocking_payment_ids"] == [event.id]
 
 
 def test_payment_reversal_restores_every_allocated_debt_and_reports(session):
@@ -326,6 +452,10 @@ def test_payment_reversal_restores_every_allocated_debt_and_reports(session):
     assert second.cash_paid == 0
     assert second.initial_cash_paid == 0
     assert second.debt_amount == Decimal("5.00")
+    reversed_group = build_wholesale_sale_groups([second], [event])[0]
+    reversed_detail = reversed_group["payment_details"][second.id]
+    assert reversed_group["cash_received_from_sales"] == 0
+    assert reversed_detail["blocking_payment_count"] == 0
     report = build_wholesale_daily_report(
         business=business, target_date=date.today()
     )
@@ -489,6 +619,7 @@ def test_wholesale_sale_rejects_another_business_client(session):
 
 def test_wholesale_sales_page_records_new_retailer(app, session):
     owner, business, _, preset = setup_wholesale(session, suffix=5)
+    today = business_local_date()
     session.commit()
     client = app.test_client()
     with client.session_transaction() as browser_session:
@@ -504,7 +635,7 @@ def test_wholesale_sales_page_records_new_retailer(app, session):
             "sale_items-0-network": NetworkType.AIRTEL.name,
             "sale_items-0-quantity": "1000",
             "sale_items-0-price_choice": f"preset:{preset.id}",
-            "sale_date": date.today().isoformat(),
+            "sale_date": today.isoformat(),
             "cash_received": "5.00",
         },
     )
@@ -672,15 +803,16 @@ def test_paid_wholesale_sale_cannot_be_edited(session):
 
 def test_wholesale_sales_page_explains_active_and_redirected_payments(app, session):
     owner, business, retailer, preset = setup_wholesale(session, suffix=540)
+    today = business_local_date()
     first_sale = record_wholesale_sale(
         business=business, sold_by=owner, client=retailer,
         network=NetworkType.AIRTEL, quantity=500, cash_received=0,
-        sale_date=date.today(), preset=preset,
+        sale_date=today, preset=preset,
     )
     second_sale = record_wholesale_sale(
         business=business, sold_by=owner, client=retailer,
         network=NetworkType.AIRTEL, quantity=500, cash_received=Decimal("1"),
-        sale_date=date.today(), preset=preset,
+        sale_date=today, preset=preset,
     )
     session.commit()
     assert first_sale.cash_paid == Decimal("1.000000000000")
@@ -695,10 +827,37 @@ def test_wholesale_sales_page_explains_active_and_redirected_payments(app, sessi
     page = browser.get("/businesses/wholesale/sales")
 
     assert page.status_code == 200
-    assert b"Paiement actif" in page.data
-    assert b"Re\xc3\xa7u li\xc3\xa9" in page.data
+    assert b"1 paiement li\xc3\xa9" in page.data
+    assert b"$1.00 re\xc3\xa7u depuis cette vente" in page.data
+    assert b"$1.00 appliqu\xc3\xa9 aux anciennes dettes" in page.data
+    assert b"$1.00 re\xc3\xa7u via d'autres paiements" in page.data
     assert b"Voir les paiements" in page.data
     assert b"Paiement \xc3\xa0 annuler d'abord" not in page.data
+
+
+def test_wholesale_sales_page_keeps_legacy_paid_sale_protected(app, session):
+    owner, business, retailer, preset = setup_wholesale(session, suffix=541)
+    today = business_local_date()
+    sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=retailer,
+        network=NetworkType.AIRTEL, quantity=500, cash_received=0,
+        sale_date=today, preset=preset,
+    )
+    sale.cash_paid = Decimal("1.00")
+    sale.debt_amount -= Decimal("1.00")
+    session.commit()
+    browser = app.test_client()
+    with browser.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    page = browser.get("/businesses/wholesale/sales")
+
+    assert page.status_code == 200
+    assert b"Paiement ancien" in page.data
+    assert b"$1.00 pay\xc3\xa9 via un ancien re\xc3\xa7u sans d\xc3\xa9tail" in page.data
+    assert f"/businesses/wholesale/sales/{sale.id}/edit".encode() not in page.data
 
 
 def test_wholesale_sale_edit_route_updates_invoice(app, session):

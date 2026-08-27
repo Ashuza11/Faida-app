@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -7,7 +7,12 @@ from apps.businesses import create_business
 from apps.models import BusinessType, Client, RoleType, Sale, User
 from apps.main.forms import get_clients_with_debt
 from apps.payments import apply_payment_to_sale
-from apps.main.utils import calculate_sale_total, custom_round_up
+from apps.main.utils import (
+    calculate_sale_total,
+    custom_round_up,
+    get_local_timezone_datetime_info,
+)
+from apps.money import format_unit_price
 
 
 def make_vendeur(session, suffix="1"):
@@ -67,6 +72,24 @@ def test_screenshot_rounding_examples(raw_lines, expected):
 
 def test_fractional_franc_rounding_has_no_gap():
     assert custom_round_up(Decimal("6950.50")) == Decimal("6950")
+
+
+def test_unit_price_display_preserves_meaningful_precision():
+    assert format_unit_price(Decimal("0.00940")) == "0.00940"
+    assert format_unit_price(Decimal("0.009455")) == "0.009455"
+
+
+def test_local_date_helper_converts_aware_utc_across_midnight():
+    utc_moment = datetime(2026, 8, 27, 22, 30, tzinfo=timezone.utc)
+
+    local_now, local_date, start_utc, end_utc = (
+        get_local_timezone_datetime_info(utc_moment)
+    )
+
+    assert local_now.isoformat().startswith("2026-08-28T00:30:00")
+    assert local_date == date(2026, 8, 28)
+    assert start_utc == datetime(2026, 8, 27, 22, 0, tzinfo=timezone.utc)
+    assert end_utc.date() == date(2026, 8, 28)
 
 
 def test_new_payment_pays_registered_clients_oldest_debt_first(session):

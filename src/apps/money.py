@@ -17,6 +17,15 @@ def quantize_unit_price(value) -> Decimal:
     return as_decimal(value).quantize(UNIT_PRICE_QUANTUM, rounding=ROUND_HALF_UP)
 
 
+def format_unit_price(value, *, minimum_places=5) -> str:
+    """Show enough stored precision to reproduce a line total."""
+    rendered = f"{as_decimal(value):.12f}".rstrip("0")
+    whole, _, fraction = rendered.partition(".")
+    if len(fraction) < minimum_places:
+        fraction = fraction.ljust(minimum_places, "0")
+    return f"{whole}.{fraction}"
+
+
 def calculate_ratio_unit_price(*, amount, units) -> Decimal:
     units = as_decimal(units)
     if units <= 0:

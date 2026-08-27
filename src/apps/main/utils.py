@@ -73,7 +73,7 @@ def calculate_sale_total(raw_subtotals) -> Decimal:
 APP_TIMEZONE = pytz.timezone("Africa/Lubumbashi")
 
 
-def get_local_timezone_datetime_info():
+def get_local_timezone_datetime_info(moment=None):
     """
     Returns a tuple containing:
     (local_now: datetime,
@@ -85,7 +85,11 @@ def get_local_timezone_datetime_info():
     the current local date, and the corresponding UTC start and end
     datetimes for that local date.
     """
-    utc_now = datetime.utcnow()
+    utc_now = moment or datetime.now(pytz.utc)
+    if utc_now.tzinfo is None:
+        utc_now = pytz.utc.localize(utc_now)
+    else:
+        utc_now = utc_now.astimezone(pytz.utc)
     local_now = utc_now.astimezone(APP_TIMEZONE)
     today_local_date = local_now.date()
 

@@ -22,17 +22,79 @@ from apps.models import (
     TransactionStatus,
     User,
 )
-from apps.money import as_decimal, calculate_invoice_total, quantize_unit_price
+from apps.money import (
+    as_decimal,
+    calculate_invoice_total,
+    format_unit_price,
+    quantize_unit_price,
+)
 from apps.user_messages import user_message
 
 
-def build_wholesale_sale_groups(sales) -> list[dict]:
+def build_wholesale_sale_groups(sales, payment_events=()) -> list[dict]:
     """Group displayed wholesale sales by customer identity and business date.
 
     Names are deliberately not used as keys: two registered clients may share a
     name, while every sale belonging to one client must stay together. Reversed
     transactions remain visible for audit purposes but do not affect summaries.
     """
+    payment_details = {
+        sale.id: {
+            "received_from_sale": Decimal("0"),
+            "applied_from_own_receipts": Decimal("0"),
+            "redirected_to_other_sales": Decimal("0"),
+            "applied_from_other_receipts": Decimal("0"),
+            "blocking_payment_ids": set(),
+            "items": [{
+                "network": item.network,
+                "quantity": item.quantity,
+                "display_price": format_unit_price(item.price_per_unit_applied),
+                "subtotal": as_decimal(item.subtotal),
+            } for item in sale.sale_items],
+        }
+        for sale in sales
+    }
+    for event in payment_events:
+        if event.status != TransactionStatus.ACTIVE:
+            continue
+        active_allocations = [
+            allocation for allocation in event.allocations
+            if allocation.status == TransactionStatus.ACTIVE
+        ]
+        source_detail = payment_details.get(event.source_sale_id)
+        if source_detail is not None:
+            source_detail["received_from_sale"] += as_decimal(event.amount)
+            source_detail["blocking_payment_ids"].add(event.id)
+            for allocation in active_allocations:
+                if allocation.sale_id == event.source_sale_id:
+                    source_detail["applied_from_own_receipts"] += as_decimal(
+                        allocation.amount
+                    )
+                else:
+                    source_detail["redirected_to_other_sales"] += as_decimal(
+                        allocation.amount
+                    )
+        for allocation in active_allocations:
+            target_detail = payment_details.get(allocation.sale_id)
+            if target_detail is None:
+                continue
+            target_detail["blocking_payment_ids"].add(event.id)
+            if event.source_sale_id != allocation.sale_id:
+                target_detail["applied_from_other_receipts"] += as_decimal(
+                    allocation.amount
+                )
+
+    for sale in sales:
+        detail = payment_details[sale.id]
+        tracked_paid = (
+            detail["applied_from_own_receipts"]
+            + detail["applied_from_other_receipts"]
+        )
+        detail["untracked_paid_amount"] = max(
+            as_decimal(sale.cash_paid) - tracked_paid,
+            Decimal("0"),
+        )
+
     groups = {}
     for sale in sales:
         key = (sale.customer_group_key, sale.sale_date)
@@ -44,24 +106,40 @@ def build_wholesale_sale_groups(sales) -> list[dict]:
             "sales": [],
             "active_sale_count": 0,
             "total_amount_due": Decimal("0"),
+            "cash_received_from_sales": Decimal("0"),
             "cash_paid": Decimal("0"),
+            "cash_redirected_to_other_sales": Decimal("0"),
             "debt_amount": Decimal("0"),
             "item_groups": {},
+            "payment_details": {},
         })
         group["sales"].append(sale)
+        detail = payment_details[sale.id]
+        detail["blocking_payment_ids"] = sorted(detail["blocking_payment_ids"])
+        detail["blocking_payment_count"] = len(detail["blocking_payment_ids"])
+        detail["has_blocking_payment"] = (
+            detail["blocking_payment_count"] > 0
+            or detail["untracked_paid_amount"] > 0
+        )
+        group["payment_details"][sale.id] = detail
 
         if sale.status != TransactionStatus.ACTIVE:
             continue
 
         group["active_sale_count"] += 1
         group["total_amount_due"] += as_decimal(sale.total_amount_due)
+        group["cash_received_from_sales"] += detail["received_from_sale"]
         group["cash_paid"] += as_decimal(sale.cash_paid)
+        group["cash_redirected_to_other_sales"] += detail[
+            "redirected_to_other_sales"
+        ]
         group["debt_amount"] += as_decimal(sale.debt_amount)
         for item in sale.sale_items:
             item_key = (item.network, as_decimal(item.price_per_unit_applied))
             item_group = group["item_groups"].setdefault(item_key, {
                 "network": item.network,
                 "price_per_unit": as_decimal(item.price_per_unit_applied),
+                "display_price": format_unit_price(item.price_per_unit_applied),
                 "quantity": 0,
                 "subtotal": Decimal("0"),
             })
