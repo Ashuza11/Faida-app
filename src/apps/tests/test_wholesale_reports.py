@@ -113,6 +113,46 @@ def test_daily_report_separates_sale_and_cash_dates(session):
     ) == Decimal("0.136364")
 
 
+def test_daily_report_marks_corrupt_sale_cost_instead_of_presenting_margin(session):
+    owner, business, client = setup_report_business(session, 101)
+    target = date.today()
+    record_wholesale_purchase(
+        business=business,
+        purchased_by=owner,
+        network=NetworkType.AIRTEL,
+        quantity=1000,
+        custom_unit_cost=Decimal("0.00900"),
+        purchase_date=target,
+    )
+    sale = record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=100,
+        cash_received=Decimal("1.00"),
+        sale_date=target,
+        custom_unit_price=Decimal("0.01000"),
+    )
+    session.flush()
+    item = sale.sale_items[0]
+    item.cost_per_unit_snapshot = Decimal("100")
+    item.cost_total = Decimal("10000")
+    item.margin_amount = item.subtotal - item.cost_total
+    session.flush()
+
+    report = build_wholesale_daily_report(
+        business=business, target_date=target
+    )
+
+    assert report["totals"]["sales_margin_has_anomaly"] is True
+    assert report["totals"]["collected_margin_has_anomaly"] is True
+    assert report["totals"]["collected_margin"] == 0
+    assert report["cost_anomalies"]["sale_item_ids"] == [item.id]
+    assert report["cost_anomalies"]["sale_ids"] == [sale.id]
+    assert report["cost_anomalies"]["collection_sale_ids"] == [sale.id]
+
+
 def test_daily_report_is_business_isolated_and_route_renders(app, session):
     owner, business, client = setup_report_business(session, 2)
     other_owner, other_business, other_client = setup_report_business(session, 3)

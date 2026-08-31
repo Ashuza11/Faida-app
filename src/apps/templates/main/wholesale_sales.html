@@ -12,8 +12,9 @@
     {% if payment.untracked_paid_amount > 0 %}<small class="d-block text-muted">${{ "{:.2f}".format(payment.untracked_paid_amount) }} payé via un ancien reçu sans détail.</small>{% endif %}
     {% if payment.blocking_payment_count > 0 %}
       <small class="d-block text-muted">Reçu{{ 's' if payment.blocking_payment_count != 1 }} #{{ payment.blocking_payment_ids|join(', #') }}.</small>
-      <small class="d-block text-muted">Annulez {{ 'ce paiement' if payment.blocking_payment_count == 1 else 'ces paiements' }} avant de corriger la vente.</small>
-      <a class="small font-weight-bold" href="{{ url_for('main_bp.wholesale_client_detail', client_id=sale.client_id, _anchor=('paiement-' ~ payment.blocking_payment_ids[0]) if payment.blocking_payment_count == 1 else None) }}">Voir les paiements</a>
+      <small class="d-block text-muted">Corrigez le reçu si le montant saisi est incorrect.</small>
+      {% if payment.blocking_payment_count == 1 %}<a class="btn btn-sm btn-outline-primary mt-2" href="{{ url_for('main_bp.correct_wholesale_payment_route', payment_event_id=payment.blocking_payment_ids[0]) }}">Corriger paiement</a>{% endif %}
+      <a class="btn btn-sm btn-link mt-2" href="{{ url_for('main_bp.wholesale_client_detail', client_id=sale.client_id, _anchor=('paiement-' ~ payment.blocking_payment_ids[0]) if payment.blocking_payment_count == 1 else None) }}">Voir les paiements</a>
     {% else %}
       <small class="d-block text-muted">Contactez l'administrateur pour corriger cette ancienne vente.</small>
     {% endif %}
@@ -58,9 +59,10 @@
     <a class="btn btn-outline-primary" href="{{ url_for('main_bp.wholesale_dashboard') }}">Accueil</a>
   </div>
   <div class="row mb-4">
-    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge des ventes {{ 'du jour' if is_today else 'du ' ~ selected_date.strftime('%d/%m/%Y') }}</small><div class="h2 text-success">${{ "{:.2f}".format(daily_report.totals.sales_margin) }}</div></div></div></div>
-    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge du cash encaissé {{ "aujourd'hui" if is_today else 'le ' ~ selected_date.strftime('%d/%m/%Y') }}</small><div class="h2 text-info">${{ "{:.2f}".format(daily_report.totals.collected_margin) }}</div></div></div></div>
+    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge des ventes {{ 'du jour' if is_today else 'du ' ~ selected_date.strftime('%d/%m/%Y') }}</small>{% if daily_report.totals.sales_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div><small class="text-danger">Un coût de stock semble incorrect.</small>{% else %}<div class="h2 {{ 'text-success' if daily_report.totals.sales_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(daily_report.totals.sales_margin) }}</div>{% endif %}</div></div></div>
+    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge du cash encaissé {{ "aujourd'hui" if is_today else 'le ' ~ selected_date.strftime('%d/%m/%Y') }}</small>{% if daily_report.totals.collected_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div><small class="text-danger">Un paiement concerne une vente au coût incorrect.</small>{% else %}<div class="h2 {{ 'text-info' if daily_report.totals.collected_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(daily_report.totals.collected_margin) }}</div>{% endif %}</div></div></div>
   </div>
+  {% if daily_report.totals.sales_margin_has_anomaly or daily_report.totals.collected_margin_has_anomaly %}<div class="alert alert-warning"><strong>Marge temporairement masquée.</strong> Un ancien coût de stock doit être vérifié. Contactez l'administrateur{% if daily_report.cost_anomalies.sale_ids %} avec les ventes #{{ daily_report.cost_anomalies.sale_ids|join(', #') }}{% endif %}.</div>{% endif %}
   <div class="row">
     <div class="col-lg-5 mb-4"><div class="card shadow"><div class="card-header"><h3 class="mb-0">{{ 'Modifier la vente' if editing_sale else 'Nouvelle vente' }}</h3></div><div class="card-body">
       <form method="post">

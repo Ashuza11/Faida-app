@@ -74,7 +74,7 @@ def test_token_sms_requires_explicit_business_id(app, session):
     assert "mode détail ou grossiste" in response.get_json()["error"]
 
 
-def test_wholesale_purchase_sms_uses_exact_default_usd_cost(app, session):
+def test_wholesale_airtel_purchase_sms_uses_standard_unit_cost(app, session):
     _, retail, wholesale = owner_with_modes(session)
 
     response = app.test_client().post(
@@ -91,10 +91,10 @@ def test_wholesale_purchase_sms_uses_exact_default_usd_cost(app, session):
     assert response.status_code == 201
     payload = response.get_json()
     assert payload["mode"] == "wholesale"
-    assert payload["total_usd"] == 100.0
+    assert payload["total_usd"] == 99.5775
     purchase = session.get(StockPurchase, payload["purchase_id"])
     assert purchase.stock_item.business_id == wholesale.id
-    assert purchase.actual_total_cost == Decimal("100.000000000000")
+    assert purchase.actual_total_cost == Decimal("99.577500000000")
     assert purchase.purchase_date == business_local_date(
         datetime.fromtimestamp(1787061600000 / 1000, tz=timezone.utc)
     )

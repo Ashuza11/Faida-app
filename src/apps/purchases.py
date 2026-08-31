@@ -22,6 +22,7 @@ from apps.models import (
 from apps.money import as_decimal, quantize_unit_price
 from apps.pricing import calculate_preset_cost
 from apps.user_messages import user_message
+from apps.wholesale_costs import require_plausible_wholesale_unit_cost
 
 
 def record_wholesale_purchase(
@@ -32,6 +33,7 @@ def record_wholesale_purchase(
     quantity,
     preset: PricePreset | None = None,
     custom_unit_cost=None,
+    custom_total_cost=None,
     purchase_date: date | None = None,
 ) -> StockPurchase:
     """Record one exact USD purchase without crossing business boundaries."""
@@ -44,6 +46,7 @@ def record_wholesale_purchase(
         quantity=quantity,
         preset=preset,
         custom_unit_cost=custom_unit_cost,
+        custom_total_cost=custom_total_cost,
     )
     stock = _apply_wholesale_purchase_stock(
         business=business,
@@ -77,7 +80,8 @@ def _validate_wholesale_purchase_access(*, business, purchased_by):
 
 
 def _wholesale_purchase_values(
-    *, business, network, quantity, preset, custom_unit_cost
+    *, business, network, quantity, preset, custom_unit_cost,
+    custom_total_cost=None,
 ):
     quantity = as_decimal(quantity)
     if quantity <= 0 or quantity != quantity.to_integral_value():
@@ -97,12 +101,23 @@ def _wholesale_purchase_values(
         unit_cost = preset.unit_price
         total_cost = calculate_preset_cost(preset, quantity)
     else:
-        if custom_unit_cost is None:
-            raise ValueError("Sélectionnez un prix ou saisissez un prix personnalisé.")
-        unit_cost = quantize_unit_price(custom_unit_cost)
+        if custom_total_cost is not None:
+            total_cost = as_decimal(custom_total_cost).quantize(
+                Decimal("0.000000000001")
+            )
+            if total_cost <= 0:
+                raise ValueError("Le montant total payé doit être positif.")
+            unit_cost = quantize_unit_price(total_cost / quantity)
+        elif custom_unit_cost is not None:
+            unit_cost = quantize_unit_price(custom_unit_cost)
+            total_cost = quantity * unit_cost
+        else:
+            raise ValueError("Sélectionnez un prix ou saisissez le montant total payé.")
         if unit_cost <= 0:
             raise ValueError("Le prix d'achat doit être positif.")
-        total_cost = quantity * unit_cost
+        require_plausible_wholesale_unit_cost(
+            business_id=business.id, network=network, unit_cost=unit_cost
+        )
     return quantity, unit_cost, total_cost
 
 
@@ -315,7 +330,8 @@ def reverse_wholesale_purchase(
 
 def replace_wholesale_purchase(
     *, purchase, business, updated_by, network, quantity,
-    preset=None, custom_unit_cost=None, purchase_date=None,
+    preset=None, custom_unit_cost=None, custom_total_cost=None,
+    purchase_date=None,
 ):
     """Correct an unconsumed wholesale purchase without replacing its audit row."""
     _validate_wholesale_purchase_access(
@@ -344,6 +360,7 @@ def replace_wholesale_purchase(
         quantity=quantity,
         preset=preset,
         custom_unit_cost=custom_unit_cost,
+        custom_total_cost=custom_total_cost,
     )
     stock = _apply_wholesale_purchase_stock(
         business=business,

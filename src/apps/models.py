@@ -1327,6 +1327,9 @@ class PaymentEvent(db.Model):
     source_sale_id: so.Mapped[Optional[int]] = so.mapped_column(
         sa.ForeignKey("sales.id"), nullable=True, index=True
     )
+    corrected_from_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("payment_events.id"), nullable=True, unique=True, index=True
+    )
     recorded_by_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False
     )
@@ -1351,6 +1354,16 @@ class PaymentEvent(db.Model):
 
     allocations: so.Mapped[List["CashInflow"]] = so.relationship(
         back_populates="payment_event", cascade="all, delete-orphan"
+    )
+    corrected_from: so.Mapped[Optional["PaymentEvent"]] = so.relationship(
+        remote_side="PaymentEvent.id",
+        foreign_keys=[corrected_from_id],
+        back_populates="replacement",
+    )
+    replacement: so.Mapped[Optional["PaymentEvent"]] = so.relationship(
+        foreign_keys="PaymentEvent.corrected_from_id",
+        back_populates="corrected_from",
+        uselist=False,
     )
 
 

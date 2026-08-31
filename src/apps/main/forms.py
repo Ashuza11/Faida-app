@@ -684,6 +684,12 @@ class WholesalePurchaseForm(FlaskForm):
         places=12,
         render_kw={"placeholder": "Ex: 0.00935", "step": "0.000000000001"},
     )
+    custom_total_cost = DecimalField(
+        "Montant total payé ($)",
+        validators=[Optional(), NumberRange(min=Decimal("0.01"))],
+        places=2,
+        render_kw={"placeholder": "Ex: 100.00", "step": "0.01"},
+    )
     submit = SubmitField("Acheter")
 
 
@@ -753,6 +759,26 @@ class WholesaleDebtPaymentForm(FlaskForm):
         validators=[Optional(), Length(max=255)],
     )
     submit = SubmitField("Payer")
+
+
+class WholesalePaymentCorrectionForm(FlaskForm):
+    amount = DecimalField(
+        "Montant correct ($)",
+        validators=[DataRequired(), NumberRange(min=Decimal("0.01"))],
+        places=2,
+        render_kw={"placeholder": "0.00", "step": "0.01"},
+    )
+    payment_date = DateField(
+        "Date du paiement",
+        validators=[DataRequired()],
+        format="%Y-%m-%d",
+    )
+    reason = StringField(
+        "Raison de la correction",
+        validators=[DataRequired(), Length(min=3, max=255)],
+        render_kw={"placeholder": "Ex: montant mal saisi"},
+    )
+    submit = SubmitField("Corriger")
 
 
 class TransactionReversalForm(FlaskForm):

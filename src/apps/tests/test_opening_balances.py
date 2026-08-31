@@ -363,6 +363,32 @@ def test_wholesale_opening_balance_is_stored_in_its_own_business(session):
     assert wholesale_stock.inventory_value == Decimal("0.900000000000")
 
 
+def test_wholesale_opening_balance_rejects_implausible_total_value(session):
+    owner, _ = setup_retail(session, suffix=91)
+    wholesale = create_business(
+        owner=owner,
+        name="Invalid wholesale opening",
+        business_type=BusinessType.WHOLESALE,
+        approval_status=BusinessApprovalStatus.APPROVED,
+    )
+    session.flush()
+    updates = empty_updates()
+    updates[NetworkType.AIRTEL] = (10650, None)
+
+    with pytest.raises(OpeningBalanceError, match="semble incorrect"):
+        save_opening_balances(
+            business=wholesale,
+            recorded_by=owner,
+            balance_date=date.today(),
+            updates=updates,
+            exact_totals={NetworkType.AIRTEL: Decimal("1065000")},
+        )
+
+    assert StockOpeningBalance.query.filter_by(
+        business_id=wholesale.id
+    ).count() == 0
+
+
 def test_pending_wholesale_cannot_set_opening_stock(session):
     owner, _ = setup_retail(session, suffix=13)
     wholesale = create_business(

@@ -54,25 +54,27 @@ def test_orange_preset_hides_ratio_but_calculates_exactly(session):
     assert calculate_preset_cost(orange, 15975) == Decimal("150.000000000000")
 
 
-def test_airtel_and_africel_keep_short_prices_but_use_exact_reference_total(session):
+def test_airtel_and_africel_standard_costs_use_their_displayed_unit_prices(session):
     business = create_business(
         owner=make_owner(session),
         name="Wholesale references",
         business_type=BusinessType.WHOLESALE,
     )
 
-    expected_prices = {
-        NetworkType.AIRTEL: Decimal("0.00935"),
-        NetworkType.AFRICEL: Decimal("0.00940"),
+    expected = {
+        NetworkType.AIRTEL: (Decimal("0.00935"), Decimal("935.00000")),
+        NetworkType.AFRICEL: (Decimal("0.00940"), Decimal("940.00000")),
     }
-    for network, displayed_price in expected_prices.items():
+    for network, (displayed_price, expected_total) in expected.items():
         preset = next(
             candidate for candidate in business.price_presets
             if candidate.network == network
             and candidate.operation == PriceOperation.PURCHASE
         )
         assert preset.unit_price == displayed_price
-        assert calculate_preset_cost(preset, 10650) == Decimal("100.000000000000")
+        assert preset.ratio_amount is None
+        assert preset.ratio_units is None
+        assert calculate_preset_cost(preset, 100000) == expected_total
 
 
 def test_retail_does_not_receive_wholesale_presets(session):

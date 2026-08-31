@@ -34,6 +34,7 @@ from apps.payments import (
     apply_additional_payment_to_sale,
     apply_payment_to_sale,
     collect_client_debt,
+    correct_wholesale_payment_event,
     reverse_payment_event,
 )
 from apps.inventory import consume_stock
@@ -105,6 +106,7 @@ from apps.main.forms import (
     WholesalePurchaseForm,
     WholesaleSaleForm,
     WholesaleDebtPaymentForm,
+    WholesalePaymentCorrectionForm,
     TransactionReversalForm,
 )
 from apps.businesses import (
@@ -155,6 +157,7 @@ _WHOLESALE_SAFE_ENDPOINTS = {
     "main_bp.wholesale_client_archive",
     "main_bp.wholesale_client_detail",
     "main_bp.reverse_wholesale_payment_route",
+    "main_bp.correct_wholesale_payment_route",
     "main_bp.wholesale_report",
     "main_bp.profile",
     "main_bp.health",
@@ -432,8 +435,13 @@ def wholesale_purchases():
             network = NetworkType[form.network.data]
             selected_preset = None
             custom_unit_cost = None
+            custom_total_cost = None
             if form.price_choice.data == "custom":
-                custom_unit_cost = form.custom_unit_cost.data
+                custom_total_cost = form.custom_total_cost.data
+                custom_unit_cost = (
+                    form.custom_unit_cost.data
+                    if custom_total_cost is None else None
+                )
             else:
                 preset_id = int(form.price_choice.data.removeprefix("preset:"))
                 selected_preset = db.session.get(PricePreset, preset_id)
@@ -444,6 +452,7 @@ def wholesale_purchases():
                 quantity=form.quantity.data,
                 preset=selected_preset,
                 custom_unit_cost=custom_unit_cost,
+                custom_total_cost=custom_total_cost,
                 purchase_date=form.purchase_date.data,
             )
             db.session.commit()
@@ -518,13 +527,19 @@ def wholesale_purchase_edit(purchase_id):
         else:
             form.price_choice.data = "custom"
             form.custom_unit_cost.data = purchase.buying_price_at_purchase
+            form.custom_total_cost.data = purchase.actual_total_cost
 
     if form.validate_on_submit():
         try:
             preset = None
             custom_unit_cost = None
+            custom_total_cost = None
             if form.price_choice.data == "custom":
-                custom_unit_cost = form.custom_unit_cost.data
+                custom_total_cost = form.custom_total_cost.data
+                custom_unit_cost = (
+                    form.custom_unit_cost.data
+                    if custom_total_cost is None else None
+                )
             else:
                 preset_id = int(form.price_choice.data.removeprefix("preset:"))
                 preset = db.session.get(PricePreset, preset_id)
@@ -536,6 +551,7 @@ def wholesale_purchase_edit(purchase_id):
                 quantity=form.quantity.data,
                 preset=preset,
                 custom_unit_cost=custom_unit_cost,
+                custom_total_cost=custom_total_cost,
                 purchase_date=form.purchase_date.data,
             )
             db.session.commit()
@@ -1216,6 +1232,60 @@ def reverse_wholesale_payment_route(payment_event_id):
         flash(str(error), "danger")
     return redirect(
         url_for("main_bp.wholesale_client_detail", client_id=client_id)
+    )
+
+
+@bp.route(
+    "/businesses/wholesale/payments/<int:payment_event_id>/correct",
+    methods=["GET", "POST"],
+)
+@login_required
+@vendeur_required
+def correct_wholesale_payment_route(payment_event_id):
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    if business.owner_user_id != current_user.id:
+        abort(403)
+    payment_event = PaymentEvent.query.filter_by(
+        id=payment_event_id, business_id=business.id
+    ).first_or_404()
+    if payment_event.client_id is None:
+        abort(404)
+    form = WholesalePaymentCorrectionForm()
+    if request.method == "GET":
+        form.amount.data = payment_event.amount
+        form.payment_date.data = payment_event.payment_date
+    if form.validate_on_submit():
+        try:
+            replacement = correct_wholesale_payment_event(
+                payment_event=payment_event,
+                business=business,
+                corrected_by=current_user,
+                amount=form.amount.data,
+                payment_date=form.payment_date.data,
+                reason=form.reason.data,
+            )
+            db.session.commit()
+            flash(
+                f"Paiement corrigé · nouveau reçu #{replacement.id}.",
+                "success",
+            )
+            return redirect(url_for(
+                "main_bp.wholesale_client_detail",
+                client_id=payment_event.client_id,
+                _anchor=f"paiement-{replacement.id}",
+            ))
+        except (ValueError, PermissionError, RuntimeError) as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+    return render_template(
+        "main/wholesale_payment_correction.html",
+        business=business,
+        payment=payment_event,
+        form=form,
+        segment="wholesale",
+        sub_segment="clients",
     )
 
 

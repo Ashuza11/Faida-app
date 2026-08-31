@@ -20,7 +20,11 @@ from apps.models import (
     User,
 )
 from apps.purchases import record_wholesale_purchase
-from apps.payments import collect_client_debt, reverse_payment_event
+from apps.payments import (
+    collect_client_debt,
+    correct_wholesale_payment_event,
+    reverse_payment_event,
+)
 from apps.sales import (
     build_wholesale_sale_groups,
     record_wholesale_sale,
@@ -96,6 +100,31 @@ def test_wholesale_sale_preserves_price_cost_and_margin(session):
         business_id=business.id, network=NetworkType.AIRTEL
     ).one().balance == 1000
     assert CashInflow.query.filter_by(sale_id=sale.id).one().amount == Decimal("9.40")
+
+
+def test_wholesale_sale_rejects_abnormal_stock_cost_before_consumption(session):
+    owner, business, client, preset = setup_wholesale(session, suffix=502)
+    stock = Stock.query.filter_by(
+        business_id=business.id, network=NetworkType.AIRTEL
+    ).one()
+    stock.average_cost_per_unit = Decimal("100")
+    stock.inventory_value = stock.balance * Decimal("100")
+    original_state = (stock.balance, stock.inventory_value)
+
+    with pytest.raises(ValueError, match="semble incorrect"):
+        record_wholesale_sale(
+            business=business,
+            sold_by=owner,
+            client=client,
+            network=NetworkType.AIRTEL,
+            quantity=100,
+            cash_received=0,
+            sale_date=date.today(),
+            preset=preset,
+        )
+
+    assert (stock.balance, stock.inventory_value) == original_state
+    assert Sale.query.count() == 0
 
 
 def test_wholesale_sale_groups_use_client_identity_and_business_date(session):
@@ -472,6 +501,84 @@ def test_payment_reversal_restores_every_allocated_debt_and_reports(session):
     assert second.status == TransactionStatus.REVERSED
 
 
+def test_payment_correction_replaces_receipt_and_reapplies_oldest_debt(session):
+    owner, business, client, _ = setup_wholesale(session, suffix=231)
+    oldest = record_wholesale_sale(
+        business=business, sold_by=owner, client=client,
+        network=NetworkType.AIRTEL, quantity=500, cash_received=0,
+        sale_date=date.today(), custom_unit_price=Decimal("0.01000"),
+    )
+    current = record_wholesale_sale(
+        business=business, sold_by=owner, client=client,
+        network=NetworkType.AIRTEL, quantity=500,
+        cash_received=Decimal("7.00"), sale_date=date.today(),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    session.flush()
+    original = PaymentEvent.query.one()
+
+    replacement = correct_wholesale_payment_event(
+        payment_event=original,
+        business=business,
+        corrected_by=owner,
+        amount=Decimal("3.00"),
+        payment_date=date.today(),
+        reason="Montant mal saisi",
+    )
+    session.flush()
+
+    assert original.status == TransactionStatus.REVERSED
+    assert original.replacement is replacement
+    assert replacement.corrected_from is original
+    assert replacement.status == TransactionStatus.ACTIVE
+    assert replacement.amount == Decimal("3.00")
+    assert {allocation.status for allocation in original.allocations} == {
+        TransactionStatus.REVERSED
+    }
+    assert len(replacement.allocations) == 1
+    assert replacement.allocations[0].sale_id == oldest.id
+    assert replacement.allocations[0].amount == Decimal("3.00")
+    assert oldest.cash_paid == Decimal("3.00")
+    assert oldest.debt_amount == Decimal("2.00")
+    assert current.cash_paid == 0
+    assert current.initial_cash_paid == 0
+    assert current.debt_amount == Decimal("5.00")
+
+
+def test_payment_correction_requires_newest_receipt_first(session):
+    owner, business, client, _ = setup_wholesale(session, suffix=232)
+    sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=client,
+        network=NetworkType.AIRTEL, quantity=500,
+        cash_received=Decimal("1.00"), sale_date=date.today(),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    session.flush()
+    original = PaymentEvent.query.filter_by(source_sale_id=sale.id).one()
+    collect_client_debt(
+        business=business,
+        client=client,
+        amount=Decimal("1.00"),
+        recorded_by=owner,
+        payment_date=date.today(),
+    )
+    session.flush()
+    later = PaymentEvent.query.filter(PaymentEvent.id != original.id).one()
+
+    with pytest.raises(ValueError, match=f"reçu #{later.id}"):
+        correct_wholesale_payment_event(
+            payment_event=original,
+            business=business,
+            corrected_by=owner,
+            amount=Decimal("2.00"),
+            payment_date=date.today(),
+            reason="Montant mal saisi",
+        )
+
+    assert original.status == TransactionStatus.ACTIVE
+    assert original.replacement is None
+
+
 def test_payment_reversal_rejects_another_business(session):
     owner, business, client, _ = setup_wholesale(session, suffix=24)
     sale = record_wholesale_sale(
@@ -530,6 +637,42 @@ def test_owner_can_reverse_payment_from_client_page(app, session):
     assert event.status == TransactionStatus.REVERSED
     assert sale.cash_paid == 0
     assert sale.debt_amount == Decimal("5.00")
+
+
+def test_owner_can_correct_payment_from_sales_card(app, session):
+    owner, business, client_record, _ = setup_wholesale(session, suffix=261)
+    sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=client_record,
+        network=NetworkType.AIRTEL, quantity=500,
+        cash_received=Decimal("1.00"), sale_date=date.today(),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    session.commit()
+    event = PaymentEvent.query.filter_by(source_sale_id=sale.id).one()
+    browser = app.test_client()
+    with browser.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    sales_page = browser.get("/businesses/wholesale/sales")
+    assert f"/businesses/wholesale/payments/{event.id}/correct".encode() in sales_page.data
+
+    response = browser.post(
+        f"/businesses/wholesale/payments/{event.id}/correct",
+        data={
+            "amount": "2.00",
+            "payment_date": date.today().isoformat(),
+            "reason": "Montant mal saisi",
+        },
+    )
+
+    assert response.status_code == 302
+    replacement = PaymentEvent.query.filter_by(corrected_from_id=event.id).one()
+    assert event.status == TransactionStatus.REVERSED
+    assert replacement.amount == Decimal("2.00")
+    assert sale.cash_paid == Decimal("2.00")
+    assert sale.debt_amount == Decimal("3.00")
 
 
 def test_unpaid_wholesale_sale_reversal_restores_exact_inventory(session):

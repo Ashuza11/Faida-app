@@ -17,7 +17,7 @@
             <div class="form-group">{{ form.quantity.label }}{{ form.quantity(class="form-control", id="purchaseQuantity") }}</div>
             <div class="form-group">{{ form.purchase_date.label }}{{ form.purchase_date(class="form-control") }}</div>
             <div class="form-group">{{ form.price_choice.label }}{{ form.price_choice(class="form-control", id="purchasePrice") }}</div>
-            <div class="form-group" id="customCostGroup">{{ form.custom_unit_cost.label }}{{ form.custom_unit_cost(class="form-control", id="customUnitCost") }}</div>
+            <div class="form-group" id="customCostGroup">{{ form.custom_total_cost.label }}{{ form.custom_total_cost(class="form-control", id="customTotalCost") }}<small class="text-muted">Le coût par unité est calculé automatiquement.</small></div>
             {% for field, errors in form.errors.items() %}{% for error in errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}{% endfor %}
             <div class="alert alert-light border mt-3">
               <div>Coût unitaire affiché: <strong id="unitCostPreview">—</strong></div>
@@ -54,7 +54,7 @@
   const network = document.getElementById('purchaseNetwork');
   const price = document.getElementById('purchasePrice');
   const quantity = document.getElementById('purchaseQuantity');
-  const customCost = document.getElementById('customUnitCost');
+  const customTotal = document.getElementById('customTotalCost');
   const customGroup = document.getElementById('customCostGroup');
   function loadPrices() {
     const previous = price.value;
@@ -74,11 +74,12 @@
     const option = price.options[price.selectedIndex];
     const isCustom = price.value === 'custom';
     customGroup.style.display = isCustom ? 'block' : 'none';
-    const unitCost = Number(isCustom ? customCost.value : option?.dataset.unitPrice || 0);
     const units = Number(quantity.value || 0);
-    let total = units * unitCost;
+    let total = isCustom ? Number(customTotal.value || 0) : units * Number(option?.dataset.unitPrice || 0);
+    let unitCost = units ? total / units : 0;
     if (!isCustom && option?.dataset.ratioAmount && option?.dataset.ratioUnits) {
       total = units * Number(option.dataset.ratioAmount) / Number(option.dataset.ratioUnits);
+      unitCost = units ? total / units : 0;
     }
     document.getElementById('unitCostPreview').textContent = unitCost ? `$${unitCost.toFixed(8)}` : '—';
     document.getElementById('totalCostPreview').textContent = total ? `$${total.toFixed(2)}` : '—';
@@ -86,7 +87,7 @@
   network.addEventListener('change', loadPrices);
   price.addEventListener('change', updatePreview);
   quantity.addEventListener('input', updatePreview);
-  customCost.addEventListener('input', updatePreview);
+  customTotal.addEventListener('input', updatePreview);
   loadPrices();
 </script>
 {% endblock %}

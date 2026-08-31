@@ -19,6 +19,7 @@ from apps.models import (
 )
 from apps.money import INTERNAL_MONEY_QUANTUM, as_decimal, quantize_unit_price
 from apps.user_messages import user_message
+from apps.wholesale_costs import require_plausible_wholesale_unit_cost
 
 
 class OpeningBalanceError(ValueError):
@@ -101,6 +102,15 @@ def save_opening_balances(
                 )
         if quantity > 0 and unit_cost <= 0:
             raise OpeningBalanceError("Le coût par unité doit être positif.")
+        if quantity > 0 and business.business_type == BusinessType.WHOLESALE:
+            try:
+                require_plausible_wholesale_unit_cost(
+                    business_id=business.id,
+                    network=network,
+                    unit_cost=unit_cost,
+                )
+            except ValueError as error:
+                raise OpeningBalanceError(str(error)) from error
         if quantity > 0 and raw_total_cost is None:
             total_cost = (quantity * unit_cost).quantize(INTERNAL_MONEY_QUANTUM)
         if (

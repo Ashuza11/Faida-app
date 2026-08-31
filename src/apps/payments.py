@@ -3,6 +3,8 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
+from sqlalchemy import and_, or_
+
 from apps import db
 from apps.models import (
     Business,
@@ -103,7 +105,8 @@ def allocate_adhoc_customer_payment(
 
 
 def apply_payment_to_sale(
-    *, sale: Sale, amount: Decimal, recorded_by, payment_date: date
+    *, sale: Sale, amount: Decimal, recorded_by, payment_date: date,
+    payment_event: PaymentEvent | None = None,
 ) -> Decimal:
     """Apply cash to old registered-client debts first, then to this sale."""
     amount = Decimal(amount)
@@ -134,18 +137,26 @@ def apply_payment_to_sale(
             "Le montant payé dépasse la dette totale du client et la vente actuelle."
         )
 
-    payment_event = None
     if amount > 0:
-        payment_event = PaymentEvent(
-            business_id=sale.business_id,
-            client_id=sale.client_id,
-            source_sale_id=sale.id,
-            recorded_by_id=recorded_by.id,
-            amount=amount,
-            payment_date=payment_date,
-            description="Paiement lors de la vente",
-        )
-        db.session.add(payment_event)
+        if payment_event is None:
+            payment_event = PaymentEvent(
+                business_id=sale.business_id,
+                client_id=sale.client_id,
+                source_sale_id=sale.id,
+                recorded_by_id=recorded_by.id,
+                amount=amount,
+                payment_date=payment_date,
+                description="Paiement lors de la vente",
+            )
+            db.session.add(payment_event)
+        elif any((
+            payment_event.business_id != sale.business_id,
+            payment_event.client_id != sale.client_id,
+            payment_event.source_sale_id != sale.id,
+            Decimal(payment_event.amount) != amount,
+            payment_event.payment_date != payment_date,
+        )):
+            raise ValueError("Le reçu de remplacement ne correspond pas à cette vente.")
 
     remaining = amount
     if sale.client_id is not None:
@@ -198,6 +209,7 @@ def collect_client_debt(
     recorded_by,
     payment_date: date,
     description=None,
+    payment_event: PaymentEvent | None = None,
 ) -> Decimal:
     """Collect a registered client's debt within exactly one business."""
     if client.business_id != business.id:
@@ -222,15 +234,24 @@ def collect_client_debt(
     if amount > total_debt:
         raise ValueError("Le montant payé dépasse la dette totale du client.")
 
-    payment_event = PaymentEvent(
-        business_id=business.id,
-        client_id=client.id,
-        recorded_by_id=recorded_by.id,
-        amount=amount,
-        payment_date=payment_date,
-        description=description,
-    )
-    db.session.add(payment_event)
+    if payment_event is None:
+        payment_event = PaymentEvent(
+            business_id=business.id,
+            client_id=client.id,
+            recorded_by_id=recorded_by.id,
+            amount=amount,
+            payment_date=payment_date,
+            description=description,
+        )
+        db.session.add(payment_event)
+    elif any((
+        payment_event.business_id != business.id,
+        payment_event.client_id != client.id,
+        payment_event.source_sale_id is not None,
+        Decimal(payment_event.amount) != amount,
+        payment_event.payment_date != payment_date,
+    )):
+        raise ValueError("Le reçu de remplacement ne correspond pas à ce client.")
     remaining = allocate_registered_client_payment(
         client_id=client.id,
         vendeur_id=business.owner_user_id,
@@ -244,6 +265,110 @@ def collect_client_debt(
     if remaining != 0:
         raise RuntimeError("Le paiement n'a pas été entièrement alloué.")
     return amount
+
+
+def correct_wholesale_payment_event(
+    *, payment_event: PaymentEvent, business: Business, corrected_by,
+    amount: Decimal, payment_date: date, reason: str,
+) -> PaymentEvent:
+    """Replace the newest client receipt without erasing its audit history."""
+    if payment_event.business_id != business.id:
+        raise PermissionError("Ce paiement appartient à un autre mode.")
+    if business.owner_user_id != corrected_by.id:
+        raise PermissionError("Seul le propriétaire peut corriger ce paiement.")
+    if payment_event.status != TransactionStatus.ACTIVE:
+        raise ValueError("Seul un paiement actif peut être corrigé.")
+    if payment_event.client_id is None:
+        raise ValueError("Ce paiement n'est pas lié à un client grossiste.")
+    reason = (reason or "").strip()
+    if len(reason) < 3:
+        raise ValueError("Indiquez la raison de la correction.")
+    amount = Decimal(amount)
+    if amount <= 0:
+        raise ValueError("Le montant correct doit être positif.")
+
+    locked_event = (
+        PaymentEvent.query.filter_by(id=payment_event.id)
+        .with_for_update()
+        .one()
+    )
+    later_event = (
+        PaymentEvent.query.filter(
+            PaymentEvent.business_id == business.id,
+            PaymentEvent.client_id == locked_event.client_id,
+            PaymentEvent.status == TransactionStatus.ACTIVE,
+            PaymentEvent.id != locked_event.id,
+            or_(
+                PaymentEvent.created_at > locked_event.created_at,
+                and_(
+                    PaymentEvent.created_at == locked_event.created_at,
+                    PaymentEvent.id > locked_event.id,
+                ),
+            ),
+        )
+        .order_by(PaymentEvent.created_at.desc(), PaymentEvent.id.desc())
+        .first()
+    )
+    if later_event is not None:
+        raise ValueError(user_message(
+            "Un paiement plus récent dépend de l'ordre des dettes.",
+            f"Corrigez d'abord le reçu #{later_event.id}.",
+        ))
+
+    source_sale = (
+        db.session.get(Sale, locked_event.source_sale_id)
+        if locked_event.source_sale_id is not None
+        else None
+    )
+    client = db.session.get(Client, locked_event.client_id)
+    if client is None or client.business_id != business.id:
+        raise PermissionError("Le client de ce paiement appartient à un autre mode.")
+    if source_sale is not None and (
+        source_sale.business_id != business.id
+        or source_sale.client_id != client.id
+        or source_sale.status != TransactionStatus.ACTIVE
+    ):
+        raise ValueError(user_message(
+            "La vente liée à ce paiement ne peut pas être corrigée.",
+            "Vérifiez son statut avant de continuer.",
+        ))
+
+    reverse_payment_event(
+        payment_event=locked_event,
+        business=business,
+        reversed_by=corrected_by,
+        reason=reason,
+    )
+    replacement = PaymentEvent(
+        business_id=business.id,
+        client_id=client.id,
+        source_sale_id=source_sale.id if source_sale is not None else None,
+        corrected_from=locked_event,
+        recorded_by_id=corrected_by.id,
+        amount=amount,
+        payment_date=payment_date,
+        description=f"Correction du reçu #{locked_event.id}",
+    )
+    db.session.add(replacement)
+    if source_sale is not None:
+        apply_payment_to_sale(
+            sale=source_sale,
+            amount=amount,
+            recorded_by=corrected_by,
+            payment_date=payment_date,
+            payment_event=replacement,
+        )
+    else:
+        collect_client_debt(
+            business=business,
+            client=client,
+            amount=amount,
+            recorded_by=corrected_by,
+            payment_date=payment_date,
+            description=replacement.description,
+            payment_event=replacement,
+        )
+    return replacement
 
 
 def apply_additional_payment_to_sale(

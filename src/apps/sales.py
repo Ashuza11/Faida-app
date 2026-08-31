@@ -29,6 +29,7 @@ from apps.money import (
     quantize_unit_price,
 )
 from apps.user_messages import user_message
+from apps.wholesale_costs import require_plausible_wholesale_unit_cost
 
 
 def build_wholesale_sale_groups(sales, payment_events=()) -> list[dict]:
@@ -298,6 +299,11 @@ def _consume_wholesale_sale_items(*, business, items):
                 f"Stock {network.value} insuffisant.",
                 f"Disponible : {stock.balance} unités. Demandé : {quantity} unités.",
             ))
+        require_plausible_wholesale_unit_cost(
+            business_id=business.id,
+            network=network,
+            unit_cost=stock.average_cost_per_unit,
+        )
         cost_per_unit, cost_total = consume_stock(
             stock=stock, quantity=quantity
         )

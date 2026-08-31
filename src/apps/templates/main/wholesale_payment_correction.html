@@ -1,0 +1,31 @@
+{% extends "layouts/base.html" %}
+{% block title %}Corriger paiement · Grossiste{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-4" style="gap:10px;">
+    <div>
+      <h1 class="mb-1">Corriger le paiement #{{ payment.id }}</h1>
+      <span class="text-muted">{{ business.name }} · montant actuel ${{ "{:.2f}".format(payment.amount) }}</span>
+    </div>
+    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('main_bp.wholesale_client_detail', client_id=payment.client_id, _anchor='paiement-' ~ payment.id) }}">Retour</a>
+  </div>
+  <div class="row justify-content-center">
+    <div class="col-lg-6">
+      <div class="card shadow">
+        <div class="card-header"><h3 class="mb-0">Nouveau montant</h3></div>
+        <div class="card-body">
+          <p class="text-muted text-sm">L'ancien reçu restera visible comme annulé. Le nouveau montant paiera d'abord les dettes les plus anciennes.</p>
+          <form method="post">
+            {{ form.hidden_tag() }}
+            <div class="form-group">{{ form.amount.label }}{{ form.amount(class="form-control") }}</div>
+            <div class="form-group">{{ form.payment_date.label }}{{ form.payment_date(class="form-control") }}</div>
+            <div class="form-group">{{ form.reason.label }}{{ form.reason(class="form-control") }}</div>
+            {% for field, errors in form.errors.items() %}{% for error in errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}{% endfor %}
+            {{ form.submit(class="btn btn-primary btn-block") }}
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

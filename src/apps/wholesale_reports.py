@@ -20,6 +20,7 @@ from apps.models import (
     TransactionStatus,
 )
 from apps.opening_balances import opening_quantity_for_date
+from apps.wholesale_costs import sale_item_has_cost_anomaly
 
 
 ZERO = Decimal("0")
@@ -106,6 +107,18 @@ def build_wholesale_daily_report(
         .order_by(SaleItem.network, SaleItem.price_per_unit_applied)
         .all()
     )
+    sale_items_for_day = (
+        SaleItem.query.join(Sale)
+        .filter(
+            Sale.business_id == business.id,
+            Sale.sale_date == target_date,
+            Sale.status == TransactionStatus.ACTIVE,
+        )
+        .all()
+    )
+    anomalous_sale_items = [
+        item for item in sale_items_for_day if sale_item_has_cost_anomaly(item)
+    ]
 
     inflows = CashInflow.query.filter_by(
         business_id=business.id,
@@ -123,8 +136,15 @@ def build_wholesale_daily_report(
         ZERO,
     )
     collected_margin = ZERO
+    anomalous_collection_sale_ids = set()
     for inflow in inflows:
         if inflow.sale and inflow.sale.total_amount_due:
+            if any(
+                sale_item_has_cost_anomaly(item)
+                for item in inflow.sale.sale_items
+            ):
+                anomalous_collection_sale_ids.add(inflow.sale.id)
+                continue
             sale_margin = sum(
                 (_decimal(item.margin_amount) for item in inflow.sale.sale_items), ZERO
             )
@@ -183,6 +203,8 @@ def build_wholesale_daily_report(
         "old_debt_collected": old_debt_collected,
         "remaining_debt": _decimal(debt_created_to_date)
         - _decimal(debt_collected_to_date),
+        "sales_margin_has_anomaly": bool(anomalous_sale_items),
+        "collected_margin_has_anomaly": bool(anomalous_collection_sale_ids),
     }
     return {
         "date": target_date,
@@ -190,4 +212,10 @@ def build_wholesale_daily_report(
         "networks": rows,
         "price_groups": price_groups,
         "totals": totals,
+        "cost_anomalies": {
+            "sale_item_ids": [item.id for item in anomalous_sale_items],
+            "sale_ids": sorted({item.sale_id for item in anomalous_sale_items}),
+            "networks": sorted({item.network.name for item in anomalous_sale_items}),
+            "collection_sale_ids": sorted(anomalous_collection_sale_ids),
+        },
     }

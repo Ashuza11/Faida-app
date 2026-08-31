@@ -27,13 +27,23 @@ def generate_wholesale_report_pdf(*, business, report) -> BytesIO:
     ]
 
     totals = report["totals"]
+    sales_margin_text = (
+        "À vérifier"
+        if totals["sales_margin_has_anomaly"]
+        else f"${totals['sales_margin']:.2f}"
+    )
+    collected_margin_text = (
+        "À vérifier"
+        if totals["collected_margin_has_anomaly"]
+        else f"${totals['collected_margin']:.2f}"
+    )
     summary = Table([
         ["Ventes", "Marge ventes", "Cash encaissé", "Marge cash", "Nouvelle dette", "Dette restante"],
         [
             f"${totals['revenue']:.2f}",
-            f"${totals['sales_margin']:.2f}",
+            sales_margin_text,
             f"${totals['cash_collected']:.2f}",
-            f"${totals['collected_margin']:.2f}",
+            collected_margin_text,
             f"${totals['new_debt']:.2f}",
             f"${totals['remaining_debt']:.2f}",
         ],
@@ -46,6 +56,7 @@ def generate_wholesale_report_pdf(*, business, report) -> BytesIO:
         "Clôture", "Revenu", "Coût vendu", "Marge",
     ]]
     for row in report["networks"].values():
+        has_cost_anomaly = row["network"].name in report["cost_anomalies"]["networks"]
         stock_rows.append([
             row["network"].value.capitalize(),
             f"{row['opening']:.0f}",
@@ -54,8 +65,8 @@ def generate_wholesale_report_pdf(*, business, report) -> BytesIO:
             f"{row['sold']:.0f}",
             f"{row['closing']:.0f}",
             f"${row['revenue']:.2f}",
-            f"${row['cost']:.2f}",
-            f"${row['margin']:.2f}",
+            "À vérifier" if has_cost_anomaly else f"${row['cost']:.2f}",
+            "À vérifier" if has_cost_anomaly else f"${row['margin']:.2f}",
         ])
     stock_table = Table(stock_rows, repeatRows=1)
     stock_table.setStyle(_table_style())
@@ -63,13 +74,14 @@ def generate_wholesale_report_pdf(*, business, report) -> BytesIO:
 
     price_rows = [["Réseau", "Prix", "Unités", "Revenu", "Coût", "Marge"]]
     for group in report["price_groups"]:
+        has_cost_anomaly = group.network.name in report["cost_anomalies"]["networks"]
         price_rows.append([
             group.network.value.capitalize(),
             f"${group.price_per_unit_applied:.5f}",
             str(group.quantity),
             f"${group.revenue:.2f}",
-            f"${group.cost:.2f}",
-            f"${group.margin:.2f}",
+            "À vérifier" if has_cost_anomaly else f"${group.cost:.2f}",
+            "À vérifier" if has_cost_anomaly else f"${group.margin:.2f}",
         ])
     if len(price_rows) == 1:
         price_rows.append(["—", "—", "0", "$0.00", "$0.00", "$0.00"])

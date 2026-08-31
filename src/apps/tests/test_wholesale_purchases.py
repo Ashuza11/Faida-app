@@ -81,7 +81,7 @@ def test_orange_ratio_preserves_exact_reference_cost(session):
     assert purchase.stock_item.inventory_value == Decimal("150.000000000000")
 
 
-def test_standard_airtel_purchase_stores_exact_reference_total(session):
+def test_standard_airtel_purchase_uses_displayed_unit_price(session):
     owner = make_owner(session, 31)
     business = approved_wholesale(session, owner, "Exact Airtel")
     preset = next(
@@ -94,14 +94,16 @@ def test_standard_airtel_purchase_stores_exact_reference_total(session):
         business=business,
         purchased_by=owner,
         network=NetworkType.AIRTEL,
-        quantity=10650,
+        quantity=100000,
         preset=preset,
     )
     session.flush()
 
     assert preset.unit_price == Decimal("0.009350000000")
-    assert purchase.actual_total_cost == Decimal("100.000000000000")
-    assert purchase.stock_item.inventory_value == Decimal("100.000000000000")
+    assert preset.ratio_amount is None
+    assert preset.ratio_units is None
+    assert purchase.actual_total_cost == Decimal("935.000000000000")
+    assert purchase.stock_item.inventory_value == Decimal("935.000000000000")
 
 
 def test_custom_cost_updates_wholesale_weighted_inventory(session):
@@ -129,6 +131,40 @@ def test_custom_cost_updates_wholesale_weighted_inventory(session):
     assert stock.balance == Decimal("20000")
     assert stock.inventory_value == Decimal("193.500000000000")
     assert stock.average_cost_per_unit == Decimal("0.009675000000")
+
+
+def test_custom_total_derives_exact_wholesale_unit_cost(session):
+    owner = make_owner(session, 201)
+    business = approved_wholesale(session, owner, "Custom Total")
+
+    purchase = record_wholesale_purchase(
+        business=business,
+        purchased_by=owner,
+        network=NetworkType.AIRTEL,
+        quantity=10650,
+        custom_total_cost=Decimal("100.00"),
+    )
+    session.flush()
+
+    assert purchase.actual_total_cost == Decimal("100.000000000000")
+    assert purchase.buying_price_at_purchase == Decimal("0.009389671362")
+    assert purchase.stock_item.inventory_value == Decimal("100.000000000000")
+
+
+def test_wholesale_purchase_rejects_total_entered_as_unit_cost(session):
+    owner = make_owner(session, 202)
+    business = approved_wholesale(session, owner, "Invalid Cost")
+
+    with pytest.raises(ValueError, match="semble incorrect"):
+        record_wholesale_purchase(
+            business=business,
+            purchased_by=owner,
+            network=NetworkType.AIRTEL,
+            quantity=10650,
+            custom_unit_cost=Decimal("100.00"),
+        )
+
+    assert Stock.query.filter_by(business_id=business.id).count() == 0
 
 
 def test_wholesale_purchase_reversal_preserves_audit_and_inventory(session):
@@ -415,6 +451,37 @@ def test_wholesale_purchase_edit_route_updates_existing_record(app, session):
     assert StockPurchase.query.count() == 1
     assert purchase.amount_purchased == 1200
     assert purchase.stock_item.balance == 1200
+
+
+def test_wholesale_purchase_route_accepts_custom_total_paid(app, session):
+    owner = make_owner(session, 631)
+    business = approved_wholesale(session, owner, "Route custom total")
+    session.commit()
+    browser = app.test_client()
+    with browser.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    page = browser.get("/businesses/wholesale/purchases")
+    assert b"Montant total pay\xc3\xa9 ($)" in page.data
+    assert b"Prix personnalis\xc3\xa9 par unit\xc3\xa9 ($)" not in page.data
+
+    response = browser.post(
+        "/businesses/wholesale/purchases",
+        data={
+            "network": NetworkType.AIRTEL.name,
+            "quantity": "10650",
+            "purchase_date": date.today().isoformat(),
+            "price_choice": "custom",
+            "custom_total_cost": "100.00",
+        },
+    )
+
+    assert response.status_code == 302
+    purchase = StockPurchase.query.one()
+    assert purchase.actual_total_cost == Decimal("100.000000000000")
+    assert purchase.buying_price_at_purchase == Decimal("0.009389671362")
 
 
 def test_retail_purchase_replace_and_delete_preserve_inventory(session):
