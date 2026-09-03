@@ -73,6 +73,8 @@ from apps.models import (
     CashOutflow,
     CashInflow,
     CashInflowCategory,
+    WholesaleCashDirection,
+    WholesaleCashEntry,
     DailyOverallReport,
     DailyStockReport,
     StockOpeningBalance,
@@ -107,6 +109,7 @@ from apps.main.forms import (
     WholesaleSaleForm,
     WholesaleDebtPaymentForm,
     WholesalePaymentCorrectionForm,
+    WholesaleCashEntryForm,
     TransactionReversalForm,
 )
 from apps.businesses import (
@@ -133,6 +136,11 @@ from apps.sales import (
     reverse_unpaid_wholesale_sale,
 )
 from apps.wholesale_reports import build_wholesale_daily_report
+from apps.wholesale_cashbook import (
+    CashbookConversionError,
+    build_cashbook_totals,
+    convert_cashbook_totals,
+)
 
 
 # Define the timezone for the application
@@ -159,6 +167,7 @@ _WHOLESALE_SAFE_ENDPOINTS = {
     "main_bp.reverse_wholesale_payment_route",
     "main_bp.correct_wholesale_payment_route",
     "main_bp.wholesale_report",
+    "main_bp.wholesale_cashbook",
     "main_bp.profile",
     "main_bp.health",
 }
@@ -280,6 +289,83 @@ def wholesale_dashboard():
         stocks=stocks,
         segment="wholesale",
         sub_segment="dashboard",
+    )
+
+
+@bp.route("/businesses/wholesale/cashbook", methods=["GET", "POST"])
+@login_required
+@business_member_required
+def wholesale_cashbook():
+    """Record independent wholesale cash movements without touching sales."""
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+
+    selected_date = business_local_date()
+    raw_date = request.args.get("date", "").strip()
+    if raw_date:
+        try:
+            selected_date = datetime.strptime(raw_date, "%Y-%m-%d").date()
+        except ValueError:
+            flash("Choisissez une date valide.", "danger")
+
+    form = WholesaleCashEntryForm()
+    if request.method == "GET":
+        form.entry_date.data = selected_date
+        form.currency_code.data = business.currency_code.name
+
+    if form.validate_on_submit():
+        entry = WholesaleCashEntry(
+            business_id=business.id,
+            recorded_by_id=current_user.id,
+            entry_date=form.entry_date.data,
+            direction=WholesaleCashDirection[form.direction.data],
+            amount=form.amount.data,
+            currency_code=CurrencyCode[form.currency_code.data],
+            description=form.description.data.strip(),
+        )
+        db.session.add(entry)
+        db.session.commit()
+        flash("Mouvement enregistré.", "success")
+        return redirect(url_for(
+            "main_bp.wholesale_cashbook", date=entry.entry_date.isoformat()
+        ))
+
+    entries = (
+        WholesaleCashEntry.query.filter_by(
+            business_id=business.id, entry_date=selected_date
+        )
+        .order_by(WholesaleCashEntry.created_at.desc(), WholesaleCashEntry.id.desc())
+        .all()
+    )
+    totals = build_cashbook_totals(entries)
+
+    converted = None
+    target_currency = request.args.get("target_currency", business.currency_code.name)
+    exchange_rate = request.args.get("exchange_rate", "").strip()
+    if exchange_rate:
+        try:
+            target = CurrencyCode[target_currency]
+            converted = convert_cashbook_totals(
+                totals, target_currency=target, cdf_per_usd=exchange_rate
+            )
+        except (CashbookConversionError, KeyError):
+            flash("Indiquez un taux de change supérieur à zéro.", "danger")
+
+    return render_template(
+        "main/wholesale_cashbook.html",
+        business=business,
+        form=form,
+        entries=entries,
+        totals=totals,
+        selected_date=selected_date,
+        converted=converted,
+        target_currency=target_currency,
+        exchange_rate=exchange_rate,
+        CurrencyCode=CurrencyCode,
+        WholesaleCashDirection=WholesaleCashDirection,
+        segment="wholesale",
+        sub_segment="cashbook",
     )
 
 

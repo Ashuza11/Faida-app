@@ -63,6 +63,12 @@ class CurrencyCode(PyEnum):
     USD = "USD"
 
 
+class WholesaleCashDirection(PyEnum):
+    """Direction of an independent wholesale cashbook movement."""
+    INFLOW = "inflow"
+    OUTFLOW = "outflow"
+
+
 class MembershipRole(PyEnum):
     """A user's authority inside one business."""
     OWNER = "owner"
@@ -1263,6 +1269,44 @@ class SaleItemHistory(db.Model):
 # ===========================================
 # Cash Flow Models
 # ===========================================
+
+class WholesaleCashEntry(db.Model):
+    """A manual wholesale cash movement, kept separate from sale payments."""
+    __tablename__ = "wholesale_cash_entries"
+
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+    business_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    recorded_by_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=False, index=True
+    )
+    entry_date: so.Mapped[date] = so.mapped_column(
+        sa.Date, nullable=False, default=date.today, index=True
+    )
+    direction: so.Mapped[WholesaleCashDirection] = so.mapped_column(
+        sa.Enum(WholesaleCashDirection, native_enum=False, length=16), nullable=False
+    )
+    amount: so.Mapped[Decimal] = so.mapped_column(sa.Numeric(18, 2), nullable=False)
+    currency_code: so.Mapped[CurrencyCode] = so.mapped_column(
+        sa.Enum(CurrencyCode, native_enum=False, length=3), nullable=False
+    )
+    description: so.Mapped[str] = so.mapped_column(sa.String(160), nullable=False)
+    created_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=sa.func.now(),
+        nullable=False,
+    )
+
+    business: so.Mapped[Business] = so.relationship()
+    recorded_by: so.Mapped[User] = so.relationship()
+
+    __table_args__ = (
+        sa.CheckConstraint("amount > 0", name="_wholesale_cash_positive_amount_ck"),
+        sa.Index("ix_wholesale_cash_business_date", "business_id", "entry_date"),
+    )
+
 
 class CashOutflow(db.Model):
     """Cash outflows (expenses) - per vendeur."""

@@ -22,11 +22,13 @@ from wtforms.validators import (
     EqualTo,
 )
 from apps.models import (
+    CurrencyCode,
     NetworkType,
     Sale,
     CashOutflowCategory,
     RoleType,
     User,
+    WholesaleCashDirection,
     validate_drc_phone,
 )
 import enum
@@ -477,6 +479,48 @@ class CashOutflowForm(FlaskForm):
     )
     description = StringField(
         "Description", render_kw={"placeholder": "Ex: Achat fournitures bureau"}
+    )
+    submit = SubmitField("Enregistrer")
+
+
+class WholesaleCashEntryForm(FlaskForm):
+    description = StringField(
+        "Libellé",
+        validators=[
+            DataRequired(message="Indiquez à quoi correspond ce mouvement."),
+            Length(max=160),
+        ],
+        render_kw={"placeholder": "Ex: Nanga, dépôt Bahati, transport"},
+    )
+    direction = SelectField(
+        "Mouvement",
+        choices=[
+            (WholesaleCashDirection.INFLOW.name, "Entrée"),
+            (WholesaleCashDirection.OUTFLOW.name, "Sortie"),
+        ],
+        validators=[DataRequired(message="Choisissez entrée ou sortie.")],
+    )
+    amount = DecimalField(
+        "Montant",
+        places=2,
+        validators=[
+            DataRequired(message="Indiquez le montant."),
+            NumberRange(min=0.01, message="Le montant doit être supérieur à zéro."),
+        ],
+        render_kw={"placeholder": "Ex: 40000"},
+    )
+    currency_code = SelectField(
+        "Devise",
+        choices=[
+            (CurrencyCode.CDF.name, "FC"),
+            (CurrencyCode.USD.name, "USD"),
+        ],
+        validators=[DataRequired(message="Choisissez la devise.")],
+    )
+    entry_date = DateField(
+        "Date",
+        validators=[DataRequired(message="Choisissez la date du mouvement.")],
+        format="%Y-%m-%d",
     )
     submit = SubmitField("Enregistrer")
 
