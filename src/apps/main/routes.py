@@ -138,8 +138,13 @@ from apps.sales import (
 from apps.wholesale_reports import build_wholesale_daily_report
 from apps.wholesale_cashbook import (
     CashbookConversionError,
+    CashbookEntryError,
     build_cashbook_totals,
+    correct_cashbook_entry,
     convert_cashbook_totals,
+    ensure_cashbook_entry_change_allowed,
+    record_cashbook_entry,
+    reverse_cashbook_entry,
 )
 
 
@@ -168,6 +173,8 @@ _WHOLESALE_SAFE_ENDPOINTS = {
     "main_bp.correct_wholesale_payment_route",
     "main_bp.wholesale_report",
     "main_bp.wholesale_cashbook",
+    "main_bp.wholesale_cashbook_edit",
+    "main_bp.wholesale_cashbook_reverse",
     "main_bp.profile",
     "main_bp.health",
 }
@@ -310,34 +317,49 @@ def wholesale_cashbook():
             flash("Choisissez une date valide.", "danger")
 
     form = WholesaleCashEntryForm()
+    if not form.request_id.data:
+        form.request_id.data = str(uuid4())
     if request.method == "GET":
         form.entry_date.data = selected_date
         form.currency_code.data = business.currency_code.name
 
     if form.validate_on_submit():
-        entry = WholesaleCashEntry(
-            business_id=business.id,
-            recorded_by_id=current_user.id,
-            entry_date=form.entry_date.data,
-            direction=WholesaleCashDirection[form.direction.data],
-            amount=form.amount.data,
-            currency_code=CurrencyCode[form.currency_code.data],
-            description=form.description.data.strip(),
-        )
-        db.session.add(entry)
-        db.session.commit()
-        flash("Mouvement enregistré.", "success")
-        return redirect(url_for(
-            "main_bp.wholesale_cashbook", date=entry.entry_date.isoformat()
-        ))
+        try:
+            entry, created = record_cashbook_entry(
+                business=business,
+                recorded_by=current_user,
+                entry_date=form.entry_date.data,
+                direction=WholesaleCashDirection[form.direction.data],
+                amount=form.amount.data,
+                currency_code=CurrencyCode[form.currency_code.data],
+                description=form.description.data,
+                request_id=form.request_id.data,
+            )
+            db.session.commit()
+            flash(
+                "Mouvement enregistré." if created else "Mouvement déjà enregistré.",
+                "success" if created else "info",
+            )
+            return redirect(url_for(
+                "main_bp.wholesale_cashbook", date=entry.entry_date.isoformat()
+            ))
+        except (CashbookEntryError, PermissionError, KeyError) as error:
+            db.session.rollback()
+            flash(str(error), "danger")
 
-    entries = (
+    all_entries = (
         WholesaleCashEntry.query.filter_by(
             business_id=business.id, entry_date=selected_date
         )
         .order_by(WholesaleCashEntry.created_at.desc(), WholesaleCashEntry.id.desc())
         .all()
     )
+    entries = [
+        entry for entry in all_entries if entry.status == TransactionStatus.ACTIVE
+    ]
+    audit_entries = [
+        entry for entry in all_entries if entry.status == TransactionStatus.REVERSED
+    ]
     totals = build_cashbook_totals(entries)
 
     converted = None
@@ -357,6 +379,7 @@ def wholesale_cashbook():
         business=business,
         form=form,
         entries=entries,
+        audit_entries=audit_entries,
         totals=totals,
         selected_date=selected_date,
         converted=converted,
@@ -364,9 +387,121 @@ def wholesale_cashbook():
         exchange_rate=exchange_rate,
         CurrencyCode=CurrencyCode,
         WholesaleCashDirection=WholesaleCashDirection,
+        reversal_form=TransactionReversalForm(),
         segment="wholesale",
         sub_segment="cashbook",
     )
+
+
+@bp.route(
+    "/businesses/wholesale/cashbook/<int:entry_id>/edit",
+    methods=["GET", "POST"],
+)
+@login_required
+@business_member_required
+def wholesale_cashbook_edit(entry_id):
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    entry = WholesaleCashEntry.query.filter_by(
+        id=entry_id, business_id=business.id
+    ).first_or_404()
+    try:
+        ensure_cashbook_entry_change_allowed(
+            entry, business=business, actor=current_user
+        )
+    except PermissionError as error:
+        flash(str(error), "danger")
+        return redirect(url_for(
+            "main_bp.wholesale_cashbook", date=entry.entry_date.isoformat()
+        ))
+
+    form = WholesaleCashEntryForm()
+    if not form.request_id.data:
+        form.request_id.data = str(uuid4())
+    if request.method == "GET":
+        if entry.status != TransactionStatus.ACTIVE:
+            flash("Ce mouvement a déjà été corrigé ou supprimé.", "info")
+            return redirect(url_for(
+                "main_bp.wholesale_cashbook", date=entry.entry_date.isoformat()
+            ))
+        form.description.data = entry.description
+        form.direction.data = entry.direction.name
+        form.amount.data = entry.amount
+        form.currency_code.data = entry.currency_code.name
+        form.entry_date.data = entry.entry_date
+
+    if form.validate_on_submit():
+        try:
+            replacement, created = correct_cashbook_entry(
+                entry=entry,
+                business=business,
+                corrected_by=current_user,
+                entry_date=form.entry_date.data,
+                direction=WholesaleCashDirection[form.direction.data],
+                amount=form.amount.data,
+                currency_code=CurrencyCode[form.currency_code.data],
+                description=form.description.data,
+                request_id=form.request_id.data,
+            )
+            db.session.commit()
+            flash(
+                "Mouvement corrigé." if created else "Correction déjà enregistrée.",
+                "success" if created else "info",
+            )
+            return redirect(url_for(
+                "main_bp.wholesale_cashbook",
+                date=replacement.entry_date.isoformat(),
+            ))
+        except (CashbookEntryError, PermissionError, KeyError) as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+
+    return render_template(
+        "main/wholesale_cashbook_edit.html",
+        business=business,
+        entry=entry,
+        form=form,
+        segment="wholesale",
+        sub_segment="cashbook",
+    )
+
+
+@bp.route(
+    "/businesses/wholesale/cashbook/<int:entry_id>/reverse",
+    methods=["POST"],
+)
+@login_required
+@business_member_required
+def wholesale_cashbook_reverse(entry_id):
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        return redirect(url_for("main_bp.businesses"))
+    entry = WholesaleCashEntry.query.filter_by(
+        id=entry_id, business_id=business.id
+    ).first_or_404()
+    form = TransactionReversalForm()
+    if not form.validate_on_submit():
+        flash("Indiquez pourquoi vous supprimez ce mouvement.", "danger")
+    else:
+        try:
+            reversed_now = reverse_cashbook_entry(
+                entry=entry,
+                business=business,
+                reversed_by=current_user,
+                reason=form.reason.data,
+            )
+            db.session.commit()
+            flash(
+                "Mouvement supprimé." if reversed_now else "Mouvement déjà supprimé.",
+                "success" if reversed_now else "info",
+            )
+        except (CashbookEntryError, PermissionError) as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+    return redirect(url_for(
+        "main_bp.wholesale_cashbook", date=entry.entry_date.isoformat()
+    ))
 
 
 @bp.route("/businesses/wholesale/opening-stock", methods=["GET", "POST"])

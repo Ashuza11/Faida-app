@@ -14,7 +14,7 @@
  *   b) Local Docker + internet disconnected: server reachable but redirects → cache ✓
  */
 
-const CACHE_VERSION = 'faida-v3';
+const CACHE_VERSION = 'faida-v4';
 const OFFLINE_URL   = '/static/offline.html';
 
 // Critical assets — install FAILS if these can't be cached (offline.html must always be available)
@@ -185,9 +185,18 @@ async function syncPendingOps() {
         body:        JSON.stringify(op.data),
         credentials: 'same-origin',
       });
-      if (response.ok || response.status === 409) {
-        // 409 = duplicate (already saved) — treat as success
-        await markSynced(db, op.id);
+      if (response.status === 401) {
+        // Session expired — keep pending until the user signs in again.
+        continue;
+      }
+      const contentType = response.headers.get('content-type') || '';
+      if (response.ok && contentType.includes('application/json')) {
+        const payload = await response.json();
+        if (['created', 'duplicate', 'corrected', 'reversed'].includes(payload.status)) {
+          await markSynced(db, op.id);
+        } else {
+          await markFailed(db, op.id);
+        }
       } else if (response.status >= 400 && response.status < 500) {
         // 4xx = bad data — retrying will never work, mark as permanently failed
         console.warn('[SW] Sync op permanently failed (HTTP', response.status, '):', op.type, op.id);
@@ -206,6 +215,7 @@ function endpointFor(type) {
     sale:           '/api/v1/sales',
     stock_purchase: '/api/v1/stock-purchases',
     cash_outflow:   '/api/v1/cash-outflows',
+    wholesale_cash_entry: '/api/v1/wholesale-cash-entries',
   };
   return map[type] || '/api/v1/health';
 }

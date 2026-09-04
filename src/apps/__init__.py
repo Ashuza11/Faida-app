@@ -1,7 +1,7 @@
 from .config import DebugConfig
 import logging
 import os
-from flask import Flask, app, send_file, make_response
+from flask import Flask, app, jsonify, request, send_file, make_response
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_login import LoginManager
@@ -44,6 +44,13 @@ def create_app(config_object=DebugConfig):
         except Exception:
             db.session.remove()
             return None
+
+    @login_manager.unauthorized_handler
+    def unauthorized():
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Reconnectez-vous pour synchroniser."}), 401
+        from flask import redirect, url_for
+        return redirect(url_for(login_manager.login_view, next=request.url))
 
     # --- Register Blueprints ---
     with app.app_context():

@@ -25,6 +25,7 @@ import sqlalchemy.orm as so
 from decimal import Decimal
 import re
 import secrets
+from uuid import uuid4
 
 
 # ===========================================
@@ -1281,6 +1282,15 @@ class WholesaleCashEntry(db.Model):
     recorded_by_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False, index=True
     )
+    request_id: so.Mapped[str] = so.mapped_column(
+        sa.String(36), nullable=False, default=lambda: str(uuid4())
+    )
+    corrected_from_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("wholesale_cash_entries.id"),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
     entry_date: so.Mapped[date] = so.mapped_column(
         sa.Date, nullable=False, default=date.today, index=True
     )
@@ -1292,6 +1302,20 @@ class WholesaleCashEntry(db.Model):
         sa.Enum(CurrencyCode, native_enum=False, length=3), nullable=False
     )
     description: so.Mapped[str] = so.mapped_column(sa.String(160), nullable=False)
+    status: so.Mapped[TransactionStatus] = so.mapped_column(
+        sa.Enum(TransactionStatus, native_enum=False, length=16),
+        nullable=False,
+        default=TransactionStatus.ACTIVE,
+    )
+    reversed_at: so.Mapped[Optional[datetime]] = so.mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    reversed_by_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=True
+    )
+    reversal_reason: so.Mapped[Optional[str]] = so.mapped_column(
+        sa.String(255), nullable=True
+    )
     created_at: so.Mapped[datetime] = so.mapped_column(
         sa.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -1300,11 +1324,27 @@ class WholesaleCashEntry(db.Model):
     )
 
     business: so.Mapped[Business] = so.relationship()
-    recorded_by: so.Mapped[User] = so.relationship()
+    recorded_by: so.Mapped[User] = so.relationship(foreign_keys=[recorded_by_id])
+    reversed_by: so.Mapped[Optional[User]] = so.relationship(
+        foreign_keys=[reversed_by_id]
+    )
+    corrected_from: so.Mapped[Optional["WholesaleCashEntry"]] = so.relationship(
+        remote_side="WholesaleCashEntry.id",
+        foreign_keys=[corrected_from_id],
+        back_populates="replacement",
+    )
+    replacement: so.Mapped[Optional["WholesaleCashEntry"]] = so.relationship(
+        foreign_keys="WholesaleCashEntry.corrected_from_id",
+        back_populates="corrected_from",
+        uselist=False,
+    )
 
     __table_args__ = (
         sa.CheckConstraint("amount > 0", name="_wholesale_cash_positive_amount_ck"),
         sa.Index("ix_wholesale_cash_business_date", "business_id", "entry_date"),
+        sa.UniqueConstraint(
+            "business_id", "request_id", name="_wholesale_cash_business_request_uc"
+        ),
     )
 
 

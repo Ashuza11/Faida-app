@@ -11,6 +11,7 @@ from wtforms import (
     FormField,
     TextAreaField,
     DateField,
+    HiddenField,
 )
 from wtforms.validators import (
     Email,
@@ -484,6 +485,7 @@ class CashOutflowForm(FlaskForm):
 
 
 class WholesaleCashEntryForm(FlaskForm):
+    request_id = HiddenField()
     description = StringField(
         "Libellé",
         validators=[

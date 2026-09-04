@@ -20,6 +20,7 @@
     sale: '/api/v1/sales',
     stock_purchase: '/api/v1/stock-purchases',
     cash_outflow: '/api/v1/cash-outflows',
+    wholesale_cash_entry: '/api/v1/wholesale-cash-entries',
   };
 
   // ── State ─────────────────────────────────────────────────────────────────
@@ -99,8 +100,32 @@
     });
   }
 
+  function getVisibleQueuedOps() {
+    return initDB().then(function (d) {
+      return new Promise(function (resolve, reject) {
+        const req = d.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getAll();
+        req.onsuccess = function (e) {
+          resolve(e.target.result.filter(function (op) {
+            return op.status === 'pending' || op.status === 'failed';
+          }));
+        };
+        req.onerror = function (e) { reject(e.target.error); };
+      });
+    });
+  }
+
   function markOpSynced(id) { return _setStatus(id, 'synced'); }
   function markOpFailed(id) { return _setStatus(id, 'failed'); }
+
+  function deleteQueuedOp(id) {
+    return initDB().then(function (d) {
+      return new Promise(function (resolve, reject) {
+        const req = d.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).delete(id);
+        req.onsuccess = function () { resolve(); };
+        req.onerror = function (e) { reject(e.target.error); };
+      });
+    });
+  }
 
   function _setStatus(id, status) {
     return initDB().then(function (d) {
@@ -208,7 +233,7 @@
   function manualSync() {
     getPendingOps().then(function (ops) {
       if (ops.length === 0) { hideToast(); return; }
-      var synced = 0, failed = 0;
+      var synced = 0, failed = 0, needsLogin = false;
       var promises = ops.map(function (op) {
         return fetch(ENDPOINTS[op.type], {
           method: 'POST',
@@ -217,15 +242,31 @@
           credentials: 'same-origin',
         })
           .then(function (r) {
-            if (r.ok || r.status === 409) return markOpSynced(op.id).then(function () { synced++; });
-            return markOpFailed(op.id).then(function () { failed++; });
+            if (r.status === 401) { needsLogin = true; return; }
+            var contentType = r.headers.get('content-type') || '';
+            if (r.ok && contentType.indexOf('application/json') !== -1) {
+              return r.json().then(function (payload) {
+                if (['created', 'duplicate', 'corrected', 'reversed'].indexOf(payload.status) !== -1) {
+                  return markOpSynced(op.id).then(function () { synced++; });
+                }
+                return markOpFailed(op.id).then(function () { failed++; });
+              });
+            }
+            if (r.status >= 400 && r.status < 500) {
+              return markOpFailed(op.id).then(function () { failed++; });
+            }
+            failed++;
           })
           .catch(function () { failed++; });
       });
       Promise.all(promises).then(function () {
-        if (failed > 0) showSyncErrorToast(failed);
+        if (needsLogin) showToast('🔐 Reconnectez-vous pour synchroniser.', '#fb6340', 6000);
+        else if (failed > 0) showSyncErrorToast(failed);
         else if (synced > 0) showSyncedToast(synced);
         else hideToast();
+        if (synced > 0 && window.location.pathname === '/businesses/wholesale/cashbook') {
+          setTimeout(function () { window.location.reload(); }, 900);
+        }
       });
     });
   }
@@ -261,6 +302,9 @@
       loadPendingStocks();
     } else if (path === '/enregistrer_sortie') {
       interceptCashOutflowForm();
+    } else if (path === '/businesses/wholesale/cashbook') {
+      interceptWholesaleCashbookForm();
+      loadPendingWholesaleCashEntries();
     }
   });
 
@@ -503,6 +547,221 @@
     });
   }
 
+  // ── Wholesale Cashbook ───────────────────────────────────────────────────
+  function interceptWholesaleCashbookForm() {
+    var form = document.getElementById('wholesale-cashbook-form');
+    if (!form) return;
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (form.dataset.submitting === 'true') return;
+
+      var fd = new FormData(form);
+      var amount = parseFloat(fd.get('amount'));
+      var data = {
+        local_id: fd.get('request_id'),
+        request_id: fd.get('request_id'),
+        business_id: parseInt(form.dataset.businessId),
+        description: (fd.get('description') || '').trim(),
+        direction: fd.get('direction'),
+        amount: amount,
+        currency_code: fd.get('currency_code'),
+        entry_date: fd.get('entry_date'),
+      };
+      if (!data.request_id || !data.description || !amount || amount <= 0 ||
+          !data.direction || !data.currency_code || !data.entry_date) {
+        showLocalFlash('Veuillez remplir les champs obligatoires.', 'warning');
+        return;
+      }
+
+      setCashbookSubmitting(form, true);
+      if (!navigator.onLine) {
+        queueWholesaleCashEntry(form, data);
+        return;
+      }
+
+      var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      var timeout = controller ? setTimeout(function () { controller.abort(); }, 12000) : null;
+      fetch(ENDPOINTS.wholesale_cash_entry, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        body: JSON.stringify(data),
+        credentials: 'same-origin',
+        signal: controller ? controller.signal : undefined,
+      })
+        .then(function (response) {
+          if (timeout) clearTimeout(timeout);
+          return response.json().catch(function () { return {}; }).then(function (payload) {
+            if (response.status === 401) {
+              return queueWholesaleCashEntry(form, data, true);
+            }
+            if (!response.ok) {
+              throw new Error(payload.error || 'Le mouvement n\'a pas été enregistré.');
+            }
+            showToast('✅ Mouvement enregistré', '#2dce89', 2500);
+            window.location.href = form.action;
+          });
+        })
+        .catch(function (error) {
+          if (timeout) clearTimeout(timeout);
+          if (error.name === 'AbortError' || !navigator.onLine || error instanceof TypeError) {
+            queueWholesaleCashEntry(form, data);
+            return;
+          }
+          setCashbookSubmitting(form, false);
+          showLocalFlash(error.message, 'danger');
+        });
+    });
+  }
+
+  function setCashbookSubmitting(form, submitting) {
+    form.dataset.submitting = submitting ? 'true' : 'false';
+    var btn = form.querySelector('[type="submit"]');
+    if (!btn) return;
+    if (!btn.dataset.origText) btn.dataset.origText = btn.innerHTML || 'Enregistrer';
+    btn.disabled = submitting;
+    btn.innerHTML = submitting
+      ? '<span class="spinner-border spinner-border-sm mr-1"></span> En cours…'
+      : btn.dataset.origText;
+  }
+
+  function queueWholesaleCashEntry(form, data, needsLogin) {
+    queueOp('wholesale_cash_entry', data)
+      .then(function (queueId) {
+        showSavedOfflineToast();
+        if (needsLogin) showToast('🔐 Reconnectez-vous pour synchroniser.', '#fb6340', 6000);
+        renderPendingWholesaleCashEntry({ id: queueId, data: data });
+        form.reset();
+        var requestId = form.querySelector('[name="request_id"]');
+        if (requestId) requestId.value = generateUUID();
+        setCashbookSubmitting(form, false);
+      })
+      .catch(function (error) {
+        setCashbookSubmitting(form, false);
+        if (error && error.name === 'ConstraintError') {
+          showToast('⏳ Ce mouvement est déjà en attente.', '#fb6340', 4000);
+        } else {
+          showLocalFlash('Sauvegarde locale impossible. Réessayez.', 'danger');
+        }
+      });
+  }
+
+  function loadPendingWholesaleCashEntries() {
+    var form = document.getElementById('wholesale-cashbook-form');
+    if (!form) return;
+    var businessId = parseInt(form.dataset.businessId);
+    var selectedDate = form.querySelector('[name="entry_date"]').value;
+    getVisibleQueuedOps().then(function (ops) {
+      ops.filter(function (op) {
+        return op.type === 'wholesale_cash_entry' &&
+          parseInt(op.data.business_id) === businessId &&
+          op.data.entry_date === selectedDate;
+      }).forEach(function (op) {
+        var confirmed = document.querySelector(
+          '[data-cashbook-request-id="' + op.data.request_id + '"]'
+        );
+        if (confirmed) {
+          markOpSynced(op.id);
+          return;
+        }
+        renderPendingWholesaleCashEntry(op);
+      });
+    });
+  }
+
+  function renderPendingWholesaleCashEntry(op) {
+    var data = op.data;
+    var pendingId = data.request_id;
+    if (document.querySelector('[data-pending-id="' + pendingId + '"]')) return;
+    var isInflow = data.direction === 'INFLOW';
+    var needsReview = op.status === 'failed';
+    var queueLabel = needsReview ? 'À vérifier' : 'En attente';
+    var amount = (data.currency_code === 'USD' ? '$' : '') +
+      Number(data.amount).toLocaleString('fr-CD', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+      (data.currency_code === 'CDF' ? ' FC' : '');
+    applyPendingCashbookTotal(data, 1);
+
+    var cards = document.getElementById('cashbook-pending-cards');
+    if (cards) {
+      var card = document.createElement('div');
+      card.dataset.pendingId = pendingId;
+      card.className = 'cashbook-entry rounded border p-3 mb-3';
+      if (!isInflow) card.classList.add('outflow');
+      card.innerHTML = '<div class="d-flex justify-content-between"><strong>' + esc(data.description) +
+        '</strong><span class="badge ' + (needsReview ? 'badge-danger' : 'badge-warning') + '">' + queueLabel + '</span></div>' +
+        '<div class="h2 my-2 ' + (isInflow ? 'text-success' : 'text-danger') + '">' + esc(amount) + '</div>' +
+        '<button type="button" class="btn btn-sm btn-outline-danger" data-remove-pending>Supprimer</button>';
+      cards.appendChild(card);
+      bindPendingRemoval(card, op.id, data);
+    }
+
+    var tbody = document.getElementById('cashbook-entry-tbody');
+    if (tbody) {
+      var empty = tbody.querySelector('.cashbook-empty-row');
+      if (empty) empty.remove();
+      var row = document.createElement('tr');
+      row.dataset.pendingId = pendingId;
+      row.style.background = '#fffbea';
+      row.innerHTML = '<td><strong>' + esc(data.description) + '</strong></td>' +
+        '<td><span class="badge ' + (needsReview ? 'badge-danger' : 'badge-warning') + '">' + queueLabel + '</span></td>' +
+        '<td class="font-weight-bold ' + (isInflow ? 'text-success' : 'text-danger') + '">' + esc(amount) + '</td>' +
+        '<td>' + esc(currentUserName()) + '</td>' +
+        '<td><button type="button" class="btn btn-sm btn-outline-danger" data-remove-pending>Supprimer</button></td>';
+      tbody.insertBefore(row, tbody.firstChild);
+      bindPendingRemoval(row, op.id, data);
+    }
+  }
+
+  function bindPendingRemoval(element, queueId, data) {
+    var button = element.querySelector('[data-remove-pending]');
+    if (!button || queueId === null) return;
+    button.addEventListener('click', function () {
+      if (!window.confirm('Supprimer ce mouvement en attente ?')) return;
+      deleteQueuedOp(queueId).then(function () {
+        applyPendingCashbookTotal(data, -1);
+        document.querySelectorAll('[data-pending-id="' + element.dataset.pendingId + '"]').forEach(function (node) { node.remove(); });
+        if (!document.querySelector('[data-pending-id]')) {
+          var note = document.getElementById('cashbook-pending-conversion-note');
+          if (note) note.classList.add('d-none');
+        }
+        showToast('Mouvement en attente supprimé.', '#5e72e4', 3000);
+      });
+    });
+  }
+
+  function applyPendingCashbookTotal(data, multiplier) {
+    var currency = data.currency_code;
+    var amount = Number(data.amount) * multiplier;
+    var key = data.direction === 'INFLOW' ? 'inflow' : 'outflow';
+    var valueNode = document.getElementById('cashbook-' + currency + '-' + key);
+    var balanceNode = document.getElementById('cashbook-' + currency + '-balance');
+    if (!valueNode || !balanceNode || !Number.isFinite(amount)) return;
+    var value = Number(valueNode.dataset.value || 0) + amount;
+    var balanceDelta = (key === 'inflow' ? amount : -amount);
+    var balance = Number(balanceNode.dataset.value || 0) + balanceDelta;
+    valueNode.dataset.value = String(value);
+    balanceNode.dataset.value = String(balance);
+    valueNode.textContent = cashbookMoney(value, currency);
+    balanceNode.textContent = cashbookMoney(balance, currency);
+    var status = document.getElementById('cashbook-' + currency + '-status');
+    if (status) {
+      var balanced = Math.abs(balance) < 0.005;
+      status.textContent = balanced ? 'Équilibré' : 'Écart';
+      status.className = 'badge ' + (balanced ? 'badge-success' : 'badge-warning');
+    }
+    var note = document.getElementById('cashbook-pending-conversion-note');
+    if (note) note.classList.remove('d-none');
+  }
+
+  function cashbookMoney(value, currency) {
+    var formatted = Number(value).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    return currency === 'USD' ? '$' + formatted : formatted + ' FC';
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
   function generateUUID() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
@@ -529,5 +788,5 @@
     }, 6000);
   }
 
-  window._FaidaOffline = { getPendingOps, countPending, manualSync };
+  window._FaidaOffline = { getPendingOps, getVisibleQueuedOps, countPending, manualSync };
 })();

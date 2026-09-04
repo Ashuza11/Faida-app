@@ -27,6 +27,9 @@ from apps.models import (
     PricePreset,
     User,
     SmsIngestion,
+    CurrencyCode,
+    WholesaleCashDirection,
+    WholesaleCashEntry,
 )
 from apps.businesses import (
     businesses_for_user,
@@ -40,13 +43,24 @@ from apps.purchases import record_retail_purchase, record_wholesale_purchase
 from apps.dates import business_local_date
 from apps.sales import record_wholesale_sale
 from apps.client_identities import ClientIdentityError, resolve_sms_sale_client
+from apps.wholesale_cashbook import (
+    CashbookEntryError,
+    correct_cashbook_entry,
+    record_cashbook_entry,
+    reverse_cashbook_entry,
+)
 
 
 @api_bp.before_request
 def protect_wholesale_from_legacy_sync_api():
     """Do not let legacy FC sync endpoints mutate an active USD ledger."""
     if request.endpoint in {
-        "api_bp.health", "api_bp.android_businesses", "api_bp.sms_ingest"
+        "api_bp.health",
+        "api_bp.android_businesses",
+        "api_bp.sms_ingest",
+        "api_bp.create_wholesale_cash_entry",
+        "api_bp.correct_wholesale_cash_entry",
+        "api_bp.reverse_wholesale_cash_entry",
     } or not current_user.is_authenticated:
         return None
     business = get_current_business()
@@ -60,6 +74,121 @@ def protect_wholesale_from_legacy_sync_api():
 def health():
     """Tiny response used by faida-offline.js to verify connectivity."""
     return jsonify({"status": "ok"}), 200
+
+
+def _cashbook_business(payload):
+    try:
+        business = resolve_business_for_user(
+            user=current_user, business_id=payload.get("business_id")
+        )
+    except (PermissionError, TypeError, ValueError) as error:
+        raise PermissionError("Vous n'avez pas accès à cette caisse.") from error
+    if business is None or business.business_type != BusinessType.WHOLESALE:
+        raise CashbookEntryError("Choisissez le mode grossiste concerné.")
+    return business
+
+
+def _cashbook_values(payload):
+    try:
+        return {
+            "direction": WholesaleCashDirection[str(payload["direction"]).upper()],
+            "amount": payload["amount"],
+            "currency_code": CurrencyCode[str(payload["currency_code"]).upper()],
+            "description": payload["description"],
+            "entry_date": date.fromisoformat(str(payload["entry_date"])),
+        }
+    except (KeyError, TypeError, ValueError) as error:
+        raise CashbookEntryError("Les informations du mouvement sont incomplètes.") from error
+
+
+@api_bp.route("/wholesale-cash-entries", methods=["POST"])
+@login_required
+def create_wholesale_cash_entry():
+    payload = request.get_json(silent=True) or {}
+    try:
+        business = _cashbook_business(payload)
+        entry, created = record_cashbook_entry(
+            business=business,
+            recorded_by=current_user,
+            request_id=payload.get("request_id") or payload.get("local_id"),
+            **_cashbook_values(payload),
+        )
+        db.session.commit()
+        return jsonify({
+            "status": "created" if created else "duplicate",
+            "entry_id": entry.id,
+            "request_id": entry.request_id,
+        }), 201 if created else 200
+    except PermissionError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 403
+    except CashbookEntryError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
+
+
+@api_bp.route(
+    "/wholesale-cash-entries/<int:entry_id>/corrections", methods=["POST"]
+)
+@login_required
+def correct_wholesale_cash_entry(entry_id):
+    payload = request.get_json(silent=True) or {}
+    try:
+        business = _cashbook_business(payload)
+        entry = WholesaleCashEntry.query.filter_by(
+            id=entry_id, business_id=business.id
+        ).first()
+        if entry is None:
+            return jsonify({"error": "Ce mouvement n'existe plus."}), 404
+        replacement, created = correct_cashbook_entry(
+            entry=entry,
+            business=business,
+            corrected_by=current_user,
+            request_id=payload.get("request_id") or payload.get("local_id"),
+            **_cashbook_values(payload),
+        )
+        db.session.commit()
+        return jsonify({
+            "status": "corrected" if created else "duplicate",
+            "entry_id": replacement.id,
+            "request_id": replacement.request_id,
+        }), 201 if created else 200
+    except PermissionError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 403
+    except CashbookEntryError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 409
+
+
+@api_bp.route("/wholesale-cash-entries/<int:entry_id>/reverse", methods=["POST"])
+@login_required
+def reverse_wholesale_cash_entry(entry_id):
+    payload = request.get_json(silent=True) or {}
+    try:
+        business = _cashbook_business(payload)
+        entry = WholesaleCashEntry.query.filter_by(
+            id=entry_id, business_id=business.id
+        ).first()
+        if entry is None:
+            return jsonify({"error": "Ce mouvement n'existe plus."}), 404
+        reversed_now = reverse_cashbook_entry(
+            entry=entry,
+            business=business,
+            reversed_by=current_user,
+            reason=payload.get("reason") or "Supprimé par l'utilisateur",
+        )
+        db.session.commit()
+        return jsonify({
+            "status": "reversed" if reversed_now else "duplicate",
+            "entry_id": entry.id,
+        }), 200
+    except PermissionError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 403
+    except CashbookEntryError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 409
 
 
 # ── Stock levels ──────────────────────────────────────────────────────────────

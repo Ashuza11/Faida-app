@@ -1,0 +1,27 @@
+{% extends "layouts/base.html" %}
+{% block title %}Modifier mouvement · Caisse{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4 pb-5">
+  <div class="d-flex justify-content-between align-items-start mb-4" style="gap:12px;">
+    <div><h1 class="mb-1">Modifier le mouvement</h1><small class="text-muted">L'ancienne version restera dans l'historique.</small></div>
+    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('main_bp.wholesale_cashbook', date=entry.entry_date.isoformat()) }}">Retour</a>
+  </div>
+  <div class="row justify-content-center"><div class="col-12 col-lg-7">
+    <div class="card shadow"><div class="card-body">
+      <form method="post">
+        {{ form.hidden_tag() }}
+        <div class="form-group">{{ form.description.label(class="form-control-label") }}{{ form.description(class="form-control") }}{% for error in form.description.errors %}<small class="text-danger d-block">{{ error }}</small>{% endfor %}</div>
+        <div class="row">
+          <div class="col-6 form-group">{{ form.direction.label(class="form-control-label") }}{{ form.direction(class="form-control") }}</div>
+          <div class="col-6 form-group">{{ form.currency_code.label(class="form-control-label") }}{{ form.currency_code(class="form-control") }}</div>
+        </div>
+        <div class="row">
+          <div class="col-12 col-sm-6 form-group">{{ form.amount.label(class="form-control-label") }}{{ form.amount(class="form-control", inputmode="decimal") }}{% for error in form.amount.errors %}<small class="text-danger d-block">{{ error }}</small>{% endfor %}</div>
+          <div class="col-12 col-sm-6 form-group">{{ form.entry_date.label(class="form-control-label") }}{{ form.entry_date(class="form-control") }}</div>
+        </div>
+        {{ form.submit(class="btn btn-primary btn-block", value="Enregistrer") }}
+      </form>
+    </div></div>
+  </div></div>
+</div>
+{% endblock %}
