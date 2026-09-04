@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -17,6 +17,7 @@ from apps.models import (
     User,
 )
 from apps.purchases import (
+    build_wholesale_purchase_groups,
     delete_retail_purchase,
     record_retail_purchase,
     record_wholesale_purchase,
@@ -24,6 +25,7 @@ from apps.purchases import (
     replace_wholesale_purchase,
     reverse_wholesale_purchase,
 )
+from apps.dates import business_local_date
 from apps.sales import record_wholesale_sale
 from apps.wholesale_reports import build_wholesale_daily_report
 
@@ -293,6 +295,9 @@ def test_wholesale_purchase_route_records_selected_preset(app, session):
     )
 
     assert response.status_code == 302
+    assert response.location.endswith(
+        "/businesses/wholesale/purchases?date=2026-08-18"
+    )
     purchase = StockPurchase.query.one()
     assert purchase.price_preset_id == preset.id
     assert purchase.actual_total_cost == Decimal("100.000000000000")
@@ -302,7 +307,7 @@ def test_wholesale_purchase_route_records_selected_preset(app, session):
     assert stock.balance == Decimal("10650")
     assert stock.inventory_value == Decimal("100.000000000000")
 
-    page = client.get("/businesses/wholesale/purchases")
+    page = client.get(response.location)
     assert b"Annuler achat" in page.data
     assert "retirera ses unités et son coût".encode() in page.data
 
@@ -482,6 +487,102 @@ def test_wholesale_purchase_route_accepts_custom_total_paid(app, session):
     purchase = StockPurchase.query.one()
     assert purchase.actual_total_cost == Decimal("100.000000000000")
     assert purchase.buying_price_at_purchase == Decimal("0.009389671362")
+
+
+def test_wholesale_purchase_groups_sum_active_rows_by_network(session):
+    owner = make_owner(session, 632)
+    business = approved_wholesale(session, owner, "Grouped purchases")
+    first = record_wholesale_purchase(
+        business=business, purchased_by=owner, network=NetworkType.AIRTEL,
+        quantity=1000, custom_unit_cost=Decimal("0.00935"),
+    )
+    second = record_wholesale_purchase(
+        business=business, purchased_by=owner, network=NetworkType.AIRTEL,
+        quantity=500, custom_unit_cost=Decimal("0.00935"),
+    )
+    reversed_purchase = record_wholesale_purchase(
+        business=business, purchased_by=owner, network=NetworkType.ORANGE,
+        quantity=100, custom_unit_cost=Decimal("0.00950"),
+    )
+    session.flush()
+    reverse_wholesale_purchase(
+        purchase=reversed_purchase,
+        business=business,
+        reversed_by=owner,
+        reason="Saisie incorrecte",
+    )
+
+    groups = build_wholesale_purchase_groups(
+        [reversed_purchase, second, first]
+    )
+
+    assert len(groups) == 2
+    airtel = next(group for group in groups if group["network"] == NetworkType.AIRTEL)
+    assert airtel["purchases"] == [second, first]
+    assert airtel["active_purchase_count"] == 2
+    assert airtel["total_units"] == 1500
+    assert airtel["total_cost"] == Decimal("14.025000000000")
+    assert airtel["display_total_cost"] == Decimal("14.03")
+    assert airtel["average_unit_cost"] == Decimal("0.009350000")
+    orange = next(group for group in groups if group["network"] == NetworkType.ORANGE)
+    assert orange["active_purchase_count"] == 0
+    assert orange["total_units"] == 0
+    assert orange["total_cost"] == 0
+
+
+def test_wholesale_purchases_page_groups_and_filters_by_date(app, session):
+    owner = make_owner(session, 633)
+    business = approved_wholesale(session, owner, "Daily purchases")
+    today = business_local_date()
+    yesterday = today - timedelta(days=1)
+    first = record_wholesale_purchase(
+        business=business, purchased_by=owner, network=NetworkType.AIRTEL,
+        quantity=1000, custom_unit_cost=Decimal("0.00935"),
+        purchase_date=today,
+    )
+    second = record_wholesale_purchase(
+        business=business, purchased_by=owner, network=NetworkType.AIRTEL,
+        quantity=500, custom_unit_cost=Decimal("0.00935"),
+        purchase_date=today,
+    )
+    old = record_wholesale_purchase(
+        business=business, purchased_by=owner, network=NetworkType.ORANGE,
+        quantity=100, custom_unit_cost=Decimal("0.00950"),
+        purchase_date=yesterday,
+    )
+    other_owner = make_owner(session, 634)
+    other_business = approved_wholesale(session, other_owner, "Other purchases")
+    other = record_wholesale_purchase(
+        business=other_business, purchased_by=other_owner,
+        network=NetworkType.AIRTEL, quantity=200,
+        custom_unit_cost=Decimal("0.00935"), purchase_date=today,
+    )
+    session.commit()
+    browser = app.test_client()
+    with browser.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    current_page = browser.get("/businesses/wholesale/purchases")
+    current_html = current_page.data.decode()
+    assert current_page.status_code == 200
+    assert current_html.count('data-purchase-group="AIRTEL"') == 1
+    assert "2 achats" in current_html
+    assert ">1500</strong>" in current_html
+    assert ">$14.03</strong>" in current_html
+    assert f'data-purchase-id="{first.id}"' in current_html
+    assert f'data-purchase-id="{second.id}"' in current_html
+    assert f'data-purchase-id="{old.id}"' not in current_html
+    assert f'data-purchase-id="{other.id}"' not in current_html
+
+    old_page = browser.get(
+        f"/businesses/wholesale/purchases?date={yesterday.isoformat()}"
+    )
+    old_html = old_page.data.decode()
+    assert old_page.status_code == 200
+    assert f'data-purchase-id="{old.id}"' in old_html
+    assert f'data-purchase-id="{first.id}"' not in old_html
 
 
 def test_retail_purchase_replace_and_delete_preserve_inventory(session):

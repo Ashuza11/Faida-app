@@ -1,6 +1,6 @@
 """Business-scoped stock purchase transactions."""
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import date, datetime, timezone
 
 from apps import db
@@ -23,6 +23,38 @@ from apps.money import as_decimal, quantize_unit_price
 from apps.pricing import calculate_preset_cost
 from apps.user_messages import user_message
 from apps.wholesale_costs import require_plausible_wholesale_unit_cost
+
+
+def build_wholesale_purchase_groups(purchases) -> list[dict]:
+    """Group one day's purchases by network without hiding audit rows."""
+    groups = {}
+    for purchase in purchases:
+        group = groups.setdefault(
+            purchase.network,
+            {
+                "network": purchase.network,
+                "purchases": [],
+                "active_purchase_count": 0,
+                "total_units": 0,
+                "total_cost": Decimal("0"),
+            },
+        )
+        group["purchases"].append(purchase)
+        if purchase.status == TransactionStatus.ACTIVE:
+            group["active_purchase_count"] += 1
+            group["total_units"] += purchase.amount_purchased
+            group["total_cost"] += purchase.actual_total_cost
+
+    for group in groups.values():
+        group["display_total_cost"] = group["total_cost"].quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        group["average_unit_cost"] = (
+            group["total_cost"] / group["total_units"]
+            if group["total_units"]
+            else Decimal("0")
+        )
+    return list(groups.values())
 
 
 def record_wholesale_purchase(

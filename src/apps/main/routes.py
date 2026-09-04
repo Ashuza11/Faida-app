@@ -121,6 +121,7 @@ from apps.businesses import (
     resolve_business_for_user,
 )
 from apps.purchases import (
+    build_wholesale_purchase_groups,
     delete_retail_purchase,
     record_retail_purchase,
     record_wholesale_purchase,
@@ -634,6 +635,9 @@ def wholesale_purchases():
     if business.owner_user_id != current_user.id:
         abort(403)
 
+    date_context = get_date_context()
+    selected_date = date_context["selected_date"]
+
     presets = (
         PricePreset.query.filter_by(
             business_id=business.id,
@@ -649,7 +653,7 @@ def wholesale_purchases():
         for preset in presets
     ] + [("custom", "Prix personnalisé")]
     if request.method == "GET":
-        form.purchase_date.data = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
+        form.purchase_date.data = selected_date
 
     if form.validate_on_submit():
         try:
@@ -666,7 +670,7 @@ def wholesale_purchases():
             else:
                 preset_id = int(form.price_choice.data.removeprefix("preset:"))
                 selected_preset = db.session.get(PricePreset, preset_id)
-            record_wholesale_purchase(
+            purchase = record_wholesale_purchase(
                 business=business,
                 purchased_by=current_user,
                 network=network,
@@ -678,14 +682,20 @@ def wholesale_purchases():
             )
             db.session.commit()
             flash("Achat enregistré.", "success")
-            return redirect(url_for("main_bp.wholesale_purchases"))
+            return redirect(url_for(
+                "main_bp.wholesale_purchases",
+                date=purchase.purchase_date.isoformat(),
+            ))
         except (ValueError, PermissionError) as error:
             db.session.rollback()
             flash(str(error), "danger")
 
     purchases = (
         StockPurchase.query.join(Stock)
-        .filter(Stock.business_id == business.id)
+        .filter(
+            Stock.business_id == business.id,
+            StockPurchase.purchase_date == selected_date,
+        )
         .order_by(StockPurchase.created_at.desc())
         .all()
     )
@@ -704,7 +714,9 @@ def wholesale_purchases():
         "main/wholesale_purchases.html",
         business=business,
         form=form,
-        purchases=purchases,
+        purchase_groups=build_wholesale_purchase_groups(purchases),
+        selected_date=selected_date,
+        is_today=date_context["is_today"],
         preset_data=preset_data,
         reversal_form=TransactionReversalForm(),
         segment="wholesale",
@@ -777,7 +789,10 @@ def wholesale_purchase_edit(purchase_id):
             )
             db.session.commit()
             flash("Achat modifié.", "success")
-            return redirect(url_for("main_bp.wholesale_purchases"))
+            return redirect(url_for(
+                "main_bp.wholesale_purchases",
+                date=purchase.purchase_date.isoformat(),
+            ))
         except (ValueError, PermissionError) as error:
             db.session.rollback()
             flash(str(error), "danger")
@@ -795,7 +810,9 @@ def wholesale_purchase_edit(purchase_id):
         "main/wholesale_purchases.html",
         business=business,
         form=form,
-        purchases=[],
+        purchase_groups=[],
+        selected_date=purchase.purchase_date,
+        is_today=purchase.purchase_date == business_local_date(),
         editing_purchase=purchase,
         preset_data=preset_data,
         reversal_form=TransactionReversalForm(),
@@ -815,7 +832,10 @@ def reverse_wholesale_purchase_route(purchase_id):
     form = TransactionReversalForm()
     if not form.validate_on_submit():
         flash("Indiquez brièvement pourquoi vous annulez cet achat.", "danger")
-        return redirect(url_for("main_bp.wholesale_purchases"))
+        return redirect(url_for(
+            "main_bp.wholesale_purchases",
+            date=purchase.purchase_date.isoformat(),
+        ))
     try:
         reverse_wholesale_purchase(
             purchase=purchase,
@@ -828,7 +848,10 @@ def reverse_wholesale_purchase_route(purchase_id):
     except (ValueError, PermissionError) as error:
         db.session.rollback()
         flash(str(error), "danger")
-    return redirect(url_for("main_bp.wholesale_purchases"))
+    return redirect(url_for(
+        "main_bp.wholesale_purchases",
+        date=purchase.purchase_date.isoformat(),
+    ))
 
 
 def _configure_wholesale_sale_form(form, *, clients, presets):
