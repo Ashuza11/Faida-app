@@ -27,6 +27,14 @@ from apps.wholesale_costs import require_plausible_wholesale_unit_cost
 
 def build_wholesale_purchase_groups(purchases) -> list[dict]:
     """Group one day's purchases by network without hiding audit rows."""
+    daily_counters = {}
+    display_numbers = {}
+    for purchase in sorted(purchases, key=lambda row: (row.created_at, row.id)):
+        daily_counters[purchase.purchase_date] = (
+            daily_counters.get(purchase.purchase_date, 0) + 1
+        )
+        display_numbers[purchase.id] = daily_counters[purchase.purchase_date]
+
     groups = {}
     for purchase in purchases:
         group = groups.setdefault(
@@ -34,12 +42,17 @@ def build_wholesale_purchase_groups(purchases) -> list[dict]:
             {
                 "network": purchase.network,
                 "purchases": [],
+                "purchase_rows": [],
                 "active_purchase_count": 0,
                 "total_units": 0,
                 "total_cost": Decimal("0"),
             },
         )
         group["purchases"].append(purchase)
+        group["purchase_rows"].append({
+            "purchase": purchase,
+            "display_number": display_numbers[purchase.id],
+        })
         if purchase.status == TransactionStatus.ACTIVE:
             group["active_purchase_count"] += 1
             group["total_units"] += purchase.amount_purchased

@@ -1,0 +1,27 @@
+{% extends "layouts/base.html" %}
+{% block title %}Coûts grossiste à vérifier{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-4" style="gap:12px;">
+    <div><h1 class="mb-1">Coûts à vérifier</h1><small class="text-muted">Seules les marges concernées sont masquées.</small></div>
+    <a class="btn btn-outline-primary" href="{{ url_for('admin_bp.dashboard') }}">Accueil</a>
+  </div>
+  {% for row in anomalies %}
+    {% set item = row.item %}
+    <article id="item-{{ item.id }}" class="card shadow mb-3">
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between mb-2" style="gap:8px;">
+          <div><strong>Vente #{{ item.sale.id }} · {{ item.sale.client_display_name }}</strong><small class="d-block text-muted">{{ item.sale.business.name }} · {{ item.sale.sale_date.strftime('%d/%m/%Y') }}</small></div>
+          <span class="badge badge-warning">{{ item.network.value.capitalize() }}</span>
+        </div>
+        <p class="mb-2">{{ row.reason.label }}</p>
+        <small class="d-block text-muted mb-3">{{ item.quantity }} unités · Vente ${{ "{:.8f}".format(item.price_per_unit_applied) }}/u · Coût stocké ${{ "{:.8f}".format(item.cost_per_unit_snapshot) }}/u</small>
+        {% if row.suggestion %}<div class="alert alert-light border py-2">Suggestion estimée : <strong>${{ "{:.8f}".format(row.suggestion.unit_cost) }}/u</strong><small class="d-block">Source : {{ row.suggestion.source }}</small></div>{% endif %}
+        {% if row.reason.code != 'invalid_selling_price' %}<a class="btn btn-primary btn-sm" href="{{ url_for('admin_bp.repair_wholesale_sale_cost', item_id=item.id) }}">Corriger le coût</a>{% else %}<span class="text-danger small">Le prix de vente doit être vérifié avant le coût.</span>{% endif %}
+      </div>
+    </article>
+  {% else %}
+    <div class="alert alert-success">Aucun coût grossiste anormal.</div>
+  {% endfor %}
+</div>
+{% endblock %}

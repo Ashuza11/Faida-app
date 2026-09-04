@@ -50,6 +50,20 @@ def generate_wholesale_report_pdf(*, business, report) -> BytesIO:
     ])
     summary.setStyle(_table_style())
     story.extend([summary, Spacer(1, 0.5 * cm)])
+    if report["cost_anomalies"]["details"]:
+        story.append(Paragraph(
+            "Les ventes et paiements sont enregistrés. Seules les marges "
+            "suivantes nécessitent une vérification :",
+            styles["Normal"],
+        ))
+        for issue in report["cost_anomalies"]["details"]:
+            story.append(Paragraph(
+                f"Vente #{issue['sale_id']} · {issue['client_name']} · "
+                f"{issue['sale_date']:%d/%m/%Y} · "
+                f"{issue['network'].value.capitalize()} · {issue['reason']}",
+                styles["Normal"],
+            ))
+        story.append(Spacer(1, 0.4 * cm))
 
     stock_rows = [[
         "Réseau", "Ouverture", "Acheté", "Coût achat", "Vendu",

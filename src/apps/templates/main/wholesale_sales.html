@@ -59,10 +59,10 @@
     <a class="btn btn-outline-primary" href="{{ url_for('main_bp.wholesale_dashboard') }}">Accueil</a>
   </div>
   <div class="row mb-4">
-    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge des ventes {{ 'du jour' if is_today else 'du ' ~ selected_date.strftime('%d/%m/%Y') }}</small>{% if daily_report.totals.sales_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div><small class="text-danger">Un coût de stock semble incorrect.</small>{% else %}<div class="h2 {{ 'text-success' if daily_report.totals.sales_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(daily_report.totals.sales_margin) }}</div>{% endif %}</div></div></div>
-    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge du cash encaissé {{ "aujourd'hui" if is_today else 'le ' ~ selected_date.strftime('%d/%m/%Y') }}</small>{% if daily_report.totals.collected_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div><small class="text-danger">Un paiement concerne une vente au coût incorrect.</small>{% else %}<div class="h2 {{ 'text-info' if daily_report.totals.collected_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(daily_report.totals.collected_margin) }}</div>{% endif %}</div></div></div>
+    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge des ventes {{ 'du jour' if is_today else 'du ' ~ selected_date.strftime('%d/%m/%Y') }}</small>{% if daily_report.totals.sales_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div><small class="text-danger">Vente{{ 's' if daily_report.cost_anomalies.sale_ids|length != 1 }} #{{ daily_report.cost_anomalies.sale_ids|join(', #') }}</small>{% else %}<div class="h2 {{ 'text-success' if daily_report.totals.sales_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(daily_report.totals.sales_margin) }}</div>{% endif %}</div></div></div>
+    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge du cash encaissé {{ "aujourd'hui" if is_today else 'le ' ~ selected_date.strftime('%d/%m/%Y') }}</small>{% if daily_report.totals.collected_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div><small class="text-danger">Ancienne{{ 's' if daily_report.cost_anomalies.collection_sale_ids|length != 1 }} vente{{ 's' if daily_report.cost_anomalies.collection_sale_ids|length != 1 }} #{{ daily_report.cost_anomalies.collection_sale_ids|join(', #') }}</small>{% else %}<div class="h2 {{ 'text-info' if daily_report.totals.collected_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(daily_report.totals.collected_margin) }}</div>{% endif %}</div></div></div>
   </div>
-  {% if daily_report.totals.sales_margin_has_anomaly or daily_report.totals.collected_margin_has_anomaly %}<div class="alert alert-warning"><strong>Marge temporairement masquée.</strong> Un ancien coût de stock doit être vérifié. Contactez l'administrateur{% if daily_report.cost_anomalies.sale_ids %} avec les ventes #{{ daily_report.cost_anomalies.sale_ids|join(', #') }}{% endif %}.</div>{% endif %}
+  {% set cost_report = daily_report %}{% include "main/_wholesale_cost_alert.html" %}
   <div class="row">
     <div class="col-lg-5 mb-4"><div class="card shadow"><div class="card-header"><h3 class="mb-0">{{ 'Modifier la vente' if editing_sale else 'Nouvelle vente' }}</h3></div><div class="card-body">
       <form method="post">
@@ -139,7 +139,7 @@
                 <summary>Voir {{ group.sales|length }} transaction{{ 's' if group.sales|length != 1 }}</summary>
                 {% for sale in group.sales %}
                   {% set payment = group.payment_details[sale.id] %}
-                  <div class="client-transaction {% if sale.status.value == 'reversed' %}text-muted{% endif %}" data-sale-id="{{ sale.id }}">
+                  <div id="sale-{{ sale.id }}" class="client-transaction {% if sale.status.value == 'reversed' %}text-muted{% endif %}" data-sale-id="{{ sale.id }}">
                     <div class="d-flex flex-wrap justify-content-between mb-2">
                       <strong>Vente #{{ sale.id }}</strong>
                       <span>Total ${{ "{:.2f}".format(sale.total_amount_due) }} · Reçu ici ${{ "{:.2f}".format(payment.received_from_sale) }} · Payé sur la vente ${{ "{:.2f}".format(sale.cash_paid) }} · Dette ${{ "{:.2f}".format(sale.debt_amount) }}</span>

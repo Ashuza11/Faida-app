@@ -519,6 +519,7 @@ def test_wholesale_purchase_groups_sum_active_rows_by_network(session):
     assert len(groups) == 2
     airtel = next(group for group in groups if group["network"] == NetworkType.AIRTEL)
     assert airtel["purchases"] == [second, first]
+    assert [row["display_number"] for row in airtel["purchase_rows"]] == [2, 1]
     assert airtel["active_purchase_count"] == 2
     assert airtel["total_units"] == 1500
     assert airtel["total_cost"] == Decimal("14.025000000000")
@@ -573,6 +574,10 @@ def test_wholesale_purchases_page_groups_and_filters_by_date(app, session):
     assert ">$14.03</strong>" in current_html
     assert f'data-purchase-id="{first.id}"' in current_html
     assert f'data-purchase-id="{second.id}"' in current_html
+    assert "Achat #1" in current_html
+    assert "Achat #2" in current_html
+    if first.id not in {1, 2}:
+        assert f"Achat #{first.id}" not in current_html
     assert f'data-purchase-id="{old.id}"' not in current_html
     assert f'data-purchase-id="{other.id}"' not in current_html
 

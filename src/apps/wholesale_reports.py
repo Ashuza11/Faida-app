@@ -20,7 +20,10 @@ from apps.models import (
     TransactionStatus,
 )
 from apps.opening_balances import opening_quantity_for_date
-from apps.wholesale_costs import sale_item_has_cost_anomaly
+from apps.wholesale_costs import (
+    sale_item_cost_anomaly_reason,
+    sale_item_has_cost_anomaly,
+)
 
 
 ZERO = Decimal("0")
@@ -137,13 +140,18 @@ def build_wholesale_daily_report(
     )
     collected_margin = ZERO
     anomalous_collection_sale_ids = set()
+    anomalous_collection_items = {}
     for inflow in inflows:
         if inflow.sale and inflow.sale.total_amount_due:
-            if any(
-                sale_item_has_cost_anomaly(item)
-                for item in inflow.sale.sale_items
-            ):
+            unsafe_items = [
+                item for item in inflow.sale.sale_items
+                if sale_item_has_cost_anomaly(item)
+            ]
+            if unsafe_items:
                 anomalous_collection_sale_ids.add(inflow.sale.id)
+                anomalous_collection_items.update({
+                    item.id: item for item in unsafe_items
+                })
                 continue
             sale_margin = sum(
                 (_decimal(item.margin_amount) for item in inflow.sale.sale_items), ZERO
@@ -190,6 +198,30 @@ def build_wholesale_daily_report(
         or ZERO
     )
 
+    sale_item_ids_for_day = {item.id for item in anomalous_sale_items}
+    anomaly_items = {
+        item.id: item for item in anomalous_sale_items
+    }
+    anomaly_items.update(anomalous_collection_items)
+    anomaly_details = []
+    for item in sorted(
+        anomaly_items.values(),
+        key=lambda value: (value.sale.sale_date, value.sale_id, value.id),
+    ):
+        reason = sale_item_cost_anomaly_reason(item)
+        anomaly_details.append({
+            "sale_item_id": item.id,
+            "sale_id": item.sale_id,
+            "sale_date": item.sale.sale_date,
+            "client_id": item.sale.client_id,
+            "client_name": item.sale.client_display_name,
+            "network": item.network,
+            "reason_code": reason["code"],
+            "reason": reason["label"],
+            "affects_sales_margin": item.id in sale_item_ids_for_day,
+            "affects_collected_margin": item.id in anomalous_collection_items,
+        })
+
     totals = {
         "purchased": sum((row["purchased"] for row in rows.values()), ZERO),
         "purchase_cost": sum((row["purchase_cost"] for row in rows.values()), ZERO),
@@ -217,5 +249,7 @@ def build_wholesale_daily_report(
             "sale_ids": sorted({item.sale_id for item in anomalous_sale_items}),
             "networks": sorted({item.network.name for item in anomalous_sale_items}),
             "collection_sale_ids": sorted(anomalous_collection_sale_ids),
+            "all_sale_ids": sorted({detail["sale_id"] for detail in anomaly_details}),
+            "details": anomaly_details,
         },
     }

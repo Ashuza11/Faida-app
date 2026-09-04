@@ -25,7 +25,7 @@
     <div class="col-lg-8">
       <div class="card shadow mb-4"><div class="card-header"><h3 class="mb-0">Historique des ventes</h3></div><div class="table-responsive"><table class="table">
         <thead><tr><th>Date</th><th>Total</th><th>Payé</th><th>Dette</th></tr></thead><tbody>
-        {% for sale in sales %}<tr class="{% if sale.status.value == 'reversed' %}text-muted{% endif %}"><td>{{ sale.sale_date.strftime('%d/%m/%Y') }}{% if sale.status.value == 'reversed' %}<br><span class="badge badge-danger">Annulée</span>{% endif %}</td><td>${{ "{:.2f}".format(sale.total_amount_due) }}</td><td>${{ "{:.2f}".format(sale.cash_paid) }}</td><td>${{ "{:.2f}".format(sale.debt_amount) }}</td></tr>{% else %}<tr><td colspan="4" class="text-center text-muted">Aucune vente.</td></tr>{% endfor %}
+        {% for sale in sales %}<tr id="vente-{{ sale.id }}" class="{% if sale.status.value == 'reversed' %}text-muted{% endif %}"><td>{{ sale.sale_date.strftime('%d/%m/%Y') }}{% if sale.status.value == 'reversed' %}<br><span class="badge badge-danger">Annulée</span>{% endif %}</td><td>${{ "{:.2f}".format(sale.total_amount_due) }}</td><td>${{ "{:.2f}".format(sale.cash_paid) }}</td><td>${{ "{:.2f}".format(sale.debt_amount) }}</td></tr>{% else %}<tr><td colspan="4" class="text-center text-muted">Aucune vente.</td></tr>{% endfor %}
         </tbody></table></div></div>
       <div class="card shadow"><div class="card-header"><h3 class="mb-0">Historique des paiements</h3></div><div class="table-responsive"><table class="table">
         <thead><tr><th>Date</th><th>Montant</th><th>Allocations</th><th>Note / correction</th></tr></thead><tbody>

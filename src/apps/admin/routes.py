@@ -17,10 +17,16 @@ from apps.models import (
     BusinessApprovalStatus,
     BusinessType,
     User, RoleType, InviteCode, Sale, Stock,
-    StockPurchase, Client, DailyOverallReport
+    StockPurchase, Client, DailyOverallReport, SaleItem, TransactionStatus
 )
+from apps.admin.forms import HistoricalSaleCostRepairForm
 from apps.businesses import approve_wholesale_business
 from apps.decorators import platform_admin_required
+from apps.wholesale_costs import (
+    repair_historical_sale_cost,
+    sale_item_cost_anomaly_reason,
+    suggested_historical_unit_cost,
+)
 
 bp = Blueprint('admin_bp', __name__, url_prefix='/admin')
 
@@ -260,6 +266,106 @@ def approve_wholesale(business_id):
         flash(f"Le mode grossiste {business.name} est approuvé.", "success")
     return redirect(
         url_for('admin_bp.vendeur_detail', vendeur_id=business.owner_user_id)
+    )
+
+
+@bp.route('/wholesale-costs')
+@login_required
+@platform_admin_required
+def wholesale_cost_anomalies():
+    """List only active wholesale sale items whose margin facts are unsafe."""
+    candidates = (
+        SaleItem.query.join(Sale).join(Business, Sale.business_id == Business.id)
+        .filter(
+            Business.business_type == BusinessType.WHOLESALE,
+            Sale.status == TransactionStatus.ACTIVE,
+            db.or_(
+                SaleItem.cost_per_unit_snapshot <= 0,
+                SaleItem.price_per_unit_applied <= 0,
+                SaleItem.cost_per_unit_snapshot
+                > SaleItem.price_per_unit_applied * 10,
+            ),
+        )
+        .order_by(Sale.sale_date.desc(), Sale.id.desc(), SaleItem.id)
+        .all()
+    )
+    anomalies = [
+        {
+            'item': item,
+            'reason': sale_item_cost_anomaly_reason(item),
+            'suggestion': suggested_historical_unit_cost(item),
+        }
+        for item in candidates
+    ]
+    return render_template(
+        'admin/wholesale_cost_anomalies.html',
+        anomalies=anomalies,
+        segment='admin',
+        sub_segment='wholesale_costs',
+    )
+
+
+@bp.route('/wholesale-costs/<int:item_id>/repair', methods=['GET', 'POST'])
+@login_required
+@platform_admin_required
+def repair_wholesale_sale_cost(item_id):
+    item = (
+        SaleItem.query.join(Sale).join(Business, Sale.business_id == Business.id)
+        .filter(
+            SaleItem.id == item_id,
+            Business.business_type == BusinessType.WHOLESALE,
+            Sale.status == TransactionStatus.ACTIVE,
+        )
+        .first_or_404()
+    )
+    reason = sale_item_cost_anomaly_reason(item)
+    if reason is None:
+        flash("Le coût de cette vente ne nécessite plus de correction.", "info")
+        return redirect(url_for('admin_bp.wholesale_cost_anomalies'))
+
+    suggestion = suggested_historical_unit_cost(item)
+    form = HistoricalSaleCostRepairForm()
+    if request.method == 'GET' and suggestion is not None:
+        form.unit_cost.data = suggestion['unit_cost']
+        form.confidence.data = 'estimated'
+
+    if form.validate_on_submit():
+        suggested_value = suggestion['unit_cost'] if suggestion else None
+        source = (
+            suggestion['source']
+            if suggested_value == form.unit_cost.data
+            else "Coût saisi par l'administrateur"
+        )
+        try:
+            repair_historical_sale_cost(
+                item=item,
+                corrected_by=current_user,
+                unit_cost=form.unit_cost.data,
+                confidence=form.confidence.data,
+                source=source,
+                note=form.note.data,
+            )
+            db.session.commit()
+            flash(
+                "Coût corrigé. Les paiements et la dette n'ont pas été modifiés.",
+                "success",
+            )
+            return redirect(url_for(
+                'admin_bp.wholesale_cost_anomalies',
+                _anchor=f'item-{item.id}',
+            ))
+        except (ValueError, PermissionError) as error:
+            db.session.rollback()
+            flash(str(error), 'danger')
+
+    return render_template(
+        'admin/wholesale_cost_repair.html',
+        item=item,
+        reason=reason,
+        suggestion=suggestion,
+        form=form,
+        segment='admin',
+        sub_segment='wholesale_costs',
     )
 
 

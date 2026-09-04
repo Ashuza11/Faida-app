@@ -60,6 +60,12 @@
                     <span class="nav-link-text">API Android</span>
                   </a>
                 </li>
+                <li class="nav-item">
+                  <a class="nav-link {% if sub_segment == 'wholesale_costs' %}active{% endif %}" href="{{ url_for('admin_bp.wholesale_cost_anomalies') }}">
+                    <i class="fas fa-calculator"></i>
+                    <span class="nav-link-text">Coûts à vérifier</span>
+                  </a>
+                </li>
               </ul>
             </div>
           </li>

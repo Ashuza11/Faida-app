@@ -16,7 +16,7 @@
     <label class="mr-2" for="reportDate">Date</label>
     <input id="reportDate" class="form-control mr-2" type="date" name="date" value="{{ report.date.isoformat() }}" onchange="this.form.submit()">
   </form>
-  {% if report.totals.sales_margin_has_anomaly or report.totals.collected_margin_has_anomaly %}<div class="alert alert-warning"><strong>Marge temporairement masquée.</strong> Un ancien coût de stock doit être vérifié. Contactez l'administrateur{% if report.cost_anomalies.sale_ids %} avec les ventes #{{ report.cost_anomalies.sale_ids|join(', #') }}{% endif %}.</div>{% endif %}
+  {% set cost_report = report %}{% include "main/_wholesale_cost_alert.html" %}
   <div class="row">
     <div class="col-md-3"><div class="card shadow"><div class="card-body"><small>Ventes du jour</small><div class="h2">${{ "{:.2f}".format(report.totals.revenue) }}</div></div></div></div>
     <div class="col-md-3"><div class="card shadow"><div class="card-body"><small>Marge sur ventes</small>{% if report.totals.sales_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div>{% else %}<div class="h2 {{ 'text-success' if report.totals.sales_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(report.totals.sales_margin) }}</div>{% endif %}</div></div></div>

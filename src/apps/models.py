@@ -1076,6 +1076,7 @@ class Sale(db.Model):
     business_id: so.Mapped[Optional[int]] = so.mapped_column(
         sa.ForeignKey("businesses.id"), nullable=True, index=True
     )
+    business: so.Mapped[Optional[Business]] = so.relationship()
 
     # Can be linked to a registered client OR use ad-hoc name
     client_id: so.Mapped[Optional[int]] = so.mapped_column(
@@ -1199,9 +1200,56 @@ class SaleItem(db.Model):
     is_cost_estimated: so.Mapped[bool] = so.mapped_column(
         nullable=False, default=False
     )
+    cost_corrections: so.Mapped[List["WholesaleSaleCostCorrection"]] = (
+        so.relationship(back_populates="sale_item", cascade="all, delete-orphan")
+    )
 
     def __repr__(self) -> str:
         return f"<SaleItem {self.quantity}x {self.network.value}>"
+
+
+class WholesaleSaleCostCorrection(db.Model):
+    """Audit record for an administrator's historical wholesale cost repair."""
+    __tablename__ = "wholesale_sale_cost_corrections"
+
+    id: so.Mapped[int] = so.mapped_column(primary_key=True, autoincrement=True)
+    sale_item_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("sale_items.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    corrected_by_id: so.Mapped[int] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=False, index=True
+    )
+    old_unit_cost: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=False
+    )
+    new_unit_cost: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=False
+    )
+    old_total_cost: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=False
+    )
+    new_total_cost: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=False
+    )
+    old_margin: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=False
+    )
+    new_margin: so.Mapped[Decimal] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=False
+    )
+    confidence: so.Mapped[str] = so.mapped_column(sa.String(16), nullable=False)
+    source: so.Mapped[str] = so.mapped_column(sa.String(160), nullable=False)
+    note: so.Mapped[str] = so.mapped_column(sa.String(255), nullable=False)
+    created_at: so.Mapped[datetime] = so.mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    sale_item: so.Mapped[SaleItem] = so.relationship(
+        back_populates="cost_corrections"
+    )
+    corrected_by: so.Mapped[User] = so.relationship()
 
 
 # ===========================================

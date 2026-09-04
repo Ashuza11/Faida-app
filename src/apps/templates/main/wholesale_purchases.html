@@ -61,10 +61,11 @@
 
                 <details>
                   <summary>Voir {{ group.purchases|length }} transaction{{ 's' if group.purchases|length != 1 }}</summary>
-                  {% for purchase in group.purchases %}
+                  {% for row in group.purchase_rows %}
+                    {% set purchase = row.purchase %}
                     <div class="border-top pt-3 mt-3 {% if purchase.status.value == 'reversed' %}text-muted{% endif %}" data-purchase-id="{{ purchase.id }}">
                       <div class="d-flex flex-wrap justify-content-between mb-2" style="gap:8px;">
-                        <strong>Achat #{{ purchase.id }}</strong>
+                        <strong>Achat #{{ row.display_number }}</strong>
                         <span>{{ purchase.amount_purchased }} unités · ${{ "{:.2f}".format(purchase.actual_total_cost) }} · ${{ "{:.8f}".format(purchase.buying_price_at_purchase) }}/u</span>
                       </div>
                       {% if purchase.status.value == 'reversed' %}

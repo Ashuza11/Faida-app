@@ -1,0 +1,19 @@
+{% if cost_report.totals.sales_margin_has_anomaly or cost_report.totals.collected_margin_has_anomaly %}
+<div class="alert alert-warning">
+  <strong>Paiements et ventes enregistrés.</strong>
+  Seules les marges indiquées « À vérifier » sont temporairement masquées.
+  <div class="mt-2">
+    {% for issue in cost_report.cost_anomalies.details %}
+      <div class="border-top border-warning pt-2 mt-2">
+        <strong>Vente #{{ issue.sale_id }} · {{ issue.client_name }}</strong>
+        <span class="badge badge-warning ml-1">{{ issue.network.value.capitalize() }}</span>
+        <small class="d-block">{{ issue.sale_date.strftime('%d/%m/%Y') }} · {{ issue.reason }}.</small>
+        {% if issue.affects_collected_margin %}<small class="d-block">Un paiement encaissé le {{ cost_report.date.strftime('%d/%m/%Y') }} concerne cette ancienne vente.</small>{% endif %}
+        <a class="btn btn-sm btn-outline-dark mt-2" href="{{ url_for('main_bp.wholesale_sales', date=issue.sale_date.isoformat(), _anchor='sale-' ~ issue.sale_id) }}">Voir la vente</a>
+        {% if issue.client_id %}<a class="btn btn-sm btn-link mt-2" href="{{ url_for('main_bp.wholesale_client_detail', client_id=issue.client_id, _anchor='vente-' ~ issue.sale_id) }}">Voir le client</a>{% endif %}
+      </div>
+    {% endfor %}
+  </div>
+  <small class="d-block mt-3">L'administrateur doit vérifier le coût d'achat historique. N'annulez le paiement que si son montant est incorrect.</small>
+</div>
+{% endif %}

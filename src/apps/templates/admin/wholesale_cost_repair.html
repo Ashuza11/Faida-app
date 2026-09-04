@@ -1,0 +1,25 @@
+{% extends "layouts/base.html" %}
+{% block title %}Corriger le coût de la vente{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-4" style="gap:12px;">
+    <div><h1 class="mb-1">Vente #{{ item.sale.id }}</h1><small class="text-muted">{{ item.sale.client_display_name }} · {{ item.network.value.capitalize() }} · {{ item.sale.sale_date.strftime('%d/%m/%Y') }}</small></div>
+    <a class="btn btn-outline-primary" href="{{ url_for('admin_bp.wholesale_cost_anomalies') }}">Retour</a>
+  </div>
+  <div class="row justify-content-center"><div class="col-lg-7">
+    <div class="alert alert-warning"><strong>Problème détecté :</strong> {{ reason.label }}</div>
+    <div class="card shadow"><div class="card-body">
+      <p>Cette correction modifie uniquement le coût et la marge historiques. Le paiement, le montant de la vente et la dette ne changent pas.</p>
+      {% if suggestion %}<div class="alert alert-light border">Valeur suggérée : <strong>${{ "{:.12f}".format(suggestion.unit_cost) }}/u</strong><small class="d-block">{{ suggestion.source }}. Cette valeur reste estimée tant qu'une preuve d'achat ne la confirme pas.</small></div>{% else %}<div class="alert alert-info">Aucun achat ou stock d'ouverture fiable n'a été trouvé. Saisissez une valeur confirmée par les documents du vendeur.</div>{% endif %}
+      <form method="post">
+        {{ form.hidden_tag() }}
+        <div class="form-group">{{ form.unit_cost.label }}{{ form.unit_cost(class="form-control") }}</div>
+        <div class="form-group">{{ form.confidence.label }}{{ form.confidence(class="form-control") }}</div>
+        <div class="form-group">{{ form.note.label }}{{ form.note(class="form-control") }}</div>
+        {% for field, errors in form.errors.items() %}{% for error in errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}{% endfor %}
+        <button class="btn btn-primary btn-block" type="submit">Enregistrer la correction</button>
+      </form>
+    </div></div>
+  </div></div>
+</div>
+{% endblock %}
