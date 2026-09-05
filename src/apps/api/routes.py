@@ -39,6 +39,11 @@ from apps.businesses import (
 from apps.main.utils import custom_round_up, calculate_sale_total
 from apps.payments import apply_payment_to_sale
 from apps.inventory import consume_stock
+from apps.money import (
+    require_comparable_unit_prices,
+    require_ledger_amount,
+    require_quantity,
+)
 from apps.purchases import record_retail_purchase, record_wholesale_purchase
 from apps.dates import business_local_date
 from apps.sales import record_wholesale_sale
@@ -290,9 +295,7 @@ def create_sale():
             except ValueError:
                 return jsonify({"error": f"Le réseau '{network_str}' n'est pas reconnu. Sélectionnez-le de nouveau."}), 400
 
-            quantity = int(item.get("quantity", 0))
-            if quantity < 1:
-                return jsonify({"error": "La quantité doit être un nombre entier positif."}), 400
+            quantity = int(require_quantity(item.get("quantity", 0)))
 
             stock_item = Stock.query.filter_by(
                 business_id=business.id, network=network_enum
@@ -310,18 +313,29 @@ def create_sale():
             price_override = item.get("price_per_unit_applied")
             if price_override is not None:
                 try:
-                    final_unit_price = Decimal(str(price_override))
+                    final_unit_price = require_ledger_amount(
+                        price_override, label="Le prix de vente"
+                    )
                 except InvalidOperation:
                     return jsonify({"error": "Le prix unitaire saisi n'est pas valide."}), 400
             elif stock_item.selling_price_per_unit and stock_item.selling_price_per_unit > 0:
-                final_unit_price = stock_item.selling_price_per_unit
+                final_unit_price = require_ledger_amount(
+                    stock_item.selling_price_per_unit,
+                    label="Le prix de vente",
+                )
             else:
                 return jsonify({
                     "error": f"Prix introuvable pour '{network_str}'. "
                              "Définissez un prix dans le stock ou entrez-le manuellement."
                 }), 400
 
+            require_comparable_unit_prices(
+                cost=stock_item.average_cost_per_unit
+                or stock_item.buying_price_per_unit,
+                selling_price=final_unit_price,
+            )
             subtotal = (Decimal(quantity) * final_unit_price).quantize(Decimal("0.01"))
+            require_ledger_amount(subtotal, label="Le total de la vente")
             cost_per_unit, cost_total = consume_stock(
                 stock=stock_item, quantity=quantity
             )
@@ -340,10 +354,15 @@ def create_sale():
             raw_subtotals.append(subtotal)
 
         total_amount_due = calculate_sale_total(raw_subtotals)
+        require_ledger_amount(total_amount_due, label="Le total de la vente")
 
         # ── Financials ───────────────────────────────────────────────────────
         try:
-            cash_paid = Decimal(str(payload.get("cash_paid", "0")))
+            cash_paid = require_ledger_amount(
+                payload.get("cash_paid", "0"),
+                label="Le montant payé",
+                allow_zero=True,
+            )
         except InvalidOperation:
             cash_paid = Decimal("0.00")
 
@@ -379,6 +398,9 @@ def create_sale():
     except ClientIdentityError as error:
         db.session.rollback()
         return jsonify({"error": str(error)}), 409
+    except (ValueError, InvalidOperation, TypeError, OverflowError) as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"[API] Sale sync error: {e}")
@@ -473,6 +495,9 @@ def create_stock_purchase():
             "local_id":    local_id,
         }), 201
 
+    except (ValueError, InvalidOperation, TypeError, OverflowError) as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"[API] Stock purchase sync error: {e}")
@@ -507,9 +532,7 @@ def create_cash_outflow():
         amount_raw = payload.get("amount")
         if amount_raw is None:
             return jsonify({"error": "Montant manquant"}), 400
-        amount = Decimal(str(amount_raw))
-        if amount <= 0:
-            return jsonify({"error": "Le montant doit être positif"}), 400
+        amount = require_ledger_amount(amount_raw, label="Le montant")
 
         # Category — accept enum name or enum value
         category_raw = payload.get("category", "")
@@ -546,6 +569,9 @@ def create_cash_outflow():
             "local_id":   local_id,
         }), 201
 
+    except (ValueError, InvalidOperation, TypeError, OverflowError) as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"[API] Cash outflow sync error: {e}")
@@ -852,8 +878,17 @@ def _sms_create_sale(parsed, business, vendeur_id: int, authed_user):
             ),
         }), 400
 
-    unit_price = stock_item.selling_price_per_unit or Decimal("1.00")
-    subtotal = custom_round_up(Decimal(parsed.quantity) * unit_price)
+    quantity = require_quantity(parsed.quantity)
+    unit_price = require_ledger_amount(
+        stock_item.selling_price_per_unit or Decimal("1.00"),
+        label="Le prix de vente",
+    )
+    require_comparable_unit_prices(
+        cost=stock_item.average_cost_per_unit or stock_item.buying_price_per_unit,
+        selling_price=unit_price,
+    )
+    subtotal = custom_round_up(quantity * unit_price)
+    require_ledger_amount(subtotal, label="Le total de la vente")
 
     cost_per_unit, cost_total = consume_stock(
         stock=stock_item, quantity=parsed.quantity
@@ -862,7 +897,7 @@ def _sms_create_sale(parsed, business, vendeur_id: int, authed_user):
 
     sale_item = SaleItem(
         network=parsed.network,
-        quantity=parsed.quantity,
+        quantity=int(quantity),
         price_per_unit_applied=unit_price,
         subtotal=subtotal,
         cost_per_unit_snapshot=cost_per_unit,

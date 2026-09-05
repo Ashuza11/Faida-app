@@ -17,6 +17,7 @@ from apps.models import (
     WholesaleCashDirection,
     WholesaleCashEntry,
 )
+from apps.money import require_ledger_amount
 
 
 MONEY_QUANTUM = Decimal("0.01")
@@ -46,6 +47,10 @@ def _validated_values(*, direction, amount, currency_code, description, entry_da
         raise CashbookEntryError("Le montant est invalide.") from error
     if not normalized_amount.is_finite() or normalized_amount <= 0:
         raise CashbookEntryError("Le montant doit être supérieur à zéro.")
+    try:
+        require_ledger_amount(normalized_amount, label="Le montant")
+    except ValueError as error:
+        raise CashbookEntryError(str(error)) from error
     if not isinstance(direction, WholesaleCashDirection):
         raise CashbookEntryError("Choisissez entrée ou sortie.")
     if not isinstance(currency_code, CurrencyCode):
@@ -242,6 +247,10 @@ def convert_cashbook_totals(
         raise CashbookConversionError("Le taux de change est invalide.") from error
     if not rate.is_finite() or rate <= 0:
         raise CashbookConversionError("Le taux de change doit être supérieur à zéro.")
+    try:
+        require_ledger_amount(rate, label="Le taux de change")
+    except ValueError as error:
+        raise CashbookConversionError(str(error)) from error
 
     converted = {}
     for key in ("inflow", "outflow", "balance"):

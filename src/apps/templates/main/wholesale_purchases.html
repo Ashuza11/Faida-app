@@ -22,6 +22,7 @@
             <div class="alert alert-light border mt-3">
               <div>Coût unitaire affiché: <strong id="unitCostPreview">—</strong></div>
               <div>Total calculé: <strong id="totalCostPreview">—</strong></div>
+              <small id="purchaseInputWarning" class="text-danger d-none"></small>
             </div>
             <button class="btn btn-primary btn-block" type="submit">{{ 'Enregistrer' if editing_purchase else 'Acheter' }}</button>
             {% if editing_purchase %}<a class="btn btn-link btn-block" href="{{ url_for('main_bp.wholesale_purchases', date=editing_purchase.purchase_date.isoformat()) }}">Retour</a>{% endif %}
@@ -122,6 +123,8 @@
     const option = price.options[price.selectedIndex];
     const isCustom = price.value === 'custom';
     customGroup.style.display = isCustom ? 'block' : 'none';
+    customTotal.required = isCustom;
+    customTotal.setCustomValidity('');
     const units = Number(quantity.value || 0);
     let total = isCustom ? Number(customTotal.value || 0) : units * Number(option?.dataset.unitPrice || 0);
     let unitCost = units ? total / units : 0;
@@ -131,6 +134,20 @@
     }
     document.getElementById('unitCostPreview').textContent = unitCost ? `$${unitCost.toFixed(8)}` : '—';
     document.getElementById('totalCostPreview').textContent = total ? `$${total.toFixed(2)}` : '—';
+    const warning = document.getElementById('purchaseInputWarning');
+    const referenceItem = (presets[network.value] || [])[0];
+    const reference = referenceItem
+      ? Number(referenceItem.ratio_amount && referenceItem.ratio_units
+        ? referenceItem.ratio_amount / referenceItem.ratio_units
+        : referenceItem.unit_price)
+      : 0;
+    const isImplausible = isCustom && unitCost && reference
+      && (unitCost < reference / 10 || unitCost > reference * 10);
+    warning.classList.toggle('d-none', !isImplausible);
+    warning.textContent = isImplausible
+      ? `Valeur incohérente. Prix attendu proche de $${reference.toFixed(8)}/u. Corrigez la quantité ou le montant.`
+      : '';
+    if (isImplausible) customTotal.setCustomValidity('Corrigez la quantité ou le montant total payé.');
   }
   network.addEventListener('change', loadPrices);
   price.addEventListener('change', updatePreview);

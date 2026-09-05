@@ -40,6 +40,11 @@ from apps.payments import (
 from apps.inventory import consume_stock
 from apps.opening_balances import OpeningBalanceError, save_opening_balances
 from apps.dates import business_local_date
+from apps.money import (
+    require_comparable_unit_prices,
+    require_ledger_amount,
+    require_quantity,
+)
 from apps.user_messages import user_message
 from apps.client_identities import (
     ClientIdentityError,
@@ -2602,6 +2607,8 @@ def vente_stock():
                 if not network_enum or not quantity:
                     continue
 
+                quantity = int(require_quantity(quantity))
+
                 network_type = NetworkType[network_enum]
                 price_override = item_data.form.price_per_unit_applied.data
 
@@ -2625,18 +2632,30 @@ def vente_stock():
                 # Determine Price
                 final_unit_price = None
                 if price_override is not None:
-                    final_unit_price = price_override
+                    final_unit_price = require_ledger_amount(
+                        price_override, label="Le prix de vente"
+                    )
                 elif stock_item.selling_price_per_unit and stock_item.selling_price_per_unit > 0:
-                    final_unit_price = stock_item.selling_price_per_unit
+                    final_unit_price = require_ledger_amount(
+                        stock_item.selling_price_per_unit,
+                        label="Le prix de vente",
+                    )
                 else:
                     raise ValueError(user_message(
                         f"Aucun prix de vente n'est défini pour {network_type.value}.",
                         "Configurez un prix avant d'enregistrer la vente.",
                     ))
 
+                require_comparable_unit_prices(
+                    cost=stock_item.average_cost_per_unit
+                    or stock_item.buying_price_per_unit,
+                    selling_price=final_unit_price,
+                )
+
                 # Calculate Line Totals
                 subtotal_raw = quantity * final_unit_price
                 subtotal = subtotal_raw.quantize(Decimal("0.01"))
+                require_ledger_amount(subtotal, label="Le total de la vente")
 
                 cost_per_unit, cost_total = consume_stock(
                     stock=stock_item, quantity=quantity
@@ -2664,6 +2683,7 @@ def vente_stock():
 
             # C. Finalize Financials
             total_amount_due = calculate_sale_total(raw_subtotals)
+            require_ledger_amount(total_amount_due, label="Le total de la vente")
             cash_received = form.cash_paid.data or Decimal("0.00")
 
             # D. Save Sale

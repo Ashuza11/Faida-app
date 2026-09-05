@@ -82,6 +82,7 @@
             </div>
             <div class="form-group custom-sale-price-group">{{ item.form.custom_unit_price.label }}{{ item.form.custom_unit_price(class="form-control custom-sale-price") }}</div>
             <div class="small text-muted">Sous-total: <strong class="sale-line-total">—</strong></div>
+            <small class="sale-input-warning text-danger d-none"></small>
           </div>
           {% endfor %}
         </div>
@@ -141,7 +142,10 @@
                   {% set payment = group.payment_details[sale.id] %}
                   <div id="sale-{{ sale.id }}" class="client-transaction {% if sale.status.value == 'reversed' %}text-muted{% endif %}" data-sale-id="{{ sale.id }}">
                     <div class="d-flex flex-wrap justify-content-between mb-2">
-                      <strong>Vente #{{ sale.id }}</strong>
+                      <div>
+                        <strong class="d-block">Vente #{{ sale.id }}</strong>
+                        <small class="text-muted">Enregistrée à {{ payment.registration_time }}</small>
+                      </div>
                       <span>Total ${{ "{:.2f}".format(sale.total_amount_due) }} · Reçu ici ${{ "{:.2f}".format(payment.received_from_sale) }} · Payé sur la vente ${{ "{:.2f}".format(sale.cash_paid) }} · Dette ${{ "{:.2f}".format(sale.debt_amount) }}</span>
                     </div>
                     <div class="small mb-2">
@@ -176,6 +180,19 @@
       row.querySelector('.custom-sale-price-group').style.display = custom ? 'block' : 'none';
       const option = price.options[price.selectedIndex];
       const unitPrice = Number(custom ? customPrice.value : option?.dataset.unitPrice || 0);
+      customPrice.required = custom;
+      customPrice.setCustomValidity('');
+      const network = row.querySelector('.sale-network').value;
+      const referenceItem = (salePresets[network] || [])[0];
+      const reference = Number(referenceItem?.unit_price || 0);
+      const isImplausible = custom && unitPrice && reference
+        && (unitPrice < reference / 10 || unitPrice > reference * 10);
+      const warning = row.querySelector('.sale-input-warning');
+      warning.classList.toggle('d-none', !isImplausible);
+      warning.textContent = isImplausible
+        ? `Prix attendu proche de $${reference.toFixed(8)}/u. Corrigez le prix.`
+        : '';
+      if (isImplausible) customPrice.setCustomValidity('Corrigez le prix de vente.');
       const lineTotal = Number(row.querySelector('.sale-quantity').value || 0) * unitPrice;
       row.querySelector('.sale-line-total').textContent = lineTotal ? `$${lineTotal.toFixed(2)}` : '—';
       total += lineTotal;
@@ -237,6 +254,9 @@
       field.value = '';
     });
     newRow.querySelectorAll('.text-danger').forEach(error => error.remove());
+    const warning = document.createElement('small');
+    warning.className = 'sale-input-warning text-danger d-none';
+    newRow.appendChild(warning);
     newRow.querySelector('.sale-line-total').textContent = '—';
     container.appendChild(newRow);
     reindexSaleRows();

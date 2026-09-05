@@ -16,6 +16,7 @@ from apps.models import (
     Sale,
     TransactionStatus,
 )
+from apps.money import require_ledger_amount
 from apps.user_messages import user_message
 
 
@@ -109,7 +110,9 @@ def apply_payment_to_sale(
     payment_event: PaymentEvent | None = None,
 ) -> Decimal:
     """Apply cash to old registered-client debts first, then to this sale."""
-    amount = Decimal(amount)
+    amount = require_ledger_amount(
+        amount, label="Le montant payé", allow_zero=True
+    )
     maximum = sale.total_amount_due
     if sale.client_id is not None:
         old_debt = db.session.query(db.func.sum(Sale.debt_amount)).filter(
@@ -220,9 +223,7 @@ def collect_client_debt(
     ):
         raise PermissionError("Vous n'avez pas accès à ce mode.")
 
-    amount = Decimal(amount)
-    if amount <= 0:
-        raise ValueError("Le montant payé doit être positif.")
+    amount = require_ledger_amount(amount, label="Le montant payé")
     total_debt = db.session.query(db.func.sum(Sale.debt_amount)).filter(
         Sale.business_id == business.id,
         Sale.client_id == client.id,
@@ -283,9 +284,7 @@ def correct_wholesale_payment_event(
     reason = (reason or "").strip()
     if len(reason) < 3:
         raise ValueError("Indiquez la raison de la correction.")
-    amount = Decimal(amount)
-    if amount <= 0:
-        raise ValueError("Le montant correct doit être positif.")
+    amount = require_ledger_amount(amount, label="Le montant correct")
 
     locked_event = (
         PaymentEvent.query.filter_by(id=payment_event.id)
@@ -375,9 +374,7 @@ def apply_additional_payment_to_sale(
     *, sale: Sale, amount: Decimal, recorded_by, payment_date: date
 ) -> Decimal:
     """Record new cash from an existing sale screen without rewriting history."""
-    amount = Decimal(amount)
-    if amount <= 0:
-        raise ValueError("Le nouveau paiement doit être positif.")
+    amount = require_ledger_amount(amount, label="Le nouveau paiement")
     if sale.status != TransactionStatus.ACTIVE:
         raise ValueError("Une vente annulée ne peut pas recevoir de paiement.")
 

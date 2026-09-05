@@ -93,6 +93,28 @@ def test_cashbook_totals_preserve_currencies_and_convert_without_mutating():
     assert totals[CurrencyCode.USD]["outflow"] == Decimal("58")
 
 
+def test_cashbook_rejects_amount_beyond_ledger_capacity(session):
+    owner = make_user(session, 401)
+    business = make_wholesale(session, owner, "Cash Input Safety")
+
+    try:
+        record_cashbook_entry(
+            business=business,
+            recorded_by=owner,
+            direction=WholesaleCashDirection.INFLOW,
+            amount=Decimal("10000000000.00"),
+            currency_code=CurrencyCode.USD,
+            description="Valeur erronée",
+            entry_date=date.today(),
+        )
+    except CashbookEntryError as error:
+        assert "trop élevé" in str(error)
+    else:
+        raise AssertionError("A corrupting cash amount should be rejected")
+
+    assert WholesaleCashEntry.query.count() == 0
+
+
 def test_cashbook_rejects_invalid_exchange_rate():
     totals = build_cashbook_totals([])
 

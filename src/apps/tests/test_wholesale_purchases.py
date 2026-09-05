@@ -169,6 +169,48 @@ def test_wholesale_purchase_rejects_total_entered_as_unit_cost(session):
     assert Stock.query.filter_by(business_id=business.id).count() == 0
 
 
+def test_wholesale_purchase_rejects_corrupted_selected_preset(session):
+    owner = make_owner(session, 203)
+    business = approved_wholesale(session, owner, "Corrupted Preset")
+    preset = next(
+        candidate for candidate in business.price_presets
+        if candidate.network == NetworkType.AIRTEL
+        and candidate.operation == PriceOperation.PURCHASE
+    )
+    preset.unit_price = Decimal("824.37739343")
+
+    with pytest.raises(ValueError, match="prix attendu est proche"):
+        record_wholesale_purchase(
+            business=business,
+            purchased_by=owner,
+            network=NetworkType.AIRTEL,
+            quantity=100000,
+            preset=preset,
+        )
+
+    assert Stock.query.filter_by(business_id=business.id).count() == 0
+
+
+def test_retail_purchase_rejects_incoherent_unit_prices(session):
+    owner = make_owner(session, 204)
+    business = create_business(
+        owner=owner,
+        name="Retail Price Safety",
+        business_type=BusinessType.RETAIL,
+    )
+    session.flush()
+
+    with pytest.raises(ValueError, match="prix semblent incohérents"):
+        record_retail_purchase(
+            business=business,
+            purchased_by=owner,
+            network=NetworkType.AIRTEL,
+            quantity=1000,
+            unit_cost=Decimal("824.37739343"),
+            intended_selling_price=Decimal("22.50"),
+        )
+
+
 def test_wholesale_purchase_reversal_preserves_audit_and_inventory(session):
     owner = make_owner(session, 21)
     business = approved_wholesale(session, owner, "Purchase reversal")

@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from apps import db
+from apps.dates import business_local_datetime
 from apps.inventory import consume_stock, restore_sale_cost
 from apps.payments import apply_payment_to_sale
 from apps.models import (
@@ -27,9 +28,14 @@ from apps.money import (
     calculate_invoice_total,
     format_unit_price,
     quantize_unit_price,
+    require_ledger_amount,
+    require_quantity,
 )
 from apps.user_messages import user_message
-from apps.wholesale_costs import require_plausible_wholesale_unit_cost
+from apps.wholesale_costs import (
+    require_plausible_wholesale_selling_price,
+    require_plausible_wholesale_unit_cost,
+)
 
 
 def build_wholesale_sale_groups(sales, payment_events=()) -> list[dict]:
@@ -46,6 +52,9 @@ def build_wholesale_sale_groups(sales, payment_events=()) -> list[dict]:
             "redirected_to_other_sales": Decimal("0"),
             "applied_from_other_receipts": Decimal("0"),
             "blocking_payment_ids": set(),
+            "registration_time": business_local_datetime(
+                sale.created_at
+            ).strftime("%H:%M"),
             "items": [{
                 "network": item.network,
                 "quantity": item.quantity,
@@ -171,9 +180,9 @@ def record_wholesale_sale(
     _validate_wholesale_sale_access(
         business=business, sold_by=sold_by, client=client
     )
-    cash_received = as_decimal(cash_received or 0)
-    if cash_received < 0:
-        raise ValueError("Le montant reçu ne peut pas être négatif.")
+    cash_received = require_ledger_amount(
+        cash_received or 0, label="Le montant reçu", allow_zero=True
+    )
 
     if items is None:
         items = [{
@@ -235,9 +244,15 @@ def _wholesale_unit_price(*, business, network, preset, custom_unit_price):
     else:
         if custom_unit_price is None:
             raise ValueError("Sélectionnez un prix ou saisissez un prix personnalisé.")
-        unit_price = quantize_unit_price(custom_unit_price)
-        if unit_price <= 0:
-            raise ValueError("Le prix de vente doit être positif.")
+        unit_price = quantize_unit_price(require_ledger_amount(
+            custom_unit_price, label="Le prix de vente"
+        ))
+    require_plausible_wholesale_selling_price(
+        business_id=business.id,
+        network=network,
+        unit_price=unit_price,
+        exclude_preset_id=preset.id if preset is not None else None,
+    )
     return unit_price
 
 
@@ -252,9 +267,7 @@ def _prepare_wholesale_sale_items(*, business, items):
         if network in seen_networks:
             raise ValueError(f"Le réseau {network.value} est saisi deux fois.")
         seen_networks.add(network)
-        quantity = as_decimal(item["quantity"])
-        if quantity <= 0 or quantity != quantity.to_integral_value():
-            raise ValueError("La quantité doit être un nombre entier positif.")
+        quantity = require_quantity(item["quantity"])
         preset = item.get("preset")
         unit_price = _wholesale_unit_price(
             business=business,
@@ -265,6 +278,7 @@ def _prepare_wholesale_sale_items(*, business, items):
         subtotal = calculate_invoice_total(
             [quantity * unit_price], business.currency_code
         )
+        require_ledger_amount(subtotal, label="Le total de la vente")
         prepared.append({
             "network": network,
             "quantity": int(quantity),
@@ -272,6 +286,10 @@ def _prepare_wholesale_sale_items(*, business, items):
             "unit_price": unit_price,
             "subtotal": subtotal,
         })
+    require_ledger_amount(
+        sum((item["subtotal"] for item in prepared), Decimal("0")),
+        label="Le total de la vente",
+    )
     return prepared
 
 

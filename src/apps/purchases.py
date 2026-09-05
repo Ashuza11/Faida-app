@@ -19,7 +19,13 @@ from apps.models import (
     TransactionStatus,
     User,
 )
-from apps.money import as_decimal, quantize_unit_price
+from apps.money import (
+    as_decimal,
+    quantize_unit_price,
+    require_comparable_unit_prices,
+    require_ledger_amount,
+    require_quantity,
+)
 from apps.pricing import calculate_preset_cost
 from apps.user_messages import user_message
 from apps.wholesale_costs import require_plausible_wholesale_unit_cost
@@ -128,9 +134,7 @@ def _wholesale_purchase_values(
     *, business, network, quantity, preset, custom_unit_cost,
     custom_total_cost=None,
 ):
-    quantity = as_decimal(quantity)
-    if quantity <= 0 or quantity != quantity.to_integral_value():
-        raise ValueError("La quantité doit être un nombre entier positif.")
+    quantity = require_quantity(quantity)
 
     if preset is not None:
         if (
@@ -147,22 +151,24 @@ def _wholesale_purchase_values(
         total_cost = calculate_preset_cost(preset, quantity)
     else:
         if custom_total_cost is not None:
-            total_cost = as_decimal(custom_total_cost).quantize(
-                Decimal("0.000000000001")
-            )
-            if total_cost <= 0:
-                raise ValueError("Le montant total payé doit être positif.")
+            total_cost = require_ledger_amount(
+                custom_total_cost, label="Le montant total payé"
+            ).quantize(Decimal("0.000000000001"))
             unit_cost = quantize_unit_price(total_cost / quantity)
         elif custom_unit_cost is not None:
-            unit_cost = quantize_unit_price(custom_unit_cost)
+            unit_cost = quantize_unit_price(require_ledger_amount(
+                custom_unit_cost, label="Le prix d'achat"
+            ))
             total_cost = quantity * unit_cost
         else:
             raise ValueError("Sélectionnez un prix ou saisissez le montant total payé.")
-        if unit_cost <= 0:
-            raise ValueError("Le prix d'achat doit être positif.")
-        require_plausible_wholesale_unit_cost(
-            business_id=business.id, network=network, unit_cost=unit_cost
-        )
+    require_ledger_amount(total_cost, label="Le montant total payé")
+    require_plausible_wholesale_unit_cost(
+        business_id=business.id,
+        network=network,
+        unit_cost=unit_cost,
+        exclude_preset_id=preset.id if preset is not None else None,
+    )
     return quantity, unit_cost, total_cost
 
 
@@ -223,13 +229,19 @@ def record_retail_purchase(
 ) -> StockPurchase:
     """Create a retail purchase inside exactly one business ledger."""
     _validate_retail_owner(business=business, user=purchased_by)
-    quantity = as_decimal(quantity)
-    unit_cost = quantize_unit_price(unit_cost)
-    intended_selling_price = quantize_unit_price(intended_selling_price)
-    if quantity <= 0 or quantity != quantity.to_integral_value():
-        raise ValueError("La quantité doit être un nombre entier positif.")
-    if unit_cost <= 0 or intended_selling_price <= 0:
-        raise ValueError("Les prix d'achat et de vente doivent être positifs.")
+    quantity = require_quantity(quantity)
+    unit_cost = quantize_unit_price(
+        require_ledger_amount(unit_cost, label="Le prix d'achat")
+    )
+    intended_selling_price = quantize_unit_price(
+        require_ledger_amount(
+            intended_selling_price, label="Le prix de vente"
+        )
+    )
+    require_comparable_unit_prices(
+        cost=unit_cost, selling_price=intended_selling_price
+    )
+    require_ledger_amount(quantity * unit_cost, label="Le coût total de l'achat")
 
     stock, total_cost = _apply_retail_stock(
         business=business,
@@ -301,13 +313,19 @@ def replace_retail_purchase(
         quantity=purchase.amount_purchased,
         actual_total_cost=purchase.actual_total_cost,
     )
-    quantity = as_decimal(quantity)
-    unit_cost = quantize_unit_price(unit_cost)
-    intended_selling_price = quantize_unit_price(intended_selling_price)
-    if quantity <= 0 or quantity != quantity.to_integral_value():
-        raise ValueError("La quantité doit être un nombre entier positif.")
-    if unit_cost <= 0 or intended_selling_price <= 0:
-        raise ValueError("Les prix d'achat et de vente doivent être positifs.")
+    quantity = require_quantity(quantity)
+    unit_cost = quantize_unit_price(
+        require_ledger_amount(unit_cost, label="Le prix d'achat")
+    )
+    intended_selling_price = quantize_unit_price(
+        require_ledger_amount(
+            intended_selling_price, label="Le prix de vente"
+        )
+    )
+    require_comparable_unit_prices(
+        cost=unit_cost, selling_price=intended_selling_price
+    )
+    require_ledger_amount(quantity * unit_cost, label="Le coût total de l'achat")
     new_stock, total_cost = _apply_retail_stock(
         business=business,
         network=network,

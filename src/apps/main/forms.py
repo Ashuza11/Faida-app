@@ -32,6 +32,7 @@ from apps.models import (
     WholesaleCashDirection,
     validate_drc_phone,
 )
+from apps.money import MAX_LEDGER_AMOUNT, MAX_QUANTITY
 import enum
 from decimal import Decimal
 
@@ -232,9 +233,18 @@ class StockPurchaseForm(FlaskForm):
         "Quantité achetée (Unités)",
         validators=[
             DataRequired(),
-            NumberRange(min=1, message="La quantité doit être positive"),
+            NumberRange(
+                min=1,
+                max=MAX_QUANTITY,
+                message="La quantité est invalide ou trop élevée.",
+            ),
         ],
-        render_kw={"placeholder": "e.g., 50000", "class": "form-control"},
+        render_kw={
+            "placeholder": "e.g., 50000",
+            "class": "form-control",
+            "min": "1",
+            "max": "2147483647",
+        },
     )
 
     buying_price_choice = SelectField(
@@ -258,12 +268,13 @@ class StockPurchaseForm(FlaskForm):
         "Prix d'achat personnalisé (FC)",
         validators=[
             Optional(),
-            NumberRange(min=1),
+            NumberRange(min=1, max=MAX_LEDGER_AMOUNT),
             validate_custom_price_if_selected,
         ],
         render_kw={
             "placeholder": "Entrer le prix d'achat personnalisé",
             "step": "0.01",
+            "max": "9999999999.99",
         },
     )
 
@@ -289,12 +300,13 @@ class StockPurchaseForm(FlaskForm):
         "Prix de vente personnalisé (FC)",
         validators=[
             Optional(),
-            NumberRange(min=0.01),
+            NumberRange(min=0.01, max=MAX_LEDGER_AMOUNT),
             validate_custom_price_if_selected,
         ],
         render_kw={
             "placeholder": "Entrer le prix de vente personnalisé",
             "step": "0.01",
+            "max": "9999999999.99",
         },
     )
 
@@ -332,18 +344,25 @@ class SaleItemForm(FlaskForm):
         "Quantité",
         validators=[
             DataRequired(message="Veuillez entrer la quantité."),
-            NumberRange(min=1, message="La quantité doit être au moins 1."),
+            NumberRange(
+                min=1,
+                max=MAX_QUANTITY,
+                message="La quantité est invalide ou trop élevée.",
+            ),
         ],
+        render_kw={"min": "1", "max": "2147483647"},
     )
     price_per_unit_applied = DecimalField(
         "Prix Unitaire Appliqué (FC)",
         validators=[
             Optional(),
             NumberRange(
-                min=Decimal("0.01"), message="Le prix unitaire doit être positif."
+                min=Decimal("0.01"),
+                max=MAX_LEDGER_AMOUNT,
+                message="Le prix unitaire est invalide ou trop élevé."
             ),
         ],
-        render_kw={"step": "0.01"},
+        render_kw={"step": "0.01", "max": "9999999999.99"},
     )
 
 
@@ -392,10 +411,12 @@ class SaleForm(FlaskForm):
         validators=[
             Optional(),
             NumberRange(
-                min=Decimal("0.00"), message="L'argent donné ne peut pas être négatif."
+                min=Decimal("0.00"),
+                max=MAX_LEDGER_AMOUNT,
+                message="Le montant reçu est invalide ou trop élevé."
             ),
         ],
-        render_kw={"step": "0.01"},
+        render_kw={"step": "0.01", "max": "9999999999.99"},
     )
     submit = SubmitField("Vendre")
 
@@ -465,8 +486,14 @@ def get_clients_with_debt(vendeur_id=None, business_id=None, sale_date=None):
 class CashOutflowForm(FlaskForm):
     amount = DecimalField(
         "Montant (FC)",
-        validators=[DataRequired(), NumberRange(min=0.01)],
-        render_kw={"placeholder": "Ex: 15000.00"},
+        validators=[
+            DataRequired(),
+            NumberRange(min=0.01, max=MAX_LEDGER_AMOUNT),
+        ],
+        render_kw={
+            "placeholder": "Ex: 15000.00",
+            "max": "9999999999.99",
+        },
     )
     category = SelectField(
         "Catégorie",
@@ -507,9 +534,16 @@ class WholesaleCashEntryForm(FlaskForm):
         places=2,
         validators=[
             DataRequired(message="Indiquez le montant."),
-            NumberRange(min=0.01, message="Le montant doit être supérieur à zéro."),
+            NumberRange(
+                min=0.01,
+                max=MAX_LEDGER_AMOUNT,
+                message="Le montant est invalide ou trop élevé.",
+            ),
         ],
-        render_kw={"placeholder": "Ex: 40000"},
+        render_kw={
+            "placeholder": "Ex: 40000",
+            "max": "9999999999.99",
+        },
     )
     currency_code = SelectField(
         "Devise",
@@ -533,8 +567,14 @@ class DebtCollectionForm(FlaskForm):
     )
     amount_paid = DecimalField(
         "Montant Payé (FC)",
-        validators=[DataRequired(), NumberRange(min=0.01)],
-        render_kw={"placeholder": "Ex: 10000.00"},
+        validators=[
+            DataRequired(),
+            NumberRange(min=0.01, max=MAX_LEDGER_AMOUNT),
+        ],
+        render_kw={
+            "placeholder": "Ex: 10000.00",
+            "max": "9999999999.99",
+        },
     )
     payment_date = DateField(
         "Date du paiement",
@@ -621,45 +661,56 @@ class StockOpeningBalanceForm(FlaskForm):
     )
     airtel = IntegerField(
         "Airtel (unités)",
-        validators=[Optional(), NumberRange(min=0, message="La quantité doit être ≥ 0.")],
+        validators=[Optional(), NumberRange(
+            min=0, max=MAX_QUANTITY,
+            message="La quantité est invalide ou trop élevée.",
+        )],
         render_kw={"placeholder": "0"},
     )
     airtel_cost = DecimalField(
         "Coût/unité Airtel (FC)",
-        validators=[Optional(), NumberRange(min=Decimal("0.000000000001"))],
+        validators=[Optional(), NumberRange(
+            min=Decimal("0.000000000001"), max=MAX_LEDGER_AMOUNT
+        )],
         places=12,
         render_kw={"placeholder": "Ex: 20", "step": "0.000000000001"},
     )
     africel = IntegerField(
         "Africel (unités)",
-        validators=[Optional(), NumberRange(min=0)],
+        validators=[Optional(), NumberRange(min=0, max=MAX_QUANTITY)],
         render_kw={"placeholder": "0"},
     )
     africel_cost = DecimalField(
         "Coût/unité Africell (FC)",
-        validators=[Optional(), NumberRange(min=Decimal("0.000000000001"))],
+        validators=[Optional(), NumberRange(
+            min=Decimal("0.000000000001"), max=MAX_LEDGER_AMOUNT
+        )],
         places=12,
         render_kw={"placeholder": "Ex: 20", "step": "0.000000000001"},
     )
     orange = IntegerField(
         "Orange (unités)",
-        validators=[Optional(), NumberRange(min=0)],
+        validators=[Optional(), NumberRange(min=0, max=MAX_QUANTITY)],
         render_kw={"placeholder": "0"},
     )
     orange_cost = DecimalField(
         "Coût/unité Orange (FC)",
-        validators=[Optional(), NumberRange(min=Decimal("0.000000000001"))],
+        validators=[Optional(), NumberRange(
+            min=Decimal("0.000000000001"), max=MAX_LEDGER_AMOUNT
+        )],
         places=12,
         render_kw={"placeholder": "Ex: 20", "step": "0.000000000001"},
     )
     vodacom = IntegerField(
         "Vodacom (unités)",
-        validators=[Optional(), NumberRange(min=0)],
+        validators=[Optional(), NumberRange(min=0, max=MAX_QUANTITY)],
         render_kw={"placeholder": "0"},
     )
     vodacom_cost = DecimalField(
         "Coût/unité Vodacom (FC)",
-        validators=[Optional(), NumberRange(min=Decimal("0.000000000001"))],
+        validators=[Optional(), NumberRange(
+            min=Decimal("0.000000000001"), max=MAX_LEDGER_AMOUNT
+        )],
         places=12,
         render_kw={"placeholder": "Ex: 20", "step": "0.000000000001"},
     )
@@ -671,25 +722,33 @@ class WholesaleOpeningBalanceForm(StockOpeningBalanceForm):
 
     airtel_total = DecimalField(
         "Valeur totale Airtel (USD)",
-        validators=[Optional(), NumberRange(min=Decimal("0"))],
+        validators=[Optional(), NumberRange(
+            min=Decimal("0"), max=MAX_LEDGER_AMOUNT
+        )],
         places=12,
         render_kw={"placeholder": "Ex: 100", "step": "0.000000000001"},
     )
     africel_total = DecimalField(
         "Valeur totale Africell (USD)",
-        validators=[Optional(), NumberRange(min=Decimal("0"))],
+        validators=[Optional(), NumberRange(
+            min=Decimal("0"), max=MAX_LEDGER_AMOUNT
+        )],
         places=12,
         render_kw={"placeholder": "Ex: 100", "step": "0.000000000001"},
     )
     orange_total = DecimalField(
         "Valeur totale Orange (USD)",
-        validators=[Optional(), NumberRange(min=Decimal("0"))],
+        validators=[Optional(), NumberRange(
+            min=Decimal("0"), max=MAX_LEDGER_AMOUNT
+        )],
         places=12,
         render_kw={"placeholder": "Ex: 100", "step": "0.000000000001"},
     )
     vodacom_total = DecimalField(
         "Valeur totale Vodacom (USD)",
-        validators=[Optional(), NumberRange(min=Decimal("0"))],
+        validators=[Optional(), NumberRange(
+            min=Decimal("0"), max=MAX_LEDGER_AMOUNT
+        )],
         places=12,
         render_kw={"placeholder": "Ex: 100", "step": "0.000000000001"},
     )
@@ -712,8 +771,12 @@ class WholesalePurchaseForm(FlaskForm):
     )
     quantity = IntegerField(
         "Quantité achetée (unités)",
-        validators=[DataRequired(), NumberRange(min=1)],
-        render_kw={"placeholder": "Ex: 10650", "min": "1"},
+        validators=[DataRequired(), NumberRange(min=1, max=MAX_QUANTITY)],
+        render_kw={
+            "placeholder": "Ex: 10650",
+            "min": "1",
+            "max": "2147483647",
+        },
     )
     purchase_date = DateField(
         "Date de l'achat",
@@ -726,15 +789,27 @@ class WholesalePurchaseForm(FlaskForm):
     )
     custom_unit_cost = DecimalField(
         "Prix personnalisé par unité ($)",
-        validators=[Optional(), NumberRange(min=Decimal("0.000000000001"))],
+        validators=[Optional(), NumberRange(
+            min=Decimal("0.000000000001"), max=MAX_LEDGER_AMOUNT
+        )],
         places=12,
-        render_kw={"placeholder": "Ex: 0.00935", "step": "0.000000000001"},
+        render_kw={
+            "placeholder": "Ex: 0.00935",
+            "step": "0.000000000001",
+            "max": "9999999999.99",
+        },
     )
     custom_total_cost = DecimalField(
         "Montant total payé ($)",
-        validators=[Optional(), NumberRange(min=Decimal("0.01"))],
+        validators=[Optional(), NumberRange(
+            min=Decimal("0.01"), max=MAX_LEDGER_AMOUNT
+        )],
         places=2,
-        render_kw={"placeholder": "Ex: 100.00", "step": "0.01"},
+        render_kw={
+            "placeholder": "Ex: 100.00",
+            "step": "0.01",
+            "max": "9999999999.99",
+        },
     )
     submit = SubmitField("Acheter")
 
@@ -751,15 +826,25 @@ class WholesaleSaleItemForm(FlaskForm):
     )
     quantity = IntegerField(
         "Quantité",
-        validators=[Optional(), NumberRange(min=1)],
-        render_kw={"placeholder": "Ex: 10000", "min": "1"},
+        validators=[Optional(), NumberRange(min=1, max=MAX_QUANTITY)],
+        render_kw={
+            "placeholder": "Ex: 10000",
+            "min": "1",
+            "max": "2147483647",
+        },
     )
     price_choice = SelectField("Prix de vente", validators=[Optional()])
     custom_unit_price = DecimalField(
         "Prix personnalisé ($)",
-        validators=[Optional(), NumberRange(min=Decimal("0.000000000001"))],
+        validators=[Optional(), NumberRange(
+            min=Decimal("0.000000000001"), max=MAX_LEDGER_AMOUNT
+        )],
         places=12,
-        render_kw={"placeholder": "Ex: 0.00945", "step": "0.000000000001"},
+        render_kw={
+            "placeholder": "Ex: 0.00945",
+            "step": "0.000000000001",
+            "max": "9999999999.99",
+        },
     )
 
 
@@ -780,10 +865,14 @@ class WholesaleSaleForm(FlaskForm):
     )
     cash_received = DecimalField(
         "Montant reçu maintenant ($)",
-        validators=[Optional(), NumberRange(min=0)],
+        validators=[Optional(), NumberRange(min=0, max=MAX_LEDGER_AMOUNT)],
         places=2,
         default=Decimal("0.00"),
-        render_kw={"placeholder": "0.00", "step": "0.01"},
+        render_kw={
+            "placeholder": "0.00",
+            "step": "0.01",
+            "max": "9999999999.99",
+        },
     )
     submit = SubmitField("Vendre")
 
@@ -791,9 +880,15 @@ class WholesaleSaleForm(FlaskForm):
 class WholesaleDebtPaymentForm(FlaskForm):
     amount = DecimalField(
         "Montant reçu ($)",
-        validators=[DataRequired(), NumberRange(min=Decimal("0.01"))],
+        validators=[DataRequired(), NumberRange(
+            min=Decimal("0.01"), max=MAX_LEDGER_AMOUNT
+        )],
         places=2,
-        render_kw={"placeholder": "0.00", "step": "0.01"},
+        render_kw={
+            "placeholder": "0.00",
+            "step": "0.01",
+            "max": "9999999999.99",
+        },
     )
     payment_date = DateField(
         "Date du paiement",
@@ -810,9 +905,15 @@ class WholesaleDebtPaymentForm(FlaskForm):
 class WholesalePaymentCorrectionForm(FlaskForm):
     amount = DecimalField(
         "Montant correct ($)",
-        validators=[DataRequired(), NumberRange(min=Decimal("0.01"))],
+        validators=[DataRequired(), NumberRange(
+            min=Decimal("0.01"), max=MAX_LEDGER_AMOUNT
+        )],
         places=2,
-        render_kw={"placeholder": "0.00", "step": "0.01"},
+        render_kw={
+            "placeholder": "0.00",
+            "step": "0.01",
+            "max": "9999999999.99",
+        },
     )
     payment_date = DateField(
         "Date du paiement",

@@ -1,16 +1,71 @@
-"""Exact, currency-aware calculations shared by all transaction paths."""
+"""Exact, currency-aware calculations and input limits."""
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from apps.models import CurrencyCode
 
 
 UNIT_PRICE_QUANTUM = Decimal("0.000000000001")
 INTERNAL_MONEY_QUANTUM = Decimal("0.000000000001")
+MAX_QUANTITY = Decimal("2147483647")
+MAX_LEDGER_AMOUNT = Decimal("9999999999.99")
+MAX_INVENTORY_VALUE = Decimal("999999999999.999999999999")
+PRICE_FACTOR_LIMIT = Decimal("10")
 
 
 def as_decimal(value) -> Decimal:
     return value if isinstance(value, Decimal) else Decimal(str(value))
+
+
+def require_quantity(value, *, allow_zero=False) -> Decimal:
+    """Return a finite whole quantity that fits all transaction tables."""
+    try:
+        quantity = as_decimal(value)
+    except (InvalidOperation, TypeError, ValueError) as error:
+        raise ValueError("Saisissez une quantité valide.") from error
+    minimum = Decimal("0") if allow_zero else Decimal("1")
+    if (
+        not quantity.is_finite()
+        or quantity < minimum
+        or quantity != quantity.to_integral_value()
+    ):
+        requirement = "nulle ou positive" if allow_zero else "positive"
+        raise ValueError(f"La quantité doit être un nombre entier {requirement}.")
+    if quantity > MAX_QUANTITY:
+        raise ValueError("La quantité saisie est trop élevée. Corrigez-la.")
+    return quantity
+
+
+def require_ledger_amount(value, *, label="Le montant", allow_zero=False) -> Decimal:
+    """Return a finite amount that fits the app's narrowest money columns."""
+    try:
+        amount = as_decimal(value)
+    except (InvalidOperation, TypeError, ValueError) as error:
+        raise ValueError(f"{label} n'est pas valide.") from error
+    minimum = Decimal("0") if allow_zero else Decimal("0.000000000001")
+    if not amount.is_finite() or amount < minimum:
+        requirement = "positif ou nul" if allow_zero else "positif"
+        raise ValueError(f"{label} doit être {requirement}.")
+    if amount > MAX_LEDGER_AMOUNT:
+        raise ValueError(f"{label} est trop élevé. Corrigez la valeur saisie.")
+    return amount
+
+
+def require_comparable_unit_prices(*, cost, selling_price) -> None:
+    """Reject likely currency/decimal mistakes between purchase and sale prices."""
+    cost = require_ledger_amount(cost, label="Le prix d'achat")
+    selling_price = require_ledger_amount(
+        selling_price, label="Le prix de vente"
+    )
+    if not (
+        cost / PRICE_FACTOR_LIMIT
+        <= selling_price
+        <= cost * PRICE_FACTOR_LIMIT
+    ):
+        raise ValueError(
+            f"Les prix semblent incohérents ({cost:.8f}/u à l'achat et "
+            f"{selling_price:.8f}/u à la vente). Corrigez les prix."
+        )
 
 
 def quantize_unit_price(value) -> Decimal:

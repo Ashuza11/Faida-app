@@ -17,7 +17,13 @@ from apps.models import (
     StockPurchase,
     TransactionStatus,
 )
-from apps.money import INTERNAL_MONEY_QUANTUM, as_decimal, quantize_unit_price
+from apps.money import (
+    INTERNAL_MONEY_QUANTUM,
+    as_decimal,
+    quantize_unit_price,
+    require_ledger_amount,
+    require_quantity,
+)
 from apps.user_messages import user_message
 from apps.wholesale_costs import require_plausible_wholesale_unit_cost
 
@@ -57,18 +63,18 @@ def save_opening_balances(
             network=network,
             balance_date=balance_date,
         ).one_or_none()
-        quantity = (
-            as_decimal(raw_quantity)
-            if raw_quantity is not None
-            else as_decimal(entry.quantity) if entry is not None else None
-        )
+        try:
+            quantity = (
+                require_quantity(raw_quantity, allow_zero=True)
+                if raw_quantity is not None
+                else as_decimal(entry.quantity) if entry is not None else None
+            )
+        except ValueError as error:
+            raise OpeningBalanceError(str(error)) from error
         if quantity is None:
             raise OpeningBalanceError(
                 f"Indiquez la quantité de {network.value}."
             )
-        if quantity < 0 or quantity != quantity.to_integral_value():
-            raise OpeningBalanceError("Les quantités doivent être des nombres entiers positifs.")
-
         if quantity == 0:
             if raw_total_cost is not None and as_decimal(raw_total_cost) != 0:
                 raise OpeningBalanceError(
@@ -77,12 +83,20 @@ def save_opening_balances(
             unit_cost = Decimal("0")
             total_cost = Decimal("0")
         elif raw_total_cost is not None:
-            total_cost = as_decimal(raw_total_cost).quantize(INTERNAL_MONEY_QUANTUM)
-            if total_cost <= 0:
-                raise OpeningBalanceError("La valeur totale du stock doit être positive.")
+            try:
+                total_cost = require_ledger_amount(
+                    raw_total_cost, label="La valeur totale du stock"
+                ).quantize(INTERNAL_MONEY_QUANTUM)
+            except ValueError as error:
+                raise OpeningBalanceError(str(error)) from error
             unit_cost = quantize_unit_price(total_cost / quantity)
         elif raw_unit_cost is not None:
-            unit_cost = quantize_unit_price(raw_unit_cost)
+            try:
+                unit_cost = quantize_unit_price(require_ledger_amount(
+                    raw_unit_cost, label="Le coût par unité"
+                ))
+            except ValueError as error:
+                raise OpeningBalanceError(str(error)) from error
         elif entry is not None and entry.unit_cost > 0:
             unit_cost = quantize_unit_price(entry.unit_cost)
         else:
@@ -113,6 +127,14 @@ def save_opening_balances(
                 raise OpeningBalanceError(str(error)) from error
         if quantity > 0 and raw_total_cost is None:
             total_cost = (quantity * unit_cost).quantize(INTERNAL_MONEY_QUANTUM)
+        try:
+            require_ledger_amount(
+                total_cost,
+                label="La valeur totale du stock",
+                allow_zero=True,
+            )
+        except ValueError as error:
+            raise OpeningBalanceError(str(error)) from error
         if (
             entry is not None
             and entry.is_cost_estimated

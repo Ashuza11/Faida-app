@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -102,6 +102,27 @@ def test_wholesale_sale_preserves_price_cost_and_margin(session):
     assert CashInflow.query.filter_by(sale_id=sale.id).one().amount == Decimal("9.40")
 
 
+def test_wholesale_sale_rejects_corrupting_custom_price(session):
+    owner, business, client, _ = setup_wholesale(session, suffix=205)
+
+    with pytest.raises(ValueError, match="prix de vente.*semble incorrect"):
+        record_wholesale_sale(
+            business=business,
+            sold_by=owner,
+            client=client,
+            network=NetworkType.AIRTEL,
+            quantity=100,
+            cash_received=0,
+            sale_date=date.today(),
+            custom_unit_price=Decimal("824.37739343"),
+        )
+
+    stock = Stock.query.filter_by(
+        business_id=business.id, network=NetworkType.AIRTEL
+    ).one()
+    assert stock.balance == Decimal("2000")
+
+
 def test_wholesale_sale_rejects_abnormal_stock_cost_before_consumption(session):
     owner, business, client, preset = setup_wholesale(session, suffix=502)
     stock = Stock.query.filter_by(
@@ -195,6 +216,8 @@ def test_wholesale_sales_page_renders_one_summary_per_client_and_day(app, sessio
         network=NetworkType.AIRTEL, quantity=500, cash_received=0,
         sale_date=today, preset=preset,
     )
+    first.created_at = datetime(2026, 8, 27, 10, 15, tzinfo=timezone.utc)
+    second.created_at = datetime(2026, 8, 27, 14, 45, tzinfo=timezone.utc)
     session.commit()
     browser = app.test_client()
     with browser.session_transaction() as browser_session:
@@ -213,6 +236,8 @@ def test_wholesale_sales_page_renders_one_summary_per_client_and_day(app, sessio
     assert "<small>Total ventes</small><strong>$9.40</strong>" in page
     assert f'data-sale-id="{first.id}"' in page
     assert f'data-sale-id="{second.id}"' in page
+    assert "Enregistrée à 12:15" in page
+    assert "Enregistrée à 16:45" in page
     assert f"/businesses/wholesale/sales/{first.id}/edit" in page
     assert f"/businesses/wholesale/sales/{second.id}/edit" in page
 

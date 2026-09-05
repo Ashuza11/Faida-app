@@ -3,22 +3,38 @@
 from decimal import Decimal, ROUND_HALF_UP
 
 from apps.models import Stock
-from apps.money import INTERNAL_MONEY_QUANTUM, as_decimal, quantize_unit_price
+from apps.money import (
+    INTERNAL_MONEY_QUANTUM,
+    MAX_INVENTORY_VALUE,
+    MAX_QUANTITY,
+    as_decimal,
+    quantize_unit_price,
+    require_ledger_amount,
+    require_quantity,
+)
 
 
 def record_purchase(
     *, stock: Stock, quantity, actual_total_cost, quoted_unit_cost=None,
 ) -> None:
-    quantity = as_decimal(quantity)
-    actual_total_cost = as_decimal(actual_total_cost)
-    if quantity <= 0 or actual_total_cost < 0:
-        raise ValueError("La quantité et le coût d'achat doivent être valides.")
+    quantity = require_quantity(quantity)
+    actual_total_cost = require_ledger_amount(
+        actual_total_cost, label="Le coût total de l'achat"
+    )
 
     old_value = as_decimal(stock.inventory_value or 0)
     new_balance = as_decimal(stock.balance or 0) + quantity
+    if new_balance > MAX_QUANTITY:
+        raise ValueError(
+            "Le stock total serait trop élevé. Corrigez la quantité saisie."
+        )
     new_value = (old_value + actual_total_cost).quantize(
         INTERNAL_MONEY_QUANTUM, rounding=ROUND_HALF_UP
     )
+    if new_value > MAX_INVENTORY_VALUE:
+        raise ValueError(
+            "La valeur totale du stock serait trop élevée. Corrigez l'achat."
+        )
     stock.balance = new_balance
     stock.inventory_value = new_value
     stock.average_cost_per_unit = quantize_unit_price(new_value / new_balance)

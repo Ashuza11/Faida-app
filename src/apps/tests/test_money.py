@@ -1,10 +1,14 @@
 from decimal import Decimal
 
+import pytest
+
 from apps.models import CurrencyCode
 from apps.money import (
     calculate_invoice_total,
     calculate_ratio_cost,
     calculate_ratio_unit_price,
+    require_ledger_amount,
+    require_quantity,
 )
 
 
@@ -32,3 +36,15 @@ def test_currency_specific_invoice_rounding():
     assert calculate_invoice_total(
         [Decimal("47.225"), Decimal("47.225")], CurrencyCode.USD
     ) == Decimal("94.45")
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-1", "not-a-number"])
+def test_ledger_amount_rejects_non_finite_or_invalid_values(value):
+    with pytest.raises(ValueError):
+        require_ledger_amount(value, label="Le montant", allow_zero=True)
+
+
+@pytest.mark.parametrize("value", ["1.5", "NaN", "2147483648"])
+def test_quantity_rejects_fractional_non_finite_and_oversized_values(value):
+    with pytest.raises(ValueError):
+        require_quantity(value)

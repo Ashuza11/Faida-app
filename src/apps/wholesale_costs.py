@@ -23,28 +23,46 @@ from apps.user_messages import user_message
 REFERENCE_FACTOR_LIMIT = Decimal("10")
 
 
-def reference_unit_cost(*, business_id, network):
+def _display_unit_value(value) -> str:
+    try:
+        number = as_decimal(value)
+    except (InvalidOperation, TypeError, ValueError):
+        return str(value)
+    return f"{number:.8f}" if number.is_finite() else str(number)
+
+
+def reference_unit_cost(*, business_id, network, exclude_preset_id=None):
     for operation in (PriceOperation.PURCHASE, PriceOperation.SALE):
-        preset = (
-            PricePreset.query.filter_by(
-                business_id=business_id,
-                network=network,
-                operation=operation,
-                is_active=True,
-            )
-            .order_by(PricePreset.is_default.desc(), PricePreset.id)
-            .first()
+        query = PricePreset.query.filter_by(
+            business_id=business_id,
+            network=network,
+            operation=operation,
+            is_active=True,
         )
+        if exclude_preset_id is not None:
+            query = query.filter(PricePreset.id != exclude_preset_id)
+        preset = query.order_by(
+            PricePreset.is_default.desc(), PricePreset.id
+        ).first()
         if preset is not None:
             return as_decimal(preset.unit_price)
     return None
 
 
-def wholesale_unit_cost_is_plausible(*, business_id, network, unit_cost) -> bool:
-    unit_cost = as_decimal(unit_cost)
-    if unit_cost <= 0:
+def wholesale_unit_cost_is_plausible(
+    *, business_id, network, unit_cost, exclude_preset_id=None
+) -> bool:
+    try:
+        unit_cost = as_decimal(unit_cost)
+    except (InvalidOperation, TypeError, ValueError):
         return False
-    reference = reference_unit_cost(business_id=business_id, network=network)
+    if not unit_cost.is_finite() or unit_cost <= 0:
+        return False
+    reference = reference_unit_cost(
+        business_id=business_id,
+        network=network,
+        exclude_preset_id=exclude_preset_id,
+    )
     if reference is None or reference <= 0:
         return True
     return (
@@ -54,14 +72,53 @@ def wholesale_unit_cost_is_plausible(*, business_id, network, unit_cost) -> bool
     )
 
 
-def require_plausible_wholesale_unit_cost(*, business_id, network, unit_cost):
+def require_plausible_wholesale_unit_cost(
+    *, business_id, network, unit_cost, exclude_preset_id=None
+):
     if wholesale_unit_cost_is_plausible(
-        business_id=business_id, network=network, unit_cost=unit_cost
+        business_id=business_id,
+        network=network,
+        unit_cost=unit_cost,
+        exclude_preset_id=exclude_preset_id,
     ):
         return
+    reference = reference_unit_cost(
+        business_id=business_id,
+        network=network,
+        exclude_preset_id=exclude_preset_id,
+    )
+    expected = (
+        f" Le prix attendu est proche de ${reference:.8f}/u."
+        if reference is not None else ""
+    )
     raise ValueError(user_message(
-        f"Le coût calculé (${as_decimal(unit_cost):.8f}/u) semble incorrect.",
-        "Saisissez le montant total payé et vérifiez le stock avant de continuer.",
+        f"Le coût calculé (${_display_unit_value(unit_cost)}/u) semble incorrect.",
+        f"{expected} Corrigez la quantité ou le montant total payé.".strip(),
+    ))
+
+
+def require_plausible_wholesale_selling_price(
+    *, business_id, network, unit_price, exclude_preset_id=None
+):
+    if wholesale_unit_cost_is_plausible(
+        business_id=business_id,
+        network=network,
+        unit_cost=unit_price,
+        exclude_preset_id=exclude_preset_id,
+    ):
+        return
+    reference = reference_unit_cost(
+        business_id=business_id,
+        network=network,
+        exclude_preset_id=exclude_preset_id,
+    )
+    expected = (
+        f" Le prix attendu est proche de ${reference:.8f}/u."
+        if reference is not None else ""
+    )
+    raise ValueError(user_message(
+        f"Le prix de vente (${_display_unit_value(unit_price)}/u) semble incorrect.",
+        f"{expected} Corrigez le prix avant de continuer.".strip(),
     ))
 
 

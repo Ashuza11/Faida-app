@@ -35,6 +35,17 @@ def test_purchase_uses_moving_weighted_average(stock):
     assert stock.average_cost_per_unit == Decimal("0.009370460048")
 
 
+def test_purchase_rejects_quantity_beyond_storage_capacity(stock):
+    with pytest.raises(ValueError, match="quantité saisie est trop élevée"):
+        record_purchase(
+            stock=stock,
+            quantity=2147483648,
+            actual_total_cost=Decimal("1"),
+        )
+
+    assert stock.balance == Decimal("0.00")
+
+
 def test_sale_cost_snapshot_is_stable_after_later_purchase(stock):
     record_purchase(stock=stock, quantity=10000, actual_total_cost=Decimal("93.50"))
     unit_cost, cost = consume_stock(stock=stock, quantity=5000)
