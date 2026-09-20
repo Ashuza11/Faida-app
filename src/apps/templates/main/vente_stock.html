@@ -20,7 +20,7 @@
                     <div class="card-header">
                         <div class="row align-items-center">
                             <div class="col-8">
-                                <h3 class="mb-0">{% if editing_sale %}Modifier la vente #{{ editing_sale.id }}{% else %}Enregistrer une Nouvelle Vente{% endif %}</h3>
+                                <h3 class="mb-0">{% if editing_sale %}Modifier la vente #{{ editing_sale_number }}{% else %}Enregistrer une Nouvelle Vente{% endif %}</h3>
                             </div>
                         </div>
                     </div>
@@ -213,7 +213,7 @@
                             <tbody id="sales-history-tbody">
                             {% for sale in sales_pagination.items %} 
                                     <tr class="{% if sale.status.value == 'reversed' %}text-muted{% endif %}">
-                                        <td>{{ sale.id }}</td>
+                                        <td data-sale-number="{{ sale_display_numbers[sale.id] }}">{{ sale_display_numbers[sale.id] }}</td>
                                         <td>{{ sale.client.name if sale.client else sale.client_name_adhoc }}</td>
                                         <td>{{ sale.seller.username }}</td>
                                         <td>

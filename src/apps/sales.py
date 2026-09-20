@@ -40,6 +40,65 @@ from apps.wholesale_costs import (
 )
 
 
+def build_retail_sale_display_numbers(sales) -> dict[int, int]:
+    """Return stable, business-local sale numbers without exposing database IDs.
+
+    All sales are counted, including reversed rows, so cancelling a sale never
+    renumbers the remaining audit history. Database IDs remain the identifiers
+    used by routes and relationships.
+    """
+    sales = list(sales)
+    if not sales:
+        return {}
+
+    requested_by_business = {}
+    requested_legacy = {}
+    for sale in sales:
+        if sale.business_id is not None:
+            requested_by_business.setdefault(sale.business_id, set()).add(sale.id)
+        else:
+            requested_legacy.setdefault(sale.vendeur_id, set()).add(sale.id)
+
+    display_numbers = {}
+    for business_id, requested_ids in requested_by_business.items():
+        numbered = (
+            db.session.query(
+                Sale.id.label("sale_id"),
+                db.func.row_number().over(order_by=Sale.id.asc()).label(
+                    "display_number"
+                ),
+            )
+            .filter(Sale.business_id == business_id)
+            .subquery()
+        )
+        rows = db.session.query(
+            numbered.c.sale_id, numbered.c.display_number
+        ).filter(numbered.c.sale_id.in_(requested_ids)).all()
+        display_numbers.update({sale_id: int(number) for sale_id, number in rows})
+
+    # Compatibility for historical rows that predate business scoping.
+    for vendeur_id, requested_ids in requested_legacy.items():
+        numbered = (
+            db.session.query(
+                Sale.id.label("sale_id"),
+                db.func.row_number().over(order_by=Sale.id.asc()).label(
+                    "display_number"
+                ),
+            )
+            .filter(
+                Sale.business_id.is_(None),
+                Sale.vendeur_id == vendeur_id,
+            )
+            .subquery()
+        )
+        rows = db.session.query(
+            numbered.c.sale_id, numbered.c.display_number
+        ).filter(numbered.c.sale_id.in_(requested_ids)).all()
+        display_numbers.update({sale_id: int(number) for sale_id, number in rows})
+
+    return display_numbers
+
+
 def build_wholesale_sale_groups(sales, payment_events=()) -> list[dict]:
     """Group displayed wholesale sales by customer identity and business date.
 

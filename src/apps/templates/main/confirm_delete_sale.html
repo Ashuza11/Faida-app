@@ -18,7 +18,7 @@
                         {% if sale.cash_paid > 0 %}<div class="alert alert-warning"><strong>Paiement actif</strong><small class="d-block mt-1">Ouvrez les détails de la vente et annulez le reçu concerné avant de continuer.</small></div>{% endif %}
                         <p><strong>Détails de la vente:</strong></p>
                         <ul>
-                            <li><strong>ID Vente:</strong> {{ sale.id }}</li>
+                            <li><strong>Numéro de vente:</strong> {{ sale_display_number }}</li>
                             <li><strong>Client:</strong> {% if sale.client %}{{ sale.client.name }}{% else %}{{ sale.client_name_adhoc }} (Ad-hoc){% endif %}</li>
                             <li><strong>Montant Total Dû:</strong> {{ sale.total_amount_due }} FC</li>
                             <li><strong>Date:</strong> {{ sale.created_at.strftime('%Y-%m-%d %H:%M') }}</li>

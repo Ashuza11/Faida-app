@@ -1,6 +1,6 @@
 {% extends "layouts/base.html" %}
 
-{% block title %} Détails de la Vente #{{ sale.id }} {% endblock %}
+{% block title %} Détails de la Vente #{{ sale_display_number }} {% endblock %}
 
 {% block content %}
 
@@ -14,7 +14,7 @@
                 <ol class="breadcrumb breadcrumb-links breadcrumb-dark">
                   <li class="breadcrumb-item"><a href="{{ url_for('main_bp.index') }}"><i class="fas fa-home"></i></a></li>
                   <li class="breadcrumb-item"><a href="{{ url_for('main_bp.vente_stock') }}">Vente Stock</a></li>
-                  <li class="breadcrumb-item active" aria-current="page">Détails Vente #{{ sale.id }}</li>
+                  <li class="breadcrumb-item active" aria-current="page">Détails Vente #{{ sale_display_number }}</li>
                 </ol>
               </nav>
             </div>
@@ -30,7 +30,7 @@
             <div class="card-header border-0">
               <div class="row align-items-center">
                 <div class="col">
-                  <h3 class="mb-0">Détails de la Vente #{{ sale.id }}</h3>
+                  <h3 class="mb-0">Détails de la Vente #{{ sale_display_number }}</h3>
                 </div>
                 <div class="col text-right">
                     {% if sale.status.value == 'active' %}
@@ -42,7 +42,7 @@
               </div>
             </div>
             <div class="card-body">
-                <p><strong>ID Vente:</strong> {{ sale.id }}</p>
+                <p><strong>Numéro de vente:</strong> {{ sale_display_number }}</p>
                 <p><strong>Statut:</strong> {% if sale.status.value == 'reversed' %}<span class="badge badge-danger">Annulée</span> — {{ sale.reversal_reason }}{% else %}<span class="badge badge-success">Active</span>{% endif %}</p>
                 <p><strong>Client:</strong> {{ sale.client.name if sale.client else sale.client_name_adhoc }}</p>
                 <p><strong>Vendeur:</strong> {{ sale.seller.username }}</p>

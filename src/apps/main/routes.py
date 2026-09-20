@@ -135,6 +135,7 @@ from apps.purchases import (
     reverse_wholesale_purchase,
 )
 from apps.sales import (
+    build_retail_sale_display_numbers,
     build_wholesale_sale_groups,
     record_wholesale_sale,
     replace_retail_sale,
@@ -2760,6 +2761,9 @@ def vente_stock():
         sub_segment="vente_stock",
         # Pass the pagination object for the macro
         sales_pagination=sales_pagination,
+        sale_display_numbers=build_retail_sale_display_numbers(
+            sales_pagination.items
+        ),
         # Pass the date string for the Date Filter macro
         selected_date=selected_date_str
     )
@@ -2934,6 +2938,7 @@ def edit_sale(sale_id):
         "main/vente_stock.html",
         form=form,
         editing_sale=sale,
+        editing_sale_number=build_retail_sale_display_numbers([sale])[sale.id],
         editing_sale_has_payment=has_active_payment,
         segment="stock",
         sub_segment="vente_stock",
@@ -2986,6 +2991,7 @@ def delete_sale(sale_id):
     return render_template(
         "main/confirm_delete_sale.html",
         sale=sale,
+        sale_display_number=build_retail_sale_display_numbers([sale])[sale.id],
         confirm_form=confirm_form,
         page_title="Confirmer l'annulation",
         segment="stock",
@@ -3024,6 +3030,7 @@ def view_sale_details(sale_id):
     return render_template(
         "main/sale_details.html",
         sale=sale,
+        sale_display_number=build_retail_sale_display_numbers([sale])[sale.id],
         payment_events=payment_events,
         legacy_allocations=legacy_allocations,
         reversal_form=TransactionReversalForm(),

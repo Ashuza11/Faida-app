@@ -22,6 +22,7 @@ from apps.models import (
     TransactionStatus,
     User,
 )
+from apps.sales import build_retail_sale_display_numbers
 
 
 def setup_ledgers(session):
@@ -191,10 +192,27 @@ def test_new_retail_records_receive_active_business_key(app, session):
     ).one()
     assert created_sale.business_id == retail.id
 
+    sales_page = client.get("/vente_stock")
+    assert b'data-sale-number="1">1</td>' in sales_page.data
+    assert b'data-sale-number="2">2</td>' in sales_page.data
+    internal_number_cell = (
+        f'data-sale-number="{created_sale.id}">{created_sale.id}</td>'.encode()
+    )
+    assert internal_number_cell not in sales_page.data
+
     edit_response = client.get(f"/edit_sale/{created_sale.id}")
     assert edit_response.status_code == 200
-    assert b"Modifier la vente" in edit_response.data
+    assert b"Modifier la vente #2" in edit_response.data
     assert b"Confirmer" not in edit_response.data
+
+    detail_response = client.get(f"/view_sale_details/{created_sale.id}")
+    assert detail_response.status_code == 200
+    assert "Détails de la Vente #2".encode() in detail_response.data
+    assert "Numéro de vente:</strong> 2".encode() in detail_response.data
+
+    cancel_page = client.get(f"/delete_sale/{created_sale.id}")
+    assert cancel_page.status_code == 200
+    assert "Numéro de vente:</strong> 2".encode() in cancel_page.data
 
     update_response = client.post(
         f"/edit_sale/{created_sale.id}",
@@ -229,6 +247,26 @@ def test_new_retail_records_receive_active_business_key(app, session):
     assert created_sale.reversal_reason == "Quantité incorrecte"
     assert stock.balance == Decimal("100")
     assert Sale.query.filter_by(id=created_sale.id).count() == 1
+
+    following_sale = Sale(
+        seller_id=owner.id,
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        client=retail_client,
+        sale_date=date.today(),
+        total_amount_due=Decimal("50"),
+        cash_paid=Decimal("0"),
+        debt_amount=Decimal("50"),
+    )
+    session.add(following_sale)
+    session.commit()
+    display_numbers = build_retail_sale_display_numbers([
+        created_sale, following_sale
+    ])
+    assert display_numbers == {
+        created_sale.id: 2,
+        following_sale.id: 3,
+    }
 
 
 def test_stockeur_can_modify_retail_sale_without_cancelling_it(app, session):
