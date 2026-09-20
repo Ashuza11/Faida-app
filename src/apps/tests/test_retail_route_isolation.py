@@ -22,7 +22,10 @@ from apps.models import (
     TransactionStatus,
     User,
 )
-from apps.sales import build_retail_sale_display_numbers
+from apps.sales import (
+    build_retail_sale_display_numbers,
+    build_retail_sale_groups,
+)
 
 
 def setup_ledgers(session):
@@ -193,12 +196,19 @@ def test_new_retail_records_receive_active_business_key(app, session):
     assert created_sale.business_id == retail.id
 
     sales_page = client.get("/vente_stock")
-    assert b'data-sale-number="1">1</td>' in sales_page.data
-    assert b'data-sale-number="2">2</td>' in sales_page.data
+    assert b'data-sale-number="1">#1</span>' in sales_page.data
+    assert b'data-sale-number="2">#2</span>' in sales_page.data
     internal_number_cell = (
-        f'data-sale-number="{created_sale.id}">{created_sale.id}</td>'.encode()
+        f'data-sale-number="{created_sale.id}">#{created_sale.id}</span>'.encode()
     )
     assert internal_number_cell not in sales_page.data
+    group_key = f"c:{retail_client.id}:{date.today().isoformat()}"
+    page_html = sales_page.data.decode()
+    assert page_html.count(
+        f'class="retail-client-summary" data-client-group="{group_key}"'
+    ) == 1
+    assert "2 ventes actives" in page_html
+    assert "350.00" in page_html
 
     edit_response = client.get(f"/edit_sale/{created_sale.id}")
     assert edit_response.status_code == 200
@@ -267,6 +277,45 @@ def test_new_retail_records_receive_active_business_key(app, session):
         created_sale.id: 2,
         following_sale.id: 3,
     }
+
+
+def test_retail_sale_groups_reuse_identity_without_merging_equal_names(session):
+    owner, retail, _, _, _ = setup_ledgers(session)
+    sales = [
+        Sale(
+            seller_id=owner.id,
+            vendeur_id=owner.id,
+            business_id=retail.id,
+            client_name_adhoc="Deric",
+            adhoc_customer_key=customer_key,
+            sale_date=date.today(),
+            total_amount_due=Decimal(amount),
+            cash_paid=Decimal("0"),
+            debt_amount=Decimal(amount),
+        )
+        for customer_key, amount in (
+            ("deric-one", "100"),
+            ("deric-one", "150"),
+            ("deric-two", "200"),
+        )
+    ]
+    session.add_all(sales)
+    session.commit()
+
+    display_numbers = build_retail_sale_display_numbers(sales)
+    groups = build_retail_sale_groups(sales, display_numbers)
+
+    assert len(groups) == 2
+    first_identity = next(
+        group for group in groups if group["key"].startswith("a:deric-one:")
+    )
+    second_identity = next(
+        group for group in groups if group["key"].startswith("a:deric-two:")
+    )
+    assert len(first_identity["sales"]) == 2
+    assert first_identity["total_amount_due"] == Decimal("250")
+    assert len(second_identity["sales"]) == 1
+    assert second_identity["total_amount_due"] == Decimal("200")
 
 
 def test_stockeur_can_modify_retail_sale_without_cancelling_it(app, session):

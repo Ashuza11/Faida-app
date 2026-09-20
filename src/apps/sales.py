@@ -99,6 +99,60 @@ def build_retail_sale_display_numbers(sales) -> dict[int, int]:
     return display_numbers
 
 
+def build_retail_sale_groups(sales, display_numbers) -> list[dict]:
+    """Group one day's retail sales by explicit customer identity."""
+    groups = {}
+    for sale in sales:
+        key = (sale.customer_group_key, sale.sale_date)
+        group = groups.setdefault(key, {
+            "key": f"{sale.customer_group_key}:{sale.sale_date.isoformat()}",
+            "client_name": sale.client_display_name,
+            "client_id": sale.client_id,
+            "sale_date": sale.sale_date,
+            "sales": [],
+            "sale_rows": [],
+            "seller_names": [],
+            "active_sale_count": 0,
+            "total_amount_due": Decimal("0"),
+            "cash_paid": Decimal("0"),
+            "debt_amount": Decimal("0"),
+            "item_groups": {},
+        })
+        group["sales"].append(sale)
+        group["sale_rows"].append({
+            "sale": sale,
+            "display_number": display_numbers[sale.id],
+            "registration_time": business_local_datetime(
+                sale.created_at
+            ).strftime("%H:%M"),
+        })
+        if sale.seller.username not in group["seller_names"]:
+            group["seller_names"].append(sale.seller.username)
+        if sale.status != TransactionStatus.ACTIVE:
+            continue
+
+        group["active_sale_count"] += 1
+        group["total_amount_due"] += as_decimal(sale.total_amount_due)
+        group["cash_paid"] += as_decimal(sale.cash_paid)
+        group["debt_amount"] += as_decimal(sale.debt_amount)
+        for item in sale.sale_items:
+            item_key = (item.network, as_decimal(item.price_per_unit_applied))
+            item_group = group["item_groups"].setdefault(item_key, {
+                "network": item.network,
+                "price_per_unit": as_decimal(item.price_per_unit_applied),
+                "quantity": 0,
+                "subtotal": Decimal("0"),
+            })
+            item_group["quantity"] += item.quantity
+            item_group["subtotal"] += as_decimal(item.subtotal)
+
+    result = []
+    for group in groups.values():
+        group["item_groups"] = list(group["item_groups"].values())
+        result.append(group)
+    return result
+
+
 def build_wholesale_sale_groups(sales, payment_events=()) -> list[dict]:
     """Group displayed wholesale sales by customer identity and business date.
 

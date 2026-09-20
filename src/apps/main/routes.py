@@ -21,6 +21,7 @@ from apps.main.utils import (
     custom_round_up,
     calculate_sale_total,
     get_paginated_results,
+    paginate_list,
     get_daily_report_data,
     get_local_timezone_datetime_info,
     APP_TIMEZONE,
@@ -136,6 +137,7 @@ from apps.purchases import (
 )
 from apps.sales import (
     build_retail_sale_display_numbers,
+    build_retail_sale_groups,
     build_wholesale_sale_groups,
     record_wholesale_sale,
     replace_retail_sale,
@@ -2746,12 +2748,16 @@ def vente_stock():
     base_sales_query, ctx = get_sales_history_query(date_filter=True)
     selected_date_str = ctx.get('date_str')
 
-    # B. Paginate using your Utility
-    sales_pagination, _, _ = get_paginated_results(
-        base_sales_query,
-        endpoint_name='main_bp.vente_stock',
-        per_page_config_key='SALES_PER_PAGE',
-        date=selected_date_str
+    # Group before pagination so one client's daily sales never span pages.
+    sales = base_sales_query.options(
+        selectinload(Sale.client),
+        selectinload(Sale.seller),
+        selectinload(Sale.sale_items),
+    ).all()
+    sale_display_numbers = build_retail_sale_display_numbers(sales)
+    sale_groups_pagination = paginate_list(
+        build_retail_sale_groups(sales, sale_display_numbers),
+        per_page_config_key="SALES_PER_PAGE",
     )
 
     return render_template(
@@ -2759,11 +2765,7 @@ def vente_stock():
         form=form,
         segment="stock",
         sub_segment="vente_stock",
-        # Pass the pagination object for the macro
-        sales_pagination=sales_pagination,
-        sale_display_numbers=build_retail_sale_display_numbers(
-            sales_pagination.items
-        ),
+        sale_groups_pagination=sale_groups_pagination,
         # Pass the date string for the Date Filter macro
         selected_date=selected_date_str
     )

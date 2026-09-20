@@ -20,6 +20,66 @@ from datetime import date, datetime, timedelta, time
 import pytz
 from sqlalchemy import func
 
+
+class ListPagination:
+    """Small pagination adapter for lists already grouped in application code."""
+
+    def __init__(self, items, *, page, per_page, total):
+        self.items = items
+        self.page = page
+        self.per_page = per_page
+        self.total = total
+        self.pages = (total + per_page - 1) // per_page if total else 0
+
+    @property
+    def has_prev(self):
+        return self.page > 1
+
+    @property
+    def prev_num(self):
+        return self.page - 1 if self.has_prev else None
+
+    @property
+    def has_next(self):
+        return self.page < self.pages
+
+    @property
+    def next_num(self):
+        return self.page + 1 if self.has_next else None
+
+    def iter_pages(
+        self, *, left_edge=2, left_current=2, right_current=4, right_edge=2
+    ):
+        last = 0
+        for number in range(1, self.pages + 1):
+            visible = (
+                number <= left_edge
+                or number > self.pages - right_edge
+                or self.page - left_current <= number <= self.page + right_current
+            )
+            if not visible:
+                continue
+            if last and number != last + 1:
+                yield None
+            yield number
+            last = number
+
+
+def paginate_list(items, *, per_page_config_key):
+    """Paginate a grouped list with the interface used by template macros."""
+    items = list(items)
+    requested_page = max(request.args.get("page", 1, type=int), 1)
+    per_page = max(current_app.config.get(per_page_config_key, 30), 1)
+    pages = (len(items) + per_page - 1) // per_page if items else 0
+    page = min(requested_page, pages) if pages else 1
+    start = (page - 1) * per_page
+    return ListPagination(
+        items[start:start + per_page],
+        page=page,
+        per_page=per_page,
+        total=len(items),
+    )
+
 # Define the path to your seed data file
 SEED_DATA_PATH = Path(os.getcwd()) / "apps" / "data" / "seed_data.json"
 

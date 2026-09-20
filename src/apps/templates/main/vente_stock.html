@@ -211,41 +211,63 @@
                                 </tr>
                             </thead>
                             <tbody id="sales-history-tbody">
-                            {% for sale in sales_pagination.items %} 
-                                    <tr class="{% if sale.status.value == 'reversed' %}text-muted{% endif %}">
-                                        <td data-sale-number="{{ sale_display_numbers[sale.id] }}">{{ sale_display_numbers[sale.id] }}</td>
-                                        <td>{{ sale.client.name if sale.client else sale.client_name_adhoc }}</td>
-                                        <td>{{ sale.seller.username }}</td>
+                            {% for group in sale_groups_pagination.items %}
+                                    {% set group_row_id = 'retail-client-sales-' ~ loop.index %}
+                                    <tr class="retail-client-summary" data-client-group="{{ group.key }}" data-client-name="{{ group.client_name|lower }}">
                                         <td>
-                                            {% for item in sale.sale_items %}
+                                            {% for row in group.sale_rows %}<span class="badge badge-light" data-sale-number="{{ row.display_number }}">#{{ row.display_number }}</span>{% endfor %}
+                                        </td>
+                                        <td>
+                                            <strong>{{ group.client_name }}</strong>
+                                            <small class="d-block text-muted">{{ group.active_sale_count }} vente{{ 's' if group.active_sale_count != 1 }} active{{ 's' if group.active_sale_count != 1 }}</small>
+                                        </td>
+                                        <td>{{ group.seller_names|join(', ') }}</td>
+                                        <td>
+                                            {% for item in group.item_groups %}
                                                 <div>
-                                                    <strong>{{ item.network.value|capitalize }}:</strong> {{ item.quantity }} unités @ {{ "{:,.2f}".format(item.price_per_unit_applied) }} FC
+                                                    <strong>{{ item.network.value|capitalize }}:</strong> {{ item.quantity }} unités @ {{ "{:,.2f}".format(item.price_per_unit) }} FC
                                                     - Sous-total: {{ "{:,.2f}".format(item.subtotal) }} FC
                                                 </div>
-                                            {% endfor %}
+                                            {% else %}<span class="text-muted">Aucune vente active.</span>{% endfor %}
                                         </td>
-                                        <td>{{ "{:,.2f}".format(sale.total_amount_due) }}</td>
+                                        <td>{{ "{:,.2f}".format(group.total_amount_due) }}</td>
+                                        <td>{{ "{:,.2f}".format(group.cash_paid) }}</td>
+                                        <td>{{ "{:,.2f}".format(group.debt_amount) }}</td>
+                                        <td>{{ group.sale_date.strftime('%d/%m/%Y') }}</td>
                                         <td>
-                                            <span id="cash-paid-{{ sale.id }}">{{ "{:,.2f}".format(sale.cash_paid) }}</span>
-                                            {% if sale.status.value == 'active' %}<button type="button" class="btn btn-sm btn-info btn-edit-cash ml-2" data-sale-id="{{ sale.id }}" data-current-cash="{{ sale.cash_paid }}">
-                                                <i class="fas fa-edit"></i>
-                                            </button>{% else %}<span class="badge badge-danger">Annulée</span>{% endif %}
+                                            <button class="btn btn-sm btn-outline-primary" type="button" data-toggle="collapse" data-target="#{{ group_row_id }}" aria-expanded="false" aria-controls="{{ group_row_id }}">
+                                                Voir {{ group.sales|length }} transaction{{ 's' if group.sales|length != 1 }}
+                                            </button>
                                         </td>
-                                        <td><span id="debt-amount-{{ sale.id }}">{{ "{:,.2f}".format(sale.debt_amount) }}</span></td>
-                                        <td>{{ sale.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                                        <td>
-                                            <div class="dropdown">
-                                                <a class="btn btn-sm btn-icon-only text-light" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                                                    <i class="fas fa-ellipsis-v" style="color:#5e72e4"></i>
-                                                </a>
-                                                <div class="dropdown-menu dropdown-menu-right dropdown-menu-arrow">
-                                                    <a class="dropdown-item" href="{{ url_for('main_bp.view_sale_details', sale_id=sale.id) }}">Détails</a>
+                                    </tr>
+                                    <tr id="{{ group_row_id }}" class="collapse retail-client-details" data-client-group="{{ group.key }}" data-client-name="{{ group.client_name|lower }}">
+                                        <td colspan="9" class="bg-light p-3">
+                                            {% for row in group.sale_rows %}
+                                                {% set sale = row.sale %}
+                                                <div class="border rounded bg-white p-3 mb-2 {% if sale.status.value == 'reversed' %}text-muted{% endif %}" data-sale-id="{{ sale.id }}">
+                                                    <div class="d-flex flex-wrap justify-content-between align-items-start" style="gap:8px;">
+                                                        <div>
+                                                            <strong>Vente #{{ row.display_number }}</strong>
+                                                            <small class="d-block text-muted">Enregistrée à {{ row.registration_time }} par {{ sale.seller.username }}</small>
+                                                        </div>
+                                                        <div class="text-right">
+                                                            <strong>{{ "{:,.2f}".format(sale.total_amount_due) }} FC</strong>
+                                                            <small class="d-block">Payé {{ "{:,.2f}".format(sale.cash_paid) }} · Dette {{ "{:,.2f}".format(sale.debt_amount) }}</small>
+                                                        </div>
+                                                    </div>
+                                                    <div class="small my-2">
+                                                        {% for item in sale.sale_items %}<span class="d-block"><strong>{{ item.network.value|capitalize }}:</strong> {{ item.quantity }} unités @ {{ "{:,.2f}".format(item.price_per_unit_applied) }} FC = {{ "{:,.2f}".format(item.subtotal) }} FC</span>{% endfor %}
+                                                    </div>
                                                     {% if sale.status.value == 'active' %}
-                                                        <a class="dropdown-item" href="{{ url_for('main_bp.edit_sale', sale_id=sale.id) }}">Modifier</a>
-                                                        <a class="dropdown-item text-danger" href="{{ url_for('main_bp.delete_sale', sale_id=sale.id) }}">Annuler</a>
-                                                    {% endif %}
+                                                        <div class="d-flex flex-wrap" style="gap:6px;">
+                                                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('main_bp.view_sale_details', sale_id=sale.id) }}">Détails</a>
+                                                            <a class="btn btn-sm btn-outline-warning" href="{{ url_for('main_bp.edit_sale', sale_id=sale.id) }}">Modifier</a>
+                                                            <button type="button" class="btn btn-sm btn-outline-info btn-edit-cash" data-sale-id="{{ sale.id }}" data-current-cash="{{ sale.cash_paid }}">Paiement</button>
+                                                            <a class="btn btn-sm btn-outline-danger" href="{{ url_for('main_bp.delete_sale', sale_id=sale.id) }}">Annuler</a>
+                                                        </div>
+                                                    {% else %}<span class="badge badge-danger">Annulée</span>{% endif %}
                                                 </div>
-                                            </div>
+                                            {% endfor %}
                                         </td>
                                     </tr>
                                 {% else %}
@@ -256,8 +278,7 @@
                             </tbody>
                         </table>
                     </div>
-                    {# Pass the pagination object (e.g. sales_pagination) and the endpoint name #}
-                    {{ filters.render_pagination(sales_pagination, 'main_bp.vente_stock') }}
+                    {{ filters.render_pagination(sale_groups_pagination, 'main_bp.vente_stock') }}
                 </div>
             </div>
         </div>
@@ -444,15 +465,17 @@
 
       input.addEventListener('input', function () {
         var q = this.value.trim().toLowerCase();
-        var rows = tbody ? tbody.querySelectorAll('tr:not(.faida-no-result)') : [];
+        var summaries = tbody ? tbody.querySelectorAll('.retail-client-summary') : [];
         var visible = 0;
 
-        rows.forEach(function (row) {
-          // Client name is in the 2nd <td>
-          var clientCell = row.querySelector('td:nth-child(2)');
-          var text = clientCell ? clientCell.textContent.toLowerCase() : row.textContent.toLowerCase();
+        summaries.forEach(function (row) {
+          var text = (row.dataset.clientName || '').toLowerCase();
           var match = !q || text.includes(q);
           row.style.display = match ? '' : 'none';
+          var detailRow = row.nextElementSibling;
+          if (detailRow && detailRow.classList.contains('retail-client-details')) {
+            detailRow.style.display = match ? '' : 'none';
+          }
           if (match) visible++;
         });
 
