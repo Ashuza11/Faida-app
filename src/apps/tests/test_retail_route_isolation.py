@@ -140,6 +140,30 @@ def test_retail_client_sale_debt_and_cash_pages_are_business_scoped(app, session
     assert edit_response.status_code == 403
 
 
+def test_retail_cash_outflow_saves_when_submit_button_value_is_missing(app, session):
+    owner, retail, _, _, _ = setup_ledgers(session)
+    client = app.test_client()
+    login_to_business(client, owner, retail)
+
+    response = client.post(
+        "/enregistrer_sortie",
+        data={
+            "amount": "1250.50",
+            "category": CashOutflowCategory.OTHER.name,
+            "expense_date": date.today().isoformat(),
+            "description": "Dépense envoyée sans bouton",
+        },
+    )
+
+    assert response.status_code == 302
+    outflow = CashOutflow.query.filter_by(
+        business_id=retail.id,
+        description="Dépense envoyée sans bouton",
+    ).one()
+    assert outflow.amount == Decimal("1250.50")
+    assert outflow.recorded_by_id == owner.id
+
+
 def test_new_retail_records_receive_active_business_key(app, session):
     owner, retail, _, retail_client, _ = setup_ledgers(session)
     session.add(Stock(

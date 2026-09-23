@@ -3178,7 +3178,7 @@ def sorties_cash():
 @login_required
 @business_member_required
 def enregistrer_sortie():
-    form = CashOutflowForm(request.form)
+    form = CashOutflowForm()
     page_title = "Gestion Cash"
     sub_page_title = "Enregistrer Sortie"
     business = get_current_business()
@@ -3187,7 +3187,10 @@ def enregistrer_sortie():
     if request.method == "GET" and not form.expense_date.data:
         form.expense_date.data = datetime.now(pytz.utc).astimezone(APP_TIMEZONE).date()
 
-    if "submit" in request.form:
+    # Mobile browsers and installed web apps do not always include the submit
+    # button's name/value in the POST body. The HTTP method is the reliable
+    # signal that the user submitted this form.
+    if request.method == "POST":
         if form.validate_on_submit():
             try:
                 new_outflow = CashOutflow(
