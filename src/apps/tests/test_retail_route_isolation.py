@@ -17,6 +17,7 @@ from apps.models import (
     PaymentEvent,
     RoleType,
     Sale,
+    SaleItem,
     SaleItemHistory,
     Stock,
     TransactionStatus,
@@ -279,24 +280,24 @@ def test_new_retail_records_receive_active_business_key(app, session):
     }
 
 
-def test_retail_sale_groups_reuse_identity_without_merging_equal_names(session):
+def test_retail_sale_groups_merge_same_day_adhoc_sales_by_normalized_name(session):
     owner, retail, _, _, _ = setup_ledgers(session)
     sales = [
         Sale(
             seller_id=owner.id,
             vendeur_id=owner.id,
             business_id=retail.id,
-            client_name_adhoc="Deric",
+            client_name_adhoc=client_name,
             adhoc_customer_key=customer_key,
             sale_date=date.today(),
             total_amount_due=Decimal(amount),
             cash_paid=Decimal("0"),
             debt_amount=Decimal(amount),
         )
-        for customer_key, amount in (
-            ("deric-one", "100"),
-            ("deric-one", "150"),
-            ("deric-two", "200"),
+        for client_name, customer_key, amount in (
+            ("Deric", "deric-one", "100"),
+            (" deric ", "deric-one", "150"),
+            ("DERIC", "deric-two", "200"),
         )
     ]
     session.add_all(sales)
@@ -305,17 +306,53 @@ def test_retail_sale_groups_reuse_identity_without_merging_equal_names(session):
     display_numbers = build_retail_sale_display_numbers(sales)
     groups = build_retail_sale_groups(sales, display_numbers)
 
-    assert len(groups) == 2
-    first_identity = next(
-        group for group in groups if group["key"].startswith("a:deric-one:")
+    assert len(groups) == 1
+    assert groups[0]["key"].startswith("a-name:deric:")
+    assert len(groups[0]["sales"]) == 3
+    assert groups[0]["total_amount_due"] == Decimal("450")
+
+
+def test_retail_sale_price_input_accepts_four_decimal_places(app, session):
+    owner, retail, _, retail_client, _ = setup_ledgers(session)
+    session.add(Stock(
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        network=NetworkType.AIRTEL,
+        balance=Decimal("100"),
+        buying_price_per_unit=Decimal("20"),
+        selling_price_per_unit=Decimal("22"),
+        inventory_value=Decimal("2000"),
+        average_cost_per_unit=Decimal("20"),
+    ))
+    session.commit()
+    client = app.test_client()
+    login_to_business(client, owner, retail)
+
+    form_response = client.get("/vente_stock")
+    assert form_response.status_code == 200
+    assert b'step="0.0001"' in form_response.data
+
+    response = client.post(
+        "/vente_stock",
+        data={
+            "client_choice": "existing",
+            "existing_client_id": str(retail_client.id),
+            "sale_items-0-network": NetworkType.AIRTEL.name,
+            "sale_items-0-quantity": "10",
+            "sale_items-0-price_per_unit_applied": "22.2075",
+            "cash_paid": "0",
+            "sale_date": date.today().isoformat(),
+            "submit": "Enregistrer",
+        },
     )
-    second_identity = next(
-        group for group in groups if group["key"].startswith("a:deric-two:")
-    )
-    assert len(first_identity["sales"]) == 2
-    assert first_identity["total_amount_due"] == Decimal("250")
-    assert len(second_identity["sales"]) == 1
-    assert second_identity["total_amount_due"] == Decimal("200")
+
+    assert response.status_code == 302
+    sale = Sale.query.join(Sale.sale_items).filter(
+        Sale.business_id == retail.id,
+        Sale.client_id == retail_client.id,
+        SaleItem.price_per_unit_applied == Decimal("22.2075"),
+    ).one()
+    assert sale.sale_items[0].price_per_unit_applied == Decimal("22.2075")
 
 
 def test_stockeur_can_modify_retail_sale_without_cancelling_it(app, session):

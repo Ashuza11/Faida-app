@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from apps import db
+from apps.client_identities import normalized_client_name
 from apps.dates import business_local_datetime
 from apps.inventory import consume_stock, restore_sale_cost
 from apps.payments import apply_payment_to_sale
@@ -100,13 +101,24 @@ def build_retail_sale_display_numbers(sales) -> dict[int, int]:
 
 
 def build_retail_sale_groups(sales, display_numbers) -> list[dict]:
-    """Group one day's retail sales by explicit customer identity."""
+    """Group one day's retail sales by their customer-facing identity.
+
+    Registered clients retain their stable database identity. Ad-hoc clients
+    are grouped by normalized display name so repeated entries made without
+    selecting the prior ad-hoc identity still appear together for the day.
+    """
     groups = {}
     for sale in sales:
-        key = (sale.customer_group_key, sale.sale_date)
+        if sale.client_id is not None:
+            customer_key = sale.customer_group_key
+            client_name = sale.client_display_name
+        else:
+            client_name = normalized_client_name(sale.client_display_name)
+            customer_key = f"a-name:{client_name.casefold()}"
+        key = (customer_key, sale.sale_date)
         group = groups.setdefault(key, {
-            "key": f"{sale.customer_group_key}:{sale.sale_date.isoformat()}",
-            "client_name": sale.client_display_name,
+            "key": f"{customer_key}:{sale.sale_date.isoformat()}",
+            "client_name": client_name,
             "client_id": sale.client_id,
             "sale_date": sale.sale_date,
             "sales": [],

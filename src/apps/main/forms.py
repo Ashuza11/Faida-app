@@ -354,6 +354,7 @@ class SaleItemForm(FlaskForm):
     )
     price_per_unit_applied = DecimalField(
         "Prix Unitaire Appliqué (FC)",
+        places=4,
         validators=[
             Optional(),
             NumberRange(
@@ -362,7 +363,7 @@ class SaleItemForm(FlaskForm):
                 message="Le prix unitaire est invalide ou trop élevé."
             ),
         ],
-        render_kw={"step": "0.01", "max": "9999999999.99"},
+        render_kw={"step": "0.0001", "max": "9999999999.99"},
     )
 
 
