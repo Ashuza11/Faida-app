@@ -115,7 +115,7 @@
   }
 
   function markOpSynced(id) { return _setStatus(id, 'synced'); }
-  function markOpFailed(id) { return _setStatus(id, 'failed'); }
+  function markOpFailed(id, error) { return _setStatus(id, 'failed', error); }
 
   function deleteQueuedOp(id) {
     return initDB().then(function (d) {
@@ -127,14 +127,18 @@
     });
   }
 
-  function _setStatus(id, status) {
+  function _setStatus(id, status, error) {
     return initDB().then(function (d) {
       return new Promise(function (resolve, reject) {
         const store = d.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME);
         const req = store.get(id);
         req.onsuccess = function (e) {
           const rec = e.target.result;
-          if (rec) { rec.status = status; store.put(rec); }
+          if (rec) {
+            rec.status = status;
+            rec.error = error || null;
+            store.put(rec);
+          }
           resolve();
         };
         req.onerror = function (e) { reject(e.target.error); };
@@ -253,7 +257,12 @@
               });
             }
             if (r.status >= 400 && r.status < 500) {
-              return markOpFailed(op.id).then(function () { failed++; });
+              return r.json().catch(function () { return {}; }).then(function (payload) {
+                return markOpFailed(
+                  op.id,
+                  payload.error || 'Cet enregistrement doit être vérifié.'
+                ).then(function () { failed++; });
+              });
             }
             failed++;
           })
@@ -302,6 +311,7 @@
       loadPendingStocks();
     } else if (path === '/enregistrer_sortie') {
       interceptCashOutflowForm();
+      loadPendingCashOutflows();
     } else if (path === '/businesses/wholesale/cashbook') {
       interceptWholesaleCashbookForm();
       loadPendingWholesaleCashEntries();
@@ -514,16 +524,58 @@
     var form = document.querySelector('form[action*="enregistrer_sortie"]');
     if (!form) return;
 
+    var expenseDateInput = form.querySelector('[name="expense_date"]');
+    if (expenseDateInput) {
+      expenseDateInput.addEventListener('change', function () {
+        if (!navigator.onLine || !this.value) return;
+        fetch('/api/v1/retail-cash-balance?date=' + encodeURIComponent(this.value), {
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        }).then(function (response) {
+          if (!response.ok) throw new Error();
+          return response.json();
+        }).then(function (balance) {
+          var availability = document.getElementById('retail-cash-availability');
+          var value = document.getElementById('retail-cash-available-value');
+          if (!availability || !value) return;
+          availability.dataset.balanceDate = balance.date;
+          availability.dataset.available = balance.available;
+          value.textContent = Number(balance.available).toLocaleString('fr-CD', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }) + ' FC';
+        }).catch(function () {
+          showLocalFlash('Le solde de cette date n\'a pas pu être actualisé.', 'warning');
+        });
+      });
+    }
+
     form.addEventListener('submit', function (e) {
       if (navigator.onLine) return;
       e.preventDefault();
 
       var fd = new FormData(form);
       var amount = parseFloat(fd.get('amount'));
+      var expenseDate = fd.get('expense_date');
 
       if (!amount || amount <= 0) {
         showLocalFlash('Montant invalide.', 'warning');
         return;
+      }
+
+      var availability = document.getElementById('retail-cash-availability');
+      if (availability && availability.dataset.balanceDate === expenseDate) {
+        var available = Number(availability.dataset.available || 0);
+        if (amount > available) {
+          showLocalFlash(
+            'Solde insuffisant. Disponible : ' + available.toLocaleString('fr-CD', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            }) + ' FC.',
+            'warning'
+          );
+          return;
+        }
       }
 
       var data = {
@@ -531,10 +583,19 @@
         amount,
         category: fd.get('category'),
         description: fd.get('description') || '',
+        expense_date: expenseDate,
       };
 
       queueOp('cash_outflow', data)
-        .then(function () { return countPending(); })
+        .then(function (queueId) {
+          if (availability && availability.dataset.balanceDate === expenseDate) {
+            availability.dataset.available = String(
+              Number(availability.dataset.available || 0) - amount
+            );
+          }
+          renderPendingCashOutflow({ id: queueId, status: 'pending', data: data });
+          return countPending();
+        })
         .then(function (n) {
           showOfflineToast(n);
           showSavedOfflineToast();
@@ -545,6 +606,34 @@
           showLocalFlash('Erreur: ' + err.message, 'danger');
         });
     });
+  }
+
+  function loadPendingCashOutflows() {
+    var container = document.getElementById('retail-cash-pending');
+    if (!container) return;
+    getVisibleQueuedOps().then(function (ops) {
+      ops.filter(function (op) { return op.type === 'cash_outflow'; })
+        .forEach(renderPendingCashOutflow);
+    });
+  }
+
+  function renderPendingCashOutflow(op) {
+    var container = document.getElementById('retail-cash-pending');
+    if (!container || document.querySelector('[data-retail-cash-pending="' + op.id + '"]')) return;
+    var failed = op.status === 'failed';
+    var card = document.createElement('div');
+    card.dataset.retailCashPending = op.id;
+    card.className = 'alert ' + (failed ? 'alert-danger' : 'alert-warning') + ' py-2';
+    card.innerHTML = '<div class="d-flex justify-content-between align-items-start" style="gap:8px">' +
+      '<div><strong>' + Number(op.data.amount).toLocaleString('fr-CD', { minimumFractionDigits: 2 }) +
+      ' FC</strong><small class="d-block">' + esc(op.data.description || 'Sortie') +
+      ' · ' + esc(op.data.expense_date || '') + '</small>' +
+      (failed ? '<small class="d-block">' + esc(op.error || 'Non synchronisée.') + '</small>' : '') +
+      '</div><button type="button" class="btn btn-sm btn-outline-danger">Supprimer</button></div>';
+    card.querySelector('button').addEventListener('click', function () {
+      deleteQueuedOp(op.id).then(function () { card.remove(); });
+    });
+    container.appendChild(card);
   }
 
   // ── Wholesale Cashbook ───────────────────────────────────────────────────

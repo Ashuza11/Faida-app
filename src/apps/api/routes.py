@@ -20,7 +20,6 @@ from apps.models import (
     Stock,
     Sale,
     SaleItem,
-    CashOutflow,
     Client,
     TransactionStatus,
     PriceOperation,
@@ -47,6 +46,11 @@ from apps.money import (
 from apps.purchases import record_retail_purchase, record_wholesale_purchase
 from apps.dates import business_local_date
 from apps.sales import record_wholesale_sale
+from apps.retail_cash import (
+    RetailCashError,
+    daily_retail_cash_balance,
+    record_retail_cash_outflow,
+)
 from apps.client_identities import ClientIdentityError, resolve_sms_sale_client
 from apps.wholesale_cashbook import (
     CashbookEntryError,
@@ -505,6 +509,29 @@ def create_stock_purchase():
 
 
 # ── Cash Outflows ─────────────────────────────────────────────────────────────
+@api_bp.route("/retail-cash-balance", methods=["GET"])
+@login_required
+def retail_cash_balance():
+    business = get_current_business()
+    if business is None or business.business_type != BusinessType.RETAIL:
+        return jsonify({"error": "Choisissez le mode détaillant."}), 409
+    try:
+        balance_date = date.fromisoformat(
+            request.args.get("date") or business_local_date().isoformat()
+        )
+    except ValueError:
+        return jsonify({"error": "La date sélectionnée est invalide."}), 400
+    balance = daily_retail_cash_balance(
+        business_id=business.id, balance_date=balance_date
+    )
+    return jsonify({
+        "date": balance_date.isoformat(),
+        "inflow": str(balance.inflow),
+        "outflow": str(balance.outflow),
+        "available": str(balance.available),
+    })
+
+
 @api_bp.route("/cash-outflows", methods=["POST"])
 @login_required
 def create_cash_outflow():
@@ -550,26 +577,31 @@ def create_cash_outflow():
         if category is None:
             category = CashOutflowCategory.OTHER
 
-        description = payload.get("description", "") or ""
+        try:
+            expense_date = date.fromisoformat(str(
+                payload.get("expense_date") or business_local_date().isoformat()
+            ))
+        except ValueError as error:
+            raise RetailCashError("La date de la dépense est invalide.") from error
 
-        new_outflow = CashOutflow(
+        new_outflow, created = record_retail_cash_outflow(
+            business=business,
+            recorded_by=current_user,
             amount=amount,
             category=category,
-            description=description,
-            recorded_by=current_user,
-            vendeur_id=vendeur_id,
-            business_id=business.id,
+            description=payload.get("description", "") or "",
+            expense_date=expense_date,
+            request_id=local_id,
         )
-        db.session.add(new_outflow)
         db.session.commit()
 
         return jsonify({
-            "status":     "created",
+            "status":     "created" if created else "duplicate",
             "outflow_id": new_outflow.id,
             "local_id":   local_id,
-        }), 201
+        }), 201 if created else 200
 
-    except (ValueError, InvalidOperation, TypeError, OverflowError) as error:
+    except (RetailCashError, ValueError, InvalidOperation, TypeError, OverflowError) as error:
         db.session.rollback()
         return jsonify({"error": str(error)}), 400
     except Exception as e:

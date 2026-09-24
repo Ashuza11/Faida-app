@@ -55,7 +55,11 @@
           <div class="card">
             <div class="card-header border-0">
               <h3 class="mb-0">Historique des Mouvements Cash</h3>
-              <p class="mt-2 mb-0 text-muted">Total Entrées: <strong class="text-success">{{ "{:,.2f}".format(total_inflow) }} FC</strong> | Total Sorties: <strong class="text-danger">{{ "{:,.2f}".format(total_outflow) }} FC</strong></p>
+              <p class="mt-2 mb-0 text-muted">
+                Entrées: <strong class="text-success">{{ "{:,.2f}".format(total_inflow) }} FC</strong> |
+                Sorties: <strong class="text-danger">{{ "{:,.2f}".format(total_outflow) }} FC</strong> |
+                Disponible: <strong>{{ "{:,.2f}".format(available_cash) }} FC</strong>
+              </p>
             </div>
             <div class="table-responsive">
               <table class="table align-items-center table-flush">
@@ -67,21 +71,22 @@
                     <th scope="col">Montant (FC)</th>
                     <th scope="col">Description</th>
                     <th scope="col">Enregistré par</th>
+                    <th scope="col">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {% set all_movements = [] %}
                   {% for outflow in outflows %}
-                    {% set _ = all_movements.append({'type': 'Sortie', 'category': outflow.category.value, 'amount': outflow.amount, 'description': outflow.description, 'recorded_by': outflow.recorded_by.username, 'created_at': outflow.created_at}) %}
+                    {% set _ = all_movements.append({'type': 'Sortie', 'category': outflow.category.value, 'amount': outflow.amount, 'description': outflow.description, 'recorded_by': outflow.recorded_by.username, 'created_at': outflow.created_at, 'status': outflow.status, 'outflow': outflow}) %}
                   {% endfor %}
                   {% for inflow in inflows %}
-                    {% set _ = all_movements.append({'type': 'Entrée', 'category': inflow.category.value, 'amount': inflow.amount, 'description': inflow.description, 'recorded_by': inflow.recorded_by.username, 'created_at': inflow.created_at}) %}
+                    {% set _ = all_movements.append({'type': 'Entrée', 'category': inflow.category.value, 'amount': inflow.amount, 'description': inflow.description, 'recorded_by': inflow.recorded_by.username, 'created_at': inflow.created_at, 'status': inflow.status}) %}
                   {% endfor %}
 
                   {% set sorted_movements = all_movements | sort(attribute='created_at', reverse=true) %}
 
                   {% for movement in sorted_movements %}
-                    <tr>
+                    <tr class="{% if movement.status.value == 'reversed' %}text-muted{% endif %}">
                       <td>{{ movement.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
                       <td>
                           {% if movement.type == 'Entrée' %}
@@ -89,6 +94,7 @@
                           {% else %}
                               <span class="badge badge-danger">{{ movement.type }}</span>
                           {% endif %}
+                          {% if movement.status.value == 'reversed' %}<span class="badge badge-secondary">Annulée</span>{% endif %}
                       </td>
                       <td>{{ movement.category }}</td>
                       <td class="
@@ -98,10 +104,22 @@
                       </td>
                       <td>{{ movement.description if movement.description else 'N/A' }}</td>
                       <td>{{ movement.recorded_by }}</td>
+                      <td>
+                        {% if movement.outflow and movement.status.value == 'active' and current_user.id == movement.outflow.vendeur_id %}
+                        <form method="post" action="{{ url_for('main_bp.reverse_retail_cash_outflow_route', outflow_id=movement.outflow.id) }}"
+                              onsubmit="var reason=prompt('Pourquoi annuler cette sortie ?'); if (!reason || reason.trim().length < 3) return false; this.reason.value=reason.trim();">
+                          {{ reversal_form.csrf_token }}
+                          <input type="hidden" name="reason">
+                          <button type="submit" class="btn btn-sm btn-outline-danger">Annuler</button>
+                        </form>
+                        {% elif movement.outflow and movement.status.value == 'reversed' %}
+                          <small>{{ movement.outflow.reversal_reason }}</small>
+                        {% else %}—{% endif %}
+                      </td>
                     </tr>
                   {% else %}
                     <tr>
-                      <td colspan="6" class="text-center">Aucun mouvement cash enregistré.</td>
+                      <td colspan="7" class="text-center">Aucun mouvement cash enregistré.</td>
                     </tr>
                   {% endfor %}
                 </tbody>

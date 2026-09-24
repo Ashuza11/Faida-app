@@ -29,6 +29,13 @@
               </div>
             </div>
             <div class="card-body">
+              <div class="alert alert-info py-3" id="retail-cash-availability"
+                   data-balance-date="{{ balance_date.isoformat() }}"
+                   data-available="{{ cash_balance.available }}">
+                <small class="d-block">Disponible le {{ balance_date.strftime('%d/%m/%Y') }}</small>
+                <strong class="h3 mb-0" id="retail-cash-available-value">{{ "{:,.2f}".format(cash_balance.available) }} FC</strong>
+              </div>
+              <div id="retail-cash-pending" class="mb-3"></div>
               <form method="post" action="{{ url_for('main_bp.enregistrer_sortie') }}">
                 {{ form.hidden_tag() }}
 

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from flask import g
@@ -27,6 +27,7 @@ from apps.sales import (
     build_retail_sale_display_numbers,
     build_retail_sale_groups,
 )
+from apps.retail_cash import daily_retail_cash_balance
 
 
 def setup_ledgers(session):
@@ -100,6 +101,24 @@ def setup_ledgers(session):
                 expense_date=date.today(),
                 description="Wholesale-hidden expense",
             ),
+            CashInflow(
+                vendeur_id=owner.id,
+                business_id=retail.id,
+                recorded_by=owner,
+                amount=Decimal("5"),
+                category=CashInflowCategory.OTHER,
+                payment_date=date.today(),
+                description="Retail opening cash",
+            ),
+            CashInflow(
+                vendeur_id=owner.id,
+                business_id=wholesale.id,
+                recorded_by=owner,
+                amount=Decimal("7"),
+                category=CashInflowCategory.OTHER,
+                payment_date=date.today(),
+                description="Wholesale opening cash",
+            ),
         ]
     )
     session.commit()
@@ -142,6 +161,16 @@ def test_retail_client_sale_debt_and_cash_pages_are_business_scoped(app, session
 
 def test_retail_cash_outflow_saves_when_submit_button_value_is_missing(app, session):
     owner, retail, _, _, _ = setup_ledgers(session)
+    session.add(CashInflow(
+        amount=Decimal("2000.00"),
+        category=CashInflowCategory.OTHER,
+        description="Caisse disponible",
+        recorded_by=owner,
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        payment_date=date.today(),
+    ))
+    session.commit()
     client = app.test_client()
     login_to_business(client, owner, retail)
 
@@ -164,6 +193,111 @@ def test_retail_cash_outflow_saves_when_submit_button_value_is_missing(app, sess
     assert outflow.recorded_by_id == owner.id
 
 
+def test_retail_cash_outflow_is_rejected_without_available_cash(app, session):
+    owner, retail, _, _, _ = setup_ledgers(session)
+    client = app.test_client()
+    login_to_business(client, owner, retail)
+
+    response = client.post(
+        "/enregistrer_sortie",
+        data={
+            "amount": "2500",
+            "category": CashOutflowCategory.OTHER.name,
+            "expense_date": date.today().isoformat(),
+            "description": "Sortie sans encaissement",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Solde insuffisant".encode() in response.data
+    assert CashOutflow.query.filter_by(
+        business_id=retail.id,
+        description="Sortie sans encaissement",
+    ).count() == 0
+
+
+def test_owner_can_reverse_retail_cash_outflow_and_restore_balance(app, session):
+    owner, retail, _, _, _ = setup_ledgers(session)
+    receipt = CashInflow(
+        amount=Decimal("3000.00"),
+        category=CashInflowCategory.OTHER,
+        recorded_by=owner,
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        payment_date=date.today(),
+    )
+    outflow = CashOutflow(
+        amount=Decimal("2500.00"),
+        category=CashOutflowCategory.OTHER,
+        description="Montant incorrect",
+        recorded_by=owner,
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        expense_date=date.today(),
+    )
+    session.add_all([receipt, outflow])
+    session.commit()
+    client = app.test_client()
+    login_to_business(client, owner, retail)
+
+    response = client.post(
+        f"/sorties_cash/{outflow.id}/reverse",
+        data={"reason": "Erreur de montant"},
+    )
+
+    assert response.status_code == 302
+    session.refresh(outflow)
+    assert outflow.status == TransactionStatus.REVERSED
+    assert outflow.reversal_reason == "Erreur de montant"
+    cash_page = client.get(f"/sorties_cash?date={date.today().isoformat()}")
+    assert b"3,000.00 FC" in cash_page.data
+
+
+def test_retail_cash_outflow_api_enforces_balance_and_is_idempotent(app, session):
+    owner, retail, _, _, _ = setup_ledgers(session)
+    client = app.test_client()
+    login_to_business(client, owner, retail)
+    payload = {
+        "local_id": "offline-outflow-one",
+        "amount": "60.00",
+        "category": CashOutflowCategory.OTHER.name,
+        "expense_date": date.today().isoformat(),
+        "description": "Transport hors ligne",
+    }
+
+    initial_balance = client.get(
+        f"/api/v1/retail-cash-balance?date={date.today().isoformat()}"
+    )
+    assert initial_balance.status_code == 200
+    assert Decimal(initial_balance.get_json()["available"]) == Decimal("0.00")
+
+    rejected = client.post("/api/v1/cash-outflows", json=payload)
+    assert rejected.status_code == 400
+    assert "Solde insuffisant" in rejected.get_json()["error"]
+
+    session.add(CashInflow(
+        amount=Decimal("100.00"),
+        category=CashInflowCategory.OTHER,
+        recorded_by=owner,
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        payment_date=date.today(),
+    ))
+    session.commit()
+
+    created = client.post("/api/v1/cash-outflows", json=payload)
+    duplicate = client.post("/api/v1/cash-outflows", json=payload)
+
+    assert created.status_code == 201
+    assert created.get_json()["status"] == "created"
+    assert duplicate.status_code == 200
+    assert duplicate.get_json()["status"] == "duplicate"
+    assert CashOutflow.query.filter_by(
+        business_id=retail.id, request_id="offline-outflow-one"
+    ).count() == 1
+
+
 def test_new_retail_records_receive_active_business_key(app, session):
     owner, retail, _, retail_client, _ = setup_ledgers(session)
     session.add(Stock(
@@ -175,6 +309,14 @@ def test_new_retail_records_receive_active_business_key(app, session):
         selling_price_per_unit=Decimal("25"),
         inventory_value=Decimal("2000"),
         average_cost_per_unit=Decimal("20"),
+    ))
+    session.add(CashInflow(
+        amount=Decimal("100.00"),
+        category=CashInflowCategory.OTHER,
+        recorded_by=owner,
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        payment_date=date.today(),
     ))
     session.commit()
     client = app.test_client()
@@ -524,10 +666,67 @@ def test_retail_sale_edit_preserves_existing_payment(app, session):
     assert payment.allocations[0].amount == Decimal("100")
 
 
+def test_retail_payment_cannot_be_reversed_after_its_cash_is_spent(app, session):
+    owner, retail, _, retail_client, _ = setup_ledgers(session)
+    session.add(Stock(
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        network=NetworkType.AIRTEL,
+        balance=Decimal("100"),
+        buying_price_per_unit=Decimal("20"),
+        selling_price_per_unit=Decimal("25"),
+        inventory_value=Decimal("2000"),
+        average_cost_per_unit=Decimal("20"),
+    ))
+    session.commit()
+    client = app.test_client()
+    login_to_business(client, owner, retail)
+    client.post(
+        "/vente_stock",
+        data={
+            "client_choice": "existing",
+            "existing_client_id": str(retail_client.id),
+            "sale_items-0-network": NetworkType.AIRTEL.name,
+            "sale_items-0-quantity": "10",
+            "sale_items-0-price_per_unit_applied": "25",
+            "cash_paid": "100",
+            "sale_date": date.today().isoformat(),
+            "submit": "Vendre",
+        },
+    )
+    payment = PaymentEvent.query.one()
+    client.post(
+        "/enregistrer_sortie",
+        data={
+            "amount": "60",
+            "category": CashOutflowCategory.OTHER.name,
+            "expense_date": date.today().isoformat(),
+            "description": "Transport payé",
+        },
+    )
+
+    response = client.post(
+        f"/payments/{payment.id}/reverse",
+        data={"reason": "Paiement incorrect"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "a déjà servi à une sortie de caisse".encode() in response.data
+    session.refresh(payment)
+    assert payment.status == TransactionStatus.ACTIVE
+    assert all(
+        allocation.status == TransactionStatus.ACTIVE
+        for allocation in payment.allocations
+    )
+
+
 def test_retail_debt_payment_cannot_reach_wholesale_debt(app, session):
     owner, retail, _, retail_client, wholesale_client = setup_ledgers(session)
     retail_sale = Sale.query.filter_by(client_id=retail_client.id).one()
     wholesale_sale = Sale.query.filter_by(client_id=wholesale_client.id).one()
+    retail_sale.sale_date = date.today() - timedelta(days=1)
+    session.commit()
     client = app.test_client()
     login_to_business(client, owner, retail)
 
@@ -550,6 +749,11 @@ def test_retail_debt_payment_cannot_reach_wholesale_debt(app, session):
     event = PaymentEvent.query.one()
     assert event.business_id == retail.id
     assert event.client_id == retail_client.id
+    balance = daily_retail_cash_balance(
+        business_id=retail.id, balance_date=date.today()
+    )
+    assert balance.inflow == Decimal("35.00")
+    assert balance.available == Decimal("30.00")
 
 
 def test_owner_created_stockeur_receives_retail_membership(app, session):

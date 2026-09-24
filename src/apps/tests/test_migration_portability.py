@@ -31,6 +31,16 @@ def test_postgresql_enum_case_backfill_has_an_explicit_cast():
     assert "::paymentallocationkind" in source
 
 
+def test_payment_event_timestamps_are_backfilled_before_becoming_required():
+    migration = MIGRATIONS / "8d2f4c6a190b_require_payment_event_created_at.py"
+    source = migration.read_text()
+
+    backfill = source.index("WHERE created_at IS NULL")
+    required = source.index('"created_at",', backfill)
+    assert backfill < required
+    assert "CURRENT_TIMESTAMP" in source
+
+
 def test_legacy_to_head_postgresql_sql_reuses_base_enum_types():
     environment = {
         **os.environ,
@@ -57,4 +67,5 @@ def test_legacy_to_head_postgresql_sql_reuses_base_enum_types():
 
     assert result.returncode == 0, result.stderr
     assert "CREATE TYPE networktype" not in result.stdout
+    assert result.stdout.count("CREATE TYPE transactionstatus") == 1
     assert ")::paymentallocationkind" in result.stdout

@@ -515,6 +515,13 @@ def reverse_payment_event(
                     "Contactez l'administrateur avant de continuer.",
                 ))
 
+    # A retail receipt cannot disappear after its cash has funded a withdrawal.
+    # Import locally to keep payment allocation and cash-ledger modules acyclic.
+    from apps.retail_cash import require_cash_after_receipt_reversal
+    require_cash_after_receipt_reversal(
+        business=business, inflows=allocations
+    )
+
     for allocation in allocations:
         sale = sales[allocation.sale_id]
         sale.cash_paid -= allocation.amount

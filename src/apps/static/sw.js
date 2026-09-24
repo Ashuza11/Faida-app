@@ -14,7 +14,7 @@
  *   b) Local Docker + internet disconnected: server reachable but redirects → cache ✓
  */
 
-const CACHE_VERSION = 'faida-v4';
+const CACHE_VERSION = 'faida-v5';
 const OFFLINE_URL   = '/static/offline.html';
 
 // Critical assets — install FAILS if these can't be cached (offline.html must always be available)
@@ -200,7 +200,9 @@ async function syncPendingOps() {
       } else if (response.status >= 400 && response.status < 500) {
         // 4xx = bad data — retrying will never work, mark as permanently failed
         console.warn('[SW] Sync op permanently failed (HTTP', response.status, '):', op.type, op.id);
-        await markFailed(db, op.id);
+        let payload = {};
+        try { payload = await response.json(); } catch {}
+        await markFailed(db, op.id, payload.error || 'Cet enregistrement doit être vérifié.');
       }
       // 5xx = server error — leave as pending so next sync retries
     } catch {
@@ -266,18 +268,22 @@ function markSynced(db, id) {
   return _setOpStatus(db, id, 'synced');
 }
 
-function markFailed(db, id) {
-  return _setOpStatus(db, id, 'failed');
+function markFailed(db, id, error) {
+  return _setOpStatus(db, id, 'failed', error);
 }
 
-function _setOpStatus(db, id, status) {
+function _setOpStatus(db, id, status, error) {
   return new Promise((resolve, reject) => {
     const tx    = db.transaction('faida_queue', 'readwrite');
     const store = tx.objectStore('faida_queue');
     const req   = store.get(id);
     req.onsuccess = (e) => {
       const record = e.target.result;
-      if (record) { record.status = status; store.put(record); }
+      if (record) {
+        record.status = status;
+        record.error = error || null;
+        store.put(record);
+      }
       resolve();
     };
     req.onerror = (e) => reject(e.target.error);

@@ -1422,6 +1422,9 @@ class CashOutflow(db.Model):
     business_id: so.Mapped[Optional[int]] = so.mapped_column(
         sa.ForeignKey("businesses.id"), nullable=True, index=True
     )
+    request_id: so.Mapped[Optional[str]] = so.mapped_column(
+        sa.String(64), nullable=True
+    )
 
     recorded_by_id: so.Mapped[int] = so.mapped_column(
         sa.ForeignKey("users.id"), nullable=False
@@ -1439,6 +1442,34 @@ class CashOutflow(db.Model):
     )
     description: so.Mapped[Optional[str]] = so.mapped_column(
         sa.String(255), nullable=True
+    )
+    status: so.Mapped[TransactionStatus] = so.mapped_column(
+        sa.Enum(TransactionStatus), nullable=False, default=TransactionStatus.ACTIVE
+    )
+    reversed_at: so.Mapped[Optional[datetime]] = so.mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    reversed_by_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=True
+    )
+    reversed_by: so.Mapped[Optional["User"]] = so.relationship(
+        foreign_keys=[reversed_by_id]
+    )
+    reversal_reason: so.Mapped[Optional[str]] = so.mapped_column(
+        sa.String(255), nullable=True
+    )
+
+    __table_args__ = (
+        sa.CheckConstraint("amount > 0", name="_cash_outflow_positive_amount_ck"),
+        sa.Index(
+            "ix_cash_outflows_business_date_status",
+            "business_id",
+            "expense_date",
+            "status",
+        ),
+        sa.UniqueConstraint(
+            "business_id", "request_id", name="_cash_outflows_business_request_uc"
+        ),
     )
 
     def __repr__(self) -> str:

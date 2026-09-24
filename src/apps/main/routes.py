@@ -41,6 +41,12 @@ from apps.payments import (
 from apps.inventory import consume_stock
 from apps.opening_balances import OpeningBalanceError, save_opening_balances
 from apps.dates import business_local_date
+from apps.retail_cash import (
+    RetailCashError,
+    daily_retail_cash_balance,
+    record_retail_cash_outflow,
+    reverse_retail_cash_outflow,
+)
 from apps.money import (
     require_comparable_unit_prices,
     require_ledger_amount,
@@ -77,6 +83,7 @@ from apps.models import (
     Sale,
     SaleItem,
     CashOutflow,
+    CashOutflowCategory,
     CashInflow,
     CashInflowCategory,
     WholesaleCashDirection,
@@ -1639,25 +1646,24 @@ def index():
         q = q.filter(Sale.business_id == business_id)
     total_debt = float(q.filter(Sale.sale_date == selected_date).scalar() or 0)
 
-    # Cash inflow — sales cash paid on selected date
-    q = db.session.query(func.sum(Sale.cash_paid))
-    if business_id:
-        q = q.filter(Sale.business_id == business_id)
-    total_cash_inflow_sales = q.filter(Sale.sale_date == selected_date).scalar() or Decimal("0.00")
-
-    # Cash inflow — non-sale entries on selected date
-    q = db.session.query(func.sum(CashInflow.amount)).filter(CashInflow.sale_id.is_(None))
+    # Cash receipts belong to their payment date, which may differ from the
+    # original sale date when an older debt is collected.
+    q = db.session.query(func.sum(CashInflow.amount)).filter(
+        CashInflow.status == TransactionStatus.ACTIVE,
+        CashInflow.payment_date == selected_date,
+    )
     if business_id:
         q = q.filter(CashInflow.business_id == business_id)
-    total_cash_inflow_other = q.filter(CashInflow.payment_date == selected_date).scalar() or Decimal("0.00")
-
-    total_cash_inflow_today = float(total_cash_inflow_sales + total_cash_inflow_other)
+    total_cash_inflow_today = float(q.scalar() or Decimal("0.00"))
 
     # Cash outflow on selected date
-    q = db.session.query(func.sum(CashOutflow.amount))
+    q = db.session.query(func.sum(CashOutflow.amount)).filter(
+        CashOutflow.status == TransactionStatus.ACTIVE,
+        CashOutflow.expense_date == selected_date,
+    )
     if business_id:
         q = q.filter(CashOutflow.business_id == business_id)
-    total_cash_outflow_today = float(q.filter(CashOutflow.expense_date == selected_date).scalar() or 0)
+    total_cash_outflow_today = float(q.scalar() or 0)
 
     # --- 5. Recent sales for the selected date ---
     base_query = Sale.query.options(
@@ -3111,51 +3117,31 @@ def sorties_cash():
         CashInflow.status == TransactionStatus.ACTIVE,
     )
 
-    sales_cash_query = db.session.query(db.func.sum(Sale.cash_paid)).filter(
-        Sale.sale_date == ctx['selected_date']
-    )
-
     # Apply vendeur filter if not platform admin
     if business_id is not None:
         outflow_query = outflow_query.filter(CashOutflow.business_id == business_id)
         inflow_query = inflow_query.filter(CashInflow.business_id == business_id)
-        sales_cash_query = sales_cash_query.filter(Sale.business_id == business_id)
     elif vendeur_id:
         outflow_query = outflow_query.filter(
             CashOutflow.vendeur_id == vendeur_id)
         inflow_query = inflow_query.filter(CashInflow.vendeur_id == vendeur_id)
-        sales_cash_query = sales_cash_query.filter(
-            Sale.vendeur_id == vendeur_id)
 
     # Execute queries
     all_outflows = outflow_query.order_by(CashOutflow.expense_date.desc(), CashOutflow.created_at.desc()).all()
     all_inflows = inflow_query.order_by(CashInflow.payment_date.desc(), CashInflow.created_at.desc()).all()
-    all_sales_cash_paid_sum = sales_cash_query.scalar()
 
     # --- 4. Calculate Totals ---
-    total_outflow = (
-        sum(outflow.amount for outflow in all_outflows)
-        if all_outflows
-        else Decimal("0.00")
+    cash_balance = daily_retail_cash_balance(
+        business_id=business.id,
+        balance_date=ctx['selected_date'],
     )
-
-    total_cash_inflows_records = (
-        sum(inflow.amount for inflow in all_inflows)
-        if all_inflows
-        else Decimal("0.00")
+    total_outflow = cash_balance.outflow
+    total_inflow = cash_balance.inflow
+    total_cash_inflows_records = cash_balance.inflow
+    total_sales_cash_paid = sum(
+        (inflow.amount for inflow in all_inflows if inflow.sale_id is not None),
+        Decimal("0.00"),
     )
-
-    total_sales_cash_paid = (
-        all_sales_cash_paid_sum if all_sales_cash_paid_sum else Decimal("0.00")
-    )
-
-    # IMPORTANT: CashInflow records for SALE_COLLECTION are already reflected in
-    # Sale.cash_paid (encaisser_dette updates both). Adding them here would double-count.
-    # Only add CashInflow records NOT linked to a sale (e.g. "Autre Entrée").
-    total_unsale_inflows = sum(
-        inflow.amount for inflow in all_inflows if inflow.sale_id is None
-    )
-    total_inflow = total_sales_cash_paid + total_unsale_inflows
 
     # --- 5. Render Template with selected_date for the filter ---
     return render_template(
@@ -3166,7 +3152,9 @@ def sorties_cash():
         total_inflow=total_inflow,
         total_sales_cash_paid=total_sales_cash_paid,  # Bonus: separate display if needed
         total_cash_inflows_records=total_cash_inflows_records,  # Bonus: separate display
+        available_cash=cash_balance.available,
         selected_date=selected_date_str,  # ← This is what the filter needs!
+        reversal_form=TransactionReversalForm(),
         segment="stock",
         sub_segment="Sorties_Cash",
     )
@@ -3193,28 +3181,29 @@ def enregistrer_sortie():
     if request.method == "POST":
         if form.validate_on_submit():
             try:
-                new_outflow = CashOutflow(
-                    amount=form.amount.data,
-                    category=form.category.data,
-                    description=form.description.data,
+                record_retail_cash_outflow(
+                    business=business,
                     recorded_by=current_user,
-                    vendeur_id=current_user.business_vendeur_id,
-                    business_id=business.id,
+                    amount=form.amount.data,
+                    category=CashOutflowCategory[form.category.data],
+                    description=form.description.data,
                     expense_date=form.expense_date.data,
                 )
-                db.session.add(new_outflow)
                 db.session.commit()
 
-                flash("Sortie de caisse enregistrée avec succès!", "success")
-                return redirect(url_for("main_bp.sorties_cash"))
+                flash("Sortie de caisse enregistrée.", "success")
+                return redirect(url_for(
+                    "main_bp.sorties_cash",
+                    date=form.expense_date.data.isoformat(),
+                ))
 
-            except Exception as e:
+            except (RetailCashError, KeyError) as error:
                 db.session.rollback()
-                current_app.logger.error(f"Error saving cash outflow: {e}")
-                flash(user_message(
-                    "La sortie de caisse n'a pas été enregistrée.",
-                    "Vérifiez les informations puis réessayez.",
-                ), "danger")
+                flash(str(error), "danger")
+            except Exception:
+                db.session.rollback()
+                current_app.logger.exception("Error saving cash outflow")
+                flash("La sortie de caisse n'a pas été enregistrée.", "danger")
 
         else:
             for field, errors in form.errors.items():
@@ -3224,13 +3213,52 @@ def enregistrer_sortie():
                         "danger",
                     )
 
+    balance_date = form.expense_date.data or business_local_date()
+    cash_balance = daily_retail_cash_balance(
+        business_id=business.id, balance_date=balance_date
+    )
     return render_template(
         "main/enregistrer_sortie.html",
         form=form,
         page_title=page_title,
         sub_page_title=sub_page_title,
+        cash_balance=cash_balance,
+        balance_date=balance_date,
         segment="enregistrer_sortie",
     )
+
+
+@bp.route("/sorties_cash/<int:outflow_id>/reverse", methods=["POST"])
+@login_required
+@business_member_required
+def reverse_retail_cash_outflow_route(outflow_id):
+    business = get_current_business()
+    outflow = CashOutflow.query.filter_by(
+        id=outflow_id, business_id=business.id
+    ).first_or_404()
+    form = TransactionReversalForm()
+    try:
+        if not form.validate_on_submit():
+            raise RetailCashError(
+                "Indiquez brièvement pourquoi vous annulez cette sortie."
+            )
+        reversed_now = reverse_retail_cash_outflow(
+            outflow=outflow,
+            business=business,
+            reversed_by=current_user,
+            reason=form.reason.data,
+        )
+        db.session.commit()
+        flash(
+            "Sortie annulée." if reversed_now else "Cette sortie est déjà annulée.",
+            "success" if reversed_now else "info",
+        )
+    except (RetailCashError, PermissionError) as error:
+        db.session.rollback()
+        flash(str(error), "danger")
+    return redirect(url_for(
+        "main_bp.sorties_cash", date=outflow.expense_date.isoformat()
+    ))
 
 
 # Encaisser une Dette (Debt Collection)
