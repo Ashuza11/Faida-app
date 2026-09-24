@@ -330,11 +330,9 @@ def get_stock_purchase_history_query(date_filter=True, date_arg_key='date'):
     if date_filter:
         ctx = get_date_context(arg_key=date_arg_key)
 
-        # Apply the date range filtering using UTC timestamps
-        query = query.filter(
-            StockPurchase.created_at >= ctx['start_utc'],
-            StockPurchase.created_at <= ctx['end_utc']
-        )
+        # Use the explicit ledger date so manually dated and SMS purchases are
+        # shown in the same day as their financial summary.
+        query = query.filter(StockPurchase.purchase_date == ctx['selected_date'])
         # Return the context needed by the endpoint for the frontend filter
         return query, ctx
 

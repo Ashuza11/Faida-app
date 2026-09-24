@@ -16,6 +16,37 @@
     {% include 'includes/page_header.html' %}
 
     <div class="container-fluid mt--6">
+        <div class="card mb-4">
+            <div class="card-header border-0 pb-2">
+                <div class="d-flex flex-wrap justify-content-between align-items-center">
+                    <div>
+                        <h3 class="mb-0">Achats de stock</h3>
+                        <small class="text-muted">{% if is_today %}Aujourd'hui{% else %}{{ selected_date }}{% endif %}</small>
+                    </div>
+                    <div class="text-right mt-2 mt-sm-0">
+                        <small class="d-block text-muted text-uppercase">Total payé</small>
+                        <span class="h2 font-weight-bold text-primary mb-0">{{ "{:,.2f}".format(purchase_summary.total_cost) }} FC</span>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body pt-2">
+                {% if purchase_summary.networks %}
+                    <div class="row">
+                        {% for item in purchase_summary.networks %}
+                            <div class="col-6 col-lg-3 mb-3 mb-lg-0">
+                                <div class="border rounded px-3 py-2 h-100">
+                                    <small class="text-muted text-uppercase">{{ item.network.value|capitalize }}</small>
+                                    <div class="font-weight-bold">{{ "{:,.2f}".format(item.total_cost) }} FC</div>
+                                    <small class="text-muted">{{ "{:,}".format(item.total_units) }} unités</small>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted mb-0">Aucun achat pour cette date.</p>
+                {% endif %}
+            </div>
+        </div>
         <div class="row">
             <div class="col">
                 <div class="card">

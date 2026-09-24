@@ -134,6 +134,7 @@ from apps.businesses import (
     resolve_business_for_user,
 )
 from apps.purchases import (
+    build_retail_purchase_summary,
     build_wholesale_purchase_groups,
     delete_retail_purchase,
     record_retail_purchase,
@@ -1665,6 +1666,10 @@ def index():
         q = q.filter(CashOutflow.business_id == business_id)
     total_cash_outflow_today = float(q.scalar() or 0)
 
+    purchase_summary = build_retail_purchase_summary(
+        business=active_business, target_date=selected_date
+    )
+
     # --- 5. Recent sales for the selected date ---
     base_query = Sale.query.options(
         db.joinedload(Sale.client),
@@ -1695,6 +1700,7 @@ def index():
         total_debt=total_debt,
         total_cash_inflow_today=total_cash_inflow_today,
         total_cash_outflow_today=total_cash_outflow_today,
+        purchase_summary=purchase_summary,
         recent_sales=recent_sales,
         daily_stock_reports=daily_stock_reports,
         daily_overall_report=daily_overall_report,
@@ -2173,6 +2179,9 @@ def achat_stock():
     base_purchases_query, ctx = get_stock_purchase_history_query(
         date_filter=True)
     selected_date_str = ctx.get('date_str')
+    purchase_summary = build_retail_purchase_summary(
+        business=active_business, target_date=ctx['selected_date']
+    )
 
     # Paginate results
     stock_purchases_pagination, _, _ = get_paginated_results(
@@ -2189,7 +2198,9 @@ def achat_stock():
         sub_segment="achat_stock",
         stock_purchases=stock_purchases_pagination.items,
         stock_purchases_pagination=stock_purchases_pagination,
-        selected_date=selected_date_str
+        selected_date=selected_date_str,
+        purchase_summary=purchase_summary,
+        is_today=ctx['is_today'],
     )
 
 

@@ -3,7 +3,10 @@
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import date, datetime, timezone
 
+from sqlalchemy import func
+
 from apps import db
+from apps.dates import business_local_date
 from apps.inventory import record_purchase, reverse_purchase
 from apps.models import (
     Business,
@@ -29,6 +32,46 @@ from apps.money import (
 from apps.pricing import calculate_preset_cost
 from apps.user_messages import user_message
 from apps.wholesale_costs import require_plausible_wholesale_unit_cost
+
+
+def build_retail_purchase_summary(*, business: Business, target_date: date) -> dict:
+    """Return active retail purchase costs grouped by network for one ledger day."""
+    rows = (
+        db.session.query(
+            StockPurchase.network,
+            func.sum(StockPurchase.amount_purchased).label("total_units"),
+            func.sum(StockPurchase.actual_total_cost).label("total_cost"),
+        )
+        .join(Stock, StockPurchase.stock_item_id == Stock.id)
+        .filter(
+            Stock.business_id == business.id,
+            StockPurchase.purchase_date == target_date,
+            StockPurchase.status == TransactionStatus.ACTIVE,
+        )
+        .group_by(StockPurchase.network)
+        .all()
+    )
+    totals_by_network = {
+        network: {
+            "network": network,
+            "total_units": int(total_units or 0),
+            "total_cost": as_decimal(total_cost or 0),
+        }
+        for network, total_units, total_cost in rows
+    }
+    networks = [
+        totals_by_network[network]
+        for network in NetworkType
+        if network in totals_by_network
+    ]
+    return {
+        "date": target_date,
+        "networks": networks,
+        "total_units": sum(row["total_units"] for row in networks),
+        "total_cost": sum(
+            (row["total_cost"] for row in networks), Decimal("0")
+        ),
+    }
 
 
 def build_wholesale_purchase_groups(purchases) -> list[dict]:
@@ -115,7 +158,7 @@ def record_wholesale_purchase(
         selling_price_at_purchase=stock.selling_price_per_unit,
         actual_total_cost=total_cost,
         amount_purchased=int(quantity),
-        purchase_date=purchase_date or date.today(),
+        purchase_date=purchase_date or business_local_date(),
     )
     db.session.add(purchase)
     return purchase
@@ -258,7 +301,7 @@ def record_retail_purchase(
         buying_price_at_purchase=unit_cost,
         selling_price_at_purchase=intended_selling_price,
         actual_total_cost=total_cost,
-        purchase_date=purchase_date or date.today(),
+        purchase_date=purchase_date or business_local_date(),
     )
     db.session.add(purchase)
     return purchase
