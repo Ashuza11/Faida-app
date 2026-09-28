@@ -1087,8 +1087,8 @@ class Sale(db.Model):
     client_name_adhoc: so.Mapped[Optional[str]] = so.mapped_column(
         sa.String(128), nullable=True
     )
-    # Stable identity chosen by the seller. Names are labels, not identities:
-    # two ad-hoc customers may share a name, while one customer may buy twice.
+    # Legacy stable identity retained for historical retail ad-hoc sales.
+    # New manual retail sales create or reuse a registered Client directly.
     adhoc_customer_key: so.Mapped[Optional[str]] = so.mapped_column(
         sa.String(64), nullable=True, index=True
     )

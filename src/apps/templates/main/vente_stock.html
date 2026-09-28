@@ -52,14 +52,15 @@
                                         </div>
                                     </div>
                                     <div class="col-md-6" id="new-client-name-field" style="display: none;">
-                                        <div class="form-group{% if form.adhoc_customer_key.errors %} has-danger{% endif %}">
-                                            {{ form.adhoc_customer_key.label(class="form-control-label") }}
-                                            {{ form.adhoc_customer_key(class="form-control" + (" is-invalid" if form.adhoc_customer_key.errors else ""), id="adhoc-customer-select") }}
-                                            <small class="form-text text-muted">Choisissez « Même client » pour regrouper ses achats et payer son ancienne dette d'abord.</small>
-                                            {% for error in form.adhoc_customer_key.errors %}
-                                                <div class="invalid-feedback d-block">{{ error }}</div>
-                                            {% endfor %}
-                                        </div>
+                                        {% if editing_sale and not editing_sale.client_id %}
+                                            <div class="form-group{% if form.adhoc_customer_key.errors %} has-danger{% endif %}">
+                                                {{ form.adhoc_customer_key.label(class="form-control-label") }}
+                                                {{ form.adhoc_customer_key(class="form-control" + (" is-invalid" if form.adhoc_customer_key.errors else ""), id="adhoc-customer-select") }}
+                                                {% for error in form.adhoc_customer_key.errors %}
+                                                    <div class="invalid-feedback d-block">{{ error }}</div>
+                                                {% endfor %}
+                                            </div>
+                                        {% endif %}
                                         <div class="form-group{% if form.new_client_name.errors %} has-danger{% endif %}">
                                             {{ form.new_client_name.label(class="form-control-label") }}
                                             {{ form.new_client_name(class="form-control" + (" is-invalid" if form.new_client_name.errors else ""), id="new-client-name-input") }}
@@ -334,13 +335,19 @@
             }
 
             $('#client-choice-select').change(toggleClientFields);
-            $('#adhoc-customer-select').change(function() {
+            var adhocSelect = $('#adhoc-customer-select');
+            adhocSelect.change(function() {
                 var reusingClient = $(this).val() !== '';
                 $('#new-client-name-input').prop('disabled', reusingClient);
                 if (reusingClient) {
                     $('#new-client-name-input').val('');
                 }
-            }).trigger('change');
+            });
+            if (adhocSelect.length) {
+                adhocSelect.trigger('change');
+            } else {
+                $('#new-client-name-input').prop('disabled', false);
+            }
             toggleClientFields(); // Call on load to set initial state
 
             // Add/Remove Sale Item fields

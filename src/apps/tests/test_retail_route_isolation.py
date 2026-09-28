@@ -369,7 +369,7 @@ def test_new_retail_records_receive_active_business_key(app, session):
         f'data-sale-number="{created_sale.id}">#{created_sale.id}</span>'.encode()
     )
     assert internal_number_cell not in sales_page.data
-    group_key = f"c:{retail_client.id}:{date.today().isoformat()}"
+    group_key = f"name:{retail_client.name.casefold()}:{date.today().isoformat()}"
     page_html = sales_page.data.decode()
     assert page_html.count(
         f'class="retail-client-summary" data-client-group="{group_key}"'
@@ -473,9 +473,292 @@ def test_retail_sale_groups_merge_same_day_adhoc_sales_by_normalized_name(sessio
     groups = build_retail_sale_groups(sales, display_numbers)
 
     assert len(groups) == 1
-    assert groups[0]["key"].startswith("a-name:deric:")
+    assert groups[0]["key"].startswith("name:deric:")
     assert len(groups[0]["sales"]) == 3
     assert groups[0]["total_amount_due"] == Decimal("450")
+
+
+def test_retail_sale_groups_merge_registered_and_legacy_adhoc_same_name(session):
+    owner, retail, _, registered, _ = setup_ledgers(session)
+    registered.name = "Daniel"
+    adhoc_sale = Sale(
+        seller_id=owner.id,
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        client_name_adhoc="  DANIEL ",
+        adhoc_customer_key="legacy-daniel",
+        sale_date=date.today(),
+        total_amount_due=Decimal("100"),
+        cash_paid=Decimal("0"),
+        debt_amount=Decimal("100"),
+    )
+    registered_sale = Sale(
+        seller_id=owner.id,
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        client=registered,
+        sale_date=date.today(),
+        total_amount_due=Decimal("150"),
+        cash_paid=Decimal("0"),
+        debt_amount=Decimal("150"),
+    )
+    session.add_all([adhoc_sale, registered_sale])
+    session.commit()
+
+    display_numbers = build_retail_sale_display_numbers([
+        adhoc_sale, registered_sale
+    ])
+    groups = build_retail_sale_groups(
+        [adhoc_sale, registered_sale], display_numbers
+    )
+
+    assert len(groups) == 1
+    assert groups[0]["client_id"] == registered.id
+    assert groups[0]["total_amount_due"] == Decimal("250")
+
+
+def test_new_retail_name_registers_client_and_adopts_matching_adhoc_debt(app, session):
+    owner, retail, _, _, _ = setup_ledgers(session)
+    legacy_sale = Sale(
+        seller_id=owner.id,
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        client_name_adhoc="Daniel",
+        adhoc_customer_key="legacy-daniel",
+        sale_date=date.today() - timedelta(days=1),
+        total_amount_due=Decimal("100"),
+        cash_paid=Decimal("0"),
+        debt_amount=Decimal("100"),
+    )
+    session.add_all([
+        legacy_sale,
+        Stock(
+            vendeur_id=owner.id,
+            business_id=retail.id,
+            network=NetworkType.AIRTEL,
+            balance=Decimal("100"),
+            buying_price_per_unit=Decimal("20"),
+            selling_price_per_unit=Decimal("25"),
+            inventory_value=Decimal("2000"),
+            average_cost_per_unit=Decimal("20"),
+        ),
+    ])
+    session.commit()
+    browser = app.test_client()
+    login_to_business(browser, owner, retail)
+
+    form_page = browser.get("/vente_stock")
+    response = browser.post(
+        "/vente_stock",
+        data={
+            "client_choice": "new",
+            "new_client_name": "  daniel  ",
+            "sale_items-0-network": NetworkType.AIRTEL.name,
+            "sale_items-0-quantity": "10",
+            "sale_items-0-price_per_unit_applied": "25",
+            "cash_paid": "120",
+            "sale_date": date.today().isoformat(),
+            "submit": "Vendre",
+        },
+    )
+
+    assert form_page.status_code == 200
+    assert b"Nouveau Client (Ad-hoc)" not in form_page.data
+    assert response.status_code == 302
+    registered = Client.query.filter_by(
+        business_id=retail.id, name="daniel"
+    ).one()
+    session.refresh(legacy_sale)
+    assert legacy_sale.client_id == registered.id
+    assert legacy_sale.client_name_adhoc is None
+    assert legacy_sale.adhoc_customer_key is None
+    assert legacy_sale.debt_amount == Decimal("0")
+    current_sale = Sale.query.filter(
+        Sale.business_id == retail.id,
+        Sale.client_id == registered.id,
+        Sale.id != legacy_sale.id,
+    ).one()
+    assert current_sale.cash_paid == Decimal("20")
+    assert current_sale.debt_amount == Decimal("230")
+    assert PaymentEvent.query.one().client_id == registered.id
+
+    second_response = browser.post(
+        "/vente_stock",
+        data={
+            "client_choice": "new",
+            "new_client_name": "DANIEL",
+            "sale_items-0-network": NetworkType.AIRTEL.name,
+            "sale_items-0-quantity": "1",
+            "sale_items-0-price_per_unit_applied": "25",
+            "cash_paid": "0",
+            "sale_date": date.today().isoformat(),
+            "submit": "Vendre",
+        },
+    )
+
+    assert second_response.status_code == 302
+    assert Client.query.filter_by(business_id=retail.id).filter(
+        Client.name.ilike("daniel")
+    ).count() == 1
+    assert Sale.query.filter_by(
+        business_id=retail.id, client_id=registered.id
+    ).count() == 3
+
+
+def test_offline_retail_name_sync_registers_and_reuses_client(app, session):
+    owner, retail, _, _, _ = setup_ledgers(session)
+    legacy_sale = Sale(
+        seller_id=owner.id,
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        client_name_adhoc="Eva",
+        adhoc_customer_key="legacy-eva",
+        sale_date=date.today() - timedelta(days=1),
+        total_amount_due=Decimal("50"),
+        cash_paid=Decimal("0"),
+        debt_amount=Decimal("50"),
+    )
+    session.add_all([
+        legacy_sale,
+        Stock(
+            vendeur_id=owner.id,
+            business_id=retail.id,
+            network=NetworkType.AIRTEL,
+            balance=Decimal("100"),
+            buying_price_per_unit=Decimal("20"),
+            selling_price_per_unit=Decimal("25"),
+            inventory_value=Decimal("2000"),
+            average_cost_per_unit=Decimal("20"),
+        ),
+    ])
+    session.commit()
+    browser = app.test_client()
+    login_to_business(browser, owner, retail)
+
+    response = browser.post(
+        "/api/v1/sales",
+        json={
+            "local_id": "offline-eva-sale",
+            "client_choice": "new",
+            "new_client_name": " eva ",
+            "cash_paid": 60,
+            "sale_items": [{
+                "network": NetworkType.AIRTEL.name,
+                "quantity": 4,
+                "price_per_unit_applied": "25",
+            }],
+        },
+    )
+
+    assert response.status_code == 201
+    registered = Client.query.filter_by(
+        business_id=retail.id, name="eva"
+    ).one()
+    session.refresh(legacy_sale)
+    assert legacy_sale.client_id == registered.id
+    assert legacy_sale.debt_amount == Decimal("0")
+    synced_sale = Sale.query.filter(
+        Sale.business_id == retail.id,
+        Sale.client_id == registered.id,
+        Sale.id != legacy_sale.id,
+    ).one()
+    assert synced_sale.cash_paid == Decimal("10")
+    assert synced_sale.debt_amount == Decimal("90")
+
+
+def test_existing_retail_client_adopts_matching_adhoc_debt_before_payment(app, session):
+    owner, retail, _, registered, _ = setup_ledgers(session)
+    registered.name = "Daniel"
+    for prior_sale in registered.sales:
+        prior_sale.cash_paid = prior_sale.total_amount_due
+        prior_sale.debt_amount = Decimal("0")
+    legacy_sale = Sale(
+        seller_id=owner.id,
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        client_name_adhoc=" daniel ",
+        adhoc_customer_key="legacy-existing-daniel",
+        sale_date=date.today() - timedelta(days=1),
+        total_amount_due=Decimal("50"),
+        cash_paid=Decimal("0"),
+        debt_amount=Decimal("50"),
+    )
+    session.add_all([
+        legacy_sale,
+        Stock(
+            vendeur_id=owner.id,
+            business_id=retail.id,
+            network=NetworkType.AIRTEL,
+            balance=Decimal("100"),
+            buying_price_per_unit=Decimal("20"),
+            selling_price_per_unit=Decimal("25"),
+            inventory_value=Decimal("2000"),
+            average_cost_per_unit=Decimal("20"),
+        ),
+    ])
+    session.commit()
+    browser = app.test_client()
+    login_to_business(browser, owner, retail)
+
+    response = browser.post(
+        "/vente_stock",
+        data={
+            "client_choice": "existing",
+            "existing_client_id": str(registered.id),
+            "sale_items-0-network": NetworkType.AIRTEL.name,
+            "sale_items-0-quantity": "4",
+            "sale_items-0-price_per_unit_applied": "25",
+            "cash_paid": "60",
+            "sale_date": date.today().isoformat(),
+            "submit": "Vendre",
+        },
+    )
+
+    assert response.status_code == 302
+    session.refresh(legacy_sale)
+    assert legacy_sale.client_id == registered.id
+    assert legacy_sale.debt_amount == Decimal("0")
+    current_sale = Sale.query.filter(
+        Sale.business_id == retail.id,
+        Sale.client_id == registered.id,
+        Sale.id != legacy_sale.id,
+        Sale.total_amount_due == Decimal("100"),
+    ).order_by(Sale.id.desc()).first()
+    assert current_sale is not None
+    assert current_sale.cash_paid == Decimal("10")
+    assert current_sale.debt_amount == Decimal("90")
+
+
+def test_client_registration_adopts_matching_legacy_adhoc_sales(app, session):
+    owner, retail, _, _, _ = setup_ledgers(session)
+    legacy_sale = Sale(
+        seller_id=owner.id,
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        client_name_adhoc="Alain",
+        adhoc_customer_key="legacy-alain",
+        sale_date=date.today(),
+        total_amount_due=Decimal("75"),
+        cash_paid=Decimal("0"),
+        debt_amount=Decimal("75"),
+    )
+    session.add(legacy_sale)
+    session.commit()
+    browser = app.test_client()
+    login_to_business(browser, owner, retail)
+
+    response = browser.post(
+        "/admin/clients",
+        data={"name": " alain ", "submit": "Ajouter"},
+    )
+
+    assert response.status_code == 302
+    registered = Client.query.filter_by(
+        business_id=retail.id, name="alain"
+    ).one()
+    session.refresh(legacy_sale)
+    assert legacy_sale.client_id == registered.id
+    assert legacy_sale.client_name_adhoc is None
 
 
 def test_retail_sale_price_input_accepts_four_decimal_places(app, session):

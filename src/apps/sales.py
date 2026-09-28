@@ -103,18 +103,13 @@ def build_retail_sale_display_numbers(sales) -> dict[int, int]:
 def build_retail_sale_groups(sales, display_numbers) -> list[dict]:
     """Group one day's retail sales by their customer-facing identity.
 
-    Registered clients retain their stable database identity. Ad-hoc clients
-    are grouped by normalized display name so repeated entries made without
-    selecting the prior ad-hoc identity still appear together for the day.
+    Retail names are treated as the customer-facing identity. New sales always
+    register a client, while matching legacy ad-hoc rows remain grouped with it.
     """
     groups = {}
     for sale in sales:
-        if sale.client_id is not None:
-            customer_key = sale.customer_group_key
-            client_name = sale.client_display_name
-        else:
-            client_name = normalized_client_name(sale.client_display_name)
-            customer_key = f"a-name:{client_name.casefold()}"
+        client_name = normalized_client_name(sale.client_display_name)
+        customer_key = f"name:{client_name.casefold()}"
         key = (customer_key, sale.sale_date)
         group = groups.setdefault(key, {
             "key": f"{customer_key}:{sale.sale_date.isoformat()}",
@@ -131,6 +126,9 @@ def build_retail_sale_groups(sales, display_numbers) -> list[dict]:
             "item_groups": {},
         })
         group["sales"].append(sale)
+        if group["client_id"] is None and sale.client_id is not None:
+            group["client_id"] = sale.client_id
+            group["client_name"] = sale.client_display_name
         group["sale_rows"].append({
             "sale": sale,
             "display_number": display_numbers[sale.id],

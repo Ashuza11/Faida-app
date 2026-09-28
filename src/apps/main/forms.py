@@ -266,6 +266,7 @@ class StockPurchaseForm(FlaskForm):
     # Field for custom BUYING price, validated conditionally
     custom_buying_price = DecimalField(
         "Prix d'achat personnalisé (FC)",
+        places=4,
         validators=[
             Optional(),
             NumberRange(min=1, max=MAX_LEDGER_AMOUNT),
@@ -273,7 +274,7 @@ class StockPurchaseForm(FlaskForm):
         ],
         render_kw={
             "placeholder": "Entrer le prix d'achat personnalisé",
-            "step": "0.01",
+            "step": "0.0001",
             "max": "9999999999.99",
         },
     )
@@ -298,6 +299,7 @@ class StockPurchaseForm(FlaskForm):
     # INTENDED SELLING price
     custom_intended_selling_price = DecimalField(
         "Prix de vente personnalisé (FC)",
+        places=4,
         validators=[
             Optional(),
             NumberRange(min=0.01, max=MAX_LEDGER_AMOUNT),
@@ -305,7 +307,7 @@ class StockPurchaseForm(FlaskForm):
         ],
         render_kw={
             "placeholder": "Entrer le prix de vente personnalisé",
-            "step": "0.01",
+            "step": "0.0001",
             "max": "9999999999.99",
         },
     )
@@ -373,7 +375,7 @@ class SaleForm(FlaskForm):
         "Choix du Client",
         choices=[
             ("existing", "Client Existant"),
-            ("new", "Nouveau Client (Ad-hoc)"),
+            ("new", "Nouveau client"),
         ],
         validators=[DataRequired(
             message="Veuillez choisir une option client.")],
@@ -385,7 +387,7 @@ class SaleForm(FlaskForm):
         render_kw={"class": "form-control"},
     )
     new_client_name = StringField(
-        "Nom du Nouveau Client",
+        "Nom du nouveau client",
         validators=[
             Optional(),
             Length(

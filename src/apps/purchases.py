@@ -35,12 +35,15 @@ from apps.wholesale_costs import require_plausible_wholesale_unit_cost
 
 
 def build_retail_purchase_summary(*, business: Business, target_date: date) -> dict:
-    """Return active retail purchase costs grouped by network for one ledger day."""
+    """Return expected sales value of active purchases for one ledger day."""
     rows = (
         db.session.query(
             StockPurchase.network,
             func.sum(StockPurchase.amount_purchased).label("total_units"),
-            func.sum(StockPurchase.actual_total_cost).label("total_cost"),
+            func.sum(
+                StockPurchase.amount_purchased
+                * StockPurchase.selling_price_at_purchase
+            ).label("expected_revenue"),
         )
         .join(Stock, StockPurchase.stock_item_id == Stock.id)
         .filter(
@@ -55,9 +58,9 @@ def build_retail_purchase_summary(*, business: Business, target_date: date) -> d
         network: {
             "network": network,
             "total_units": int(total_units or 0),
-            "total_cost": as_decimal(total_cost or 0),
+            "expected_revenue": as_decimal(expected_revenue or 0),
         }
-        for network, total_units, total_cost in rows
+        for network, total_units, expected_revenue in rows
     }
     networks = [
         totals_by_network[network]
@@ -68,8 +71,8 @@ def build_retail_purchase_summary(*, business: Business, target_date: date) -> d
         "date": target_date,
         "networks": networks,
         "total_units": sum(row["total_units"] for row in networks),
-        "total_cost": sum(
-            (row["total_cost"] for row in networks), Decimal("0")
+        "expected_revenue": sum(
+            (row["expected_revenue"] for row in networks), Decimal("0")
         ),
     }
 

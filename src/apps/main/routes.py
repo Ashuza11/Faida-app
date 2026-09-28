@@ -56,6 +56,7 @@ from apps.user_messages import user_message
 from apps.client_identities import (
     ClientIdentityError,
     ensure_unique_client_name,
+    resolve_or_create_retail_client,
     replace_client_phones,
 )
 
@@ -1990,24 +1991,24 @@ def client_management():
             gps_long = None
 
         try:
-            clean_name = ensure_unique_client_name(
-                business_id=business.id, name=client_form.name.data
+            new_client, created, adopted_count = resolve_or_create_retail_client(
+                business=business, name=client_form.name.data
             )
-            new_client = Client(
-                name=clean_name,
-                address=client_form.address.data,
-                gps_lat=gps_lat,
-                gps_long=gps_long,
-                vendeur_id=current_user.business_vendeur_id,
-                business_id=business.id,
-            )
-            db.session.add(new_client)
-            db.session.flush()
+            if not created:
+                raise ClientIdentityError(
+                    "Ce client existe déjà. Sélectionnez-le dans la liste."
+                )
+            new_client.address = client_form.address.data
+            new_client.gps_lat = gps_lat
+            new_client.gps_long = gps_long
             replace_client_phones(
                 client=new_client, phone_entries=_client_phone_entries(client_form)
             )
             db.session.commit()
-            flash("Client créé avec succès!", "success")
+            message = "Client créé."
+            if adopted_count:
+                message += f" {adopted_count} ancienne(s) vente(s) regroupée(s)."
+            flash(message, "success")
             return redirect(url_for("main_bp.client_management"))
         except ClientIdentityError as error:
             db.session.rollback()
@@ -2537,29 +2538,7 @@ def vente_stock():
     client_choices = [("", "Sélectionnez un client existant")]
     client_choices.extend([(str(c.id), c.name) for c in clients])
     form.existing_client_id.choices = client_choices
-    adhoc_sales = Sale.query.filter(
-        Sale.business_id == business.id,
-        Sale.client_id.is_(None),
-        Sale.adhoc_customer_key.isnot(None),
-        Sale.status == TransactionStatus.ACTIVE,
-    ).order_by(Sale.created_at.desc()).all()
-    adhoc_groups = {}
-    for prior_sale in adhoc_sales:
-        group = adhoc_groups.setdefault(prior_sale.adhoc_customer_key, {
-            "name": prior_sale.client_display_name,
-            "debt": Decimal("0.00"),
-            "last_sale": prior_sale,
-        })
-        group["debt"] += prior_sale.debt_amount
     form.adhoc_customer_key.choices = [("", "Nouvelle personne")]
-    form.adhoc_customer_key.choices.extend(
-        (
-            key,
-            f"Même client : {data['name']} — dette {data['debt']:,.2f} FC",
-        )
-        for key, data in adhoc_groups.items()
-        if data["debt"] > 0 or data["last_sale"].sale_date == date.today()
-    )
 
     # Pre-fill empty rows for the FieldList on GET
     if request.method == "GET":
@@ -2575,8 +2554,6 @@ def vente_stock():
         try:
             # A. Resolve Client
             client = None
-            client_name_adhoc = None
-            adhoc_customer_key = None
 
             if form.client_choice.data == "existing":
                 client_id = form.existing_client_id.data
@@ -2586,34 +2563,22 @@ def vente_stock():
                 client = Client.query.filter_by(
                     id=int(client_id),
                     business_id=business.id,
+                    is_active=True,
                 ).first()
                 if not client:
                     raise ValueError(user_message(
                         "Le client sélectionné n'est plus disponible.",
                         "Choisissez un autre client et réessayez.",
                     ))
+                client, _, _ = resolve_or_create_retail_client(
+                    business=business, name=client.name
+                )
 
             elif form.client_choice.data == "new":
-                selected_key = (form.adhoc_customer_key.data or "").strip()
-                if selected_key:
-                    prior_identity = Sale.query.filter(
-                        Sale.business_id == business.id,
-                        Sale.client_id.is_(None),
-                        Sale.adhoc_customer_key == selected_key,
-                        Sale.status == TransactionStatus.ACTIVE,
-                    ).order_by(Sale.created_at.desc()).first()
-                    if not prior_identity:
-                        raise ValueError(user_message(
-                            "Ce client occasionnel n'a pas pu être identifié.",
-                            "Sélectionnez-le de nouveau ou créez un client.",
-                        ))
-                    client_name_adhoc = prior_identity.client_display_name
-                    adhoc_customer_key = selected_key
-                else:
-                    client_name_adhoc = (form.new_client_name.data or "").strip()
-                    if not client_name_adhoc:
-                        raise ValueError("Saisissez le nom du client.")
-                    adhoc_customer_key = uuid4().hex
+                client, _, _ = resolve_or_create_retail_client(
+                    business=business,
+                    name=form.new_client_name.data,
+                )
 
             # B. Process Sale Items
             raw_subtotals = []
@@ -2717,8 +2682,6 @@ def vente_stock():
                 vendeur_id=current_user.business_vendeur_id,
                 business_id=business.id,
                 client=client,
-                client_name_adhoc=client_name_adhoc,
-                adhoc_customer_key=adhoc_customer_key,
                 total_amount_due=total_amount_due,
                 cash_paid=Decimal("0.00"),
                 debt_amount=total_amount_due,
@@ -2905,6 +2868,9 @@ def edit_sale(sale_id):
                 ).first()
                 if selected_client is None:
                     raise ValueError("Sélectionnez un client disponible.")
+                selected_client, _, _ = resolve_or_create_retail_client(
+                    business=business, name=selected_client.name
+                )
             else:
                 adhoc_key = (form.adhoc_customer_key.data or "").strip()
                 if adhoc_key:
@@ -2918,8 +2884,10 @@ def edit_sale(sale_id):
                         raise ValueError("Sélectionnez de nouveau le client occasionnel.")
                     adhoc_name = prior_identity.client_display_name
                 else:
-                    adhoc_name = (form.new_client_name.data or "").strip()
-                    adhoc_key = uuid4().hex
+                    selected_client, _, _ = resolve_or_create_retail_client(
+                        business=business,
+                        name=form.new_client_name.data,
+                    )
 
             replace_retail_sale(
                 sale=sale,

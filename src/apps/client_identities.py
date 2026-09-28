@@ -6,10 +6,13 @@ from sqlalchemy import func
 
 from apps import db
 from apps.models import (
+    Business,
     Client,
     ClientPhone,
     ClientPhoneConflict,
     NetworkType,
+    PaymentEvent,
+    Sale,
     normalize_phone,
     validate_drc_phone,
 )
@@ -39,6 +42,66 @@ def ensure_unique_client_name(*, business_id: int, name: str, exclude_client_id=
             "Ce nom est déjà utilisé. Ajoutez un détail pour distinguer les deux clients."
         )
     return clean_name
+
+
+def resolve_or_create_retail_client(*, business, name: str):
+    """Resolve one retail client by name and adopt matching historical ad-hoc sales."""
+    clean_name = normalized_client_name(name)
+    if len(clean_name) < 2:
+        raise ClientIdentityError("Le nom du client doit contenir au moins 2 caractères.")
+
+    normalized_key = clean_name.casefold()
+    # Serialize same-business client creation so two low-connectivity sync
+    # requests cannot create the same normalized name concurrently.
+    db.session.query(Business.id).filter(
+        Business.id == business.id
+    ).with_for_update().one()
+    matches = [
+        client
+        for client in Client.query.filter_by(business_id=business.id).all()
+        if normalized_client_name(client.name).casefold() == normalized_key
+    ]
+    if len(matches) > 1:
+        raise ClientIdentityError(
+            "Plusieurs clients portent ce nom. Renommez-les pour les distinguer."
+        )
+
+    created = not matches
+    if matches:
+        client = matches[0]
+        client.is_active = True
+    else:
+        client = Client(
+            name=clean_name,
+            vendeur_id=business.owner_user_id,
+            business_id=business.id,
+            registration_source="sale",
+            identification_status="identified",
+        )
+        db.session.add(client)
+        db.session.flush()
+
+    matching_adhoc_sales = [
+        sale
+        for sale in Sale.query.filter_by(
+            business_id=business.id, client_id=None
+        ).all()
+        if normalized_client_name(sale.client_name_adhoc).casefold() == normalized_key
+    ]
+    adopted_sale_ids = []
+    for sale in matching_adhoc_sales:
+        adopted_sale_ids.append(sale.id)
+        sale.client = client
+        sale.client_name_adhoc = None
+        sale.adhoc_customer_key = None
+
+    if adopted_sale_ids:
+        for event in PaymentEvent.query.filter(
+            PaymentEvent.source_sale_id.in_(adopted_sale_ids)
+        ).all():
+            event.client_id = client.id
+
+    return client, created, len(adopted_sale_ids)
 
 
 def normalize_client_phone(raw_phone: str) -> str:

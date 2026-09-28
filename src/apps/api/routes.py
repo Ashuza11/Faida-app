@@ -7,7 +7,6 @@ from flask_login import login_required, current_user
 from sqlalchemy.exc import IntegrityError
 from decimal import Decimal, InvalidOperation
 from datetime import date, datetime, timezone
-from uuid import uuid4
 from hashlib import sha256
 
 from apps.api import api_bp
@@ -51,7 +50,11 @@ from apps.retail_cash import (
     daily_retail_cash_balance,
     record_retail_cash_outflow,
 )
-from apps.client_identities import ClientIdentityError, resolve_sms_sale_client
+from apps.client_identities import (
+    ClientIdentityError,
+    resolve_or_create_retail_client,
+    resolve_sms_sale_client,
+)
 from apps.wholesale_cashbook import (
     CashbookEntryError,
     correct_cashbook_entry,
@@ -255,21 +258,25 @@ def create_sale():
     try:
         # ── Resolve client ───────────────────────────────────────────────────
         client = None
-        client_name_adhoc = None
-        adhoc_customer_key = None
         client_choice = payload.get("client_choice", "new")
 
         if client_choice == "existing":
             cid = payload.get("existing_client_id")
             if cid:
                 client = Client.query.filter_by(
-                    id=int(cid), business_id=business.id
+                    id=int(cid), business_id=business.id, is_active=True
                 ).first()
                 if not client:
                     return jsonify({"error": "Le client sélectionné n'est plus disponible. Choisissez un autre client."}), 400
+                client, _, _ = resolve_or_create_retail_client(
+                    business=business, name=client.name
+                )
         else:
             selected_key = (payload.get("adhoc_customer_key") or "").strip()
-            if selected_key:
+            client_name = (payload.get("new_client_name") or "").strip()
+            # Backward compatibility for sales queued before retail names began
+            # creating registered clients directly.
+            if not client_name and selected_key:
                 prior_identity = Sale.query.filter(
                     Sale.business_id == business.id,
                     Sale.client_id.is_(None),
@@ -278,11 +285,10 @@ def create_sale():
                 ).order_by(Sale.created_at.desc()).first()
                 if not prior_identity:
                     return jsonify({"error": "Ce client occasionnel n'a pas pu être identifié. Sélectionnez-le de nouveau."}), 400
-                client_name_adhoc = prior_identity.client_display_name
-                adhoc_customer_key = selected_key
-            else:
-                client_name_adhoc = payload.get("new_client_name") or "Client inconnu"
-                adhoc_customer_key = uuid4().hex
+                client_name = prior_identity.client_display_name
+            client, _, _ = resolve_or_create_retail_client(
+                business=business, name=client_name
+            )
 
         # ── Process sale items ───────────────────────────────────────────────
         items_payload = payload.get("sale_items", [])
@@ -376,8 +382,6 @@ def create_sale():
             vendeur_id=vendeur_id,
             business_id=business.id,
             client=client,
-            client_name_adhoc=client_name_adhoc,
-            adhoc_customer_key=adhoc_customer_key,
             total_amount_due=total_amount_due,
             cash_paid=Decimal("0.00"),
             debt_amount=total_amount_due,

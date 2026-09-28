@@ -2,7 +2,14 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from apps.businesses import create_business
-from apps.models import BusinessType, NetworkType, RoleType, TransactionStatus, User
+from apps.models import (
+    BusinessType,
+    NetworkType,
+    RoleType,
+    StockPurchase,
+    TransactionStatus,
+    User,
+)
 from apps.purchases import build_retail_purchase_summary, record_retail_purchase
 
 
@@ -82,12 +89,12 @@ def test_retail_purchase_summary_uses_exact_active_costs_and_business_date(sessi
     )
 
     assert summary["total_units"] == 170
-    assert summary["total_cost"] == Decimal("3600.000000000000")
+    assert summary["expected_revenue"] == Decimal("3770.000000000000")
     assert [row["network"] for row in summary["networks"]] == [
         NetworkType.AIRTEL, NetworkType.ORANGE
     ]
     assert summary["networks"][0]["total_units"] == 150
-    assert summary["networks"][0]["total_cost"] == Decimal("3100.000000000000")
+    assert summary["networks"][0]["expected_revenue"] == Decimal("3250.000000000000")
 
 
 def test_retail_purchase_summary_appears_on_history_and_dashboard(app, session):
@@ -112,7 +119,40 @@ def test_retail_purchase_summary_appears_on_history_and_dashboard(app, session):
 
     assert history.status_code == 200
     assert dashboard.status_code == 200
-    assert b"2,000.00 FC" in history.data
-    assert b"2,000.00 FC" in dashboard.data
+    assert b"2,100.00 FC" in history.data
+    assert b"2,100.00 FC" in dashboard.data
+    assert b"Valeur de vente" in history.data
+    assert b"Valeur de vente" in dashboard.data
     assert f"{purchase.amount_purchased} unit".encode() in history.data
 
+
+def test_retail_purchase_accepts_four_decimal_custom_prices(app, session):
+    owner = make_owner(session, 4)
+    business = create_business(
+        owner=owner, name="Precise retail", business_type=BusinessType.RETAIL
+    )
+    session.commit()
+    client = app.test_client()
+    login(client, owner)
+    with client.session_transaction() as browser_session:
+        browser_session["active_business_id"] = business.id
+
+    form_page = client.get("/achat_stock")
+    response = client.post(
+        "/achat_stock",
+        data={
+            "network": NetworkType.AIRTEL.name,
+            "amount_purchased": "100",
+            "buying_price_choice": "custom",
+            "custom_buying_price": "22.2075",
+            "intended_selling_price_choice": "custom",
+            "custom_intended_selling_price": "23.2075",
+        },
+    )
+
+    assert form_page.status_code == 200
+    assert form_page.data.count(b'step="0.0001"') >= 2
+    assert response.status_code == 302
+    purchase = StockPurchase.query.one()
+    assert purchase.buying_price_at_purchase == Decimal("22.207500000000")
+    assert purchase.selling_price_at_purchase == Decimal("23.207500000000")
