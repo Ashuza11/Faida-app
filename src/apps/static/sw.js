@@ -14,7 +14,7 @@
  *   b) Local Docker + internet disconnected: server reachable but redirects → cache ✓
  */
 
-const CACHE_VERSION = 'faida-v5';
+const CACHE_VERSION = 'faida-v6';
 const OFFLINE_URL   = '/static/offline.html';
 
 // Critical assets — install FAILS if these can't be cached (offline.html must always be available)
@@ -29,6 +29,7 @@ const PRECACHE_OPTIONAL = [
   '/static/assets/vendor/nucleo/css/nucleo.css',
   '/static/assets/vendor/@fortawesome/fontawesome-free/css/all.min.css',
   '/static/js/faida-offline.js',
+  '/static/js/faida-install.js',
 ];
 
 // ── Install: pre-cache static assets ─────────────────────────────────────────

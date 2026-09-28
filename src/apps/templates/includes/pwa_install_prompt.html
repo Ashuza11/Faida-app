@@ -1,0 +1,83 @@
+<style>
+  .faida-install-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(23, 43, 77, .55);
+  }
+  .faida-install-backdrop.is-visible { display: flex; }
+  .faida-install-dialog {
+    width: 100%;
+    max-width: 430px;
+    border-radius: 18px;
+    background: #fff;
+    box-shadow: 0 18px 50px rgba(23, 43, 77, .28);
+    padding: 22px;
+  }
+  .faida-install-heading {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .faida-install-icon {
+    width: 54px;
+    height: 54px;
+    flex: 0 0 54px;
+    border-radius: 14px;
+  }
+  .faida-install-close {
+    margin: -8px -8px 0 auto;
+    border: 0;
+    background: transparent;
+    color: #8898aa;
+    font-size: 26px;
+    line-height: 1;
+    padding: 8px;
+  }
+  .faida-install-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .faida-install-actions .btn { flex: 1; }
+  @media (min-width: 576px) {
+    .faida-install-backdrop { align-items: center; }
+  }
+</style>
+
+<div id="faida-install-backdrop" class="faida-install-backdrop" aria-hidden="true">
+  <section
+    class="faida-install-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="faida-install-title"
+    aria-describedby="faida-install-message"
+  >
+    <div class="faida-install-heading">
+      <img
+        class="faida-install-icon"
+        src="/static/assets/img/brand/android-chrome-192x192.png"
+        alt=""
+        aria-hidden="true"
+      >
+      <div>
+        <h2 id="faida-install-title" class="h3 mb-1">Installer Faida</h2>
+        <p id="faida-install-message" class="text-muted mb-0">
+          Ajoutez Faida à votre téléphone pour l'ouvrir rapidement et mieux travailler avec une connexion faible.
+        </p>
+      </div>
+      <button id="faida-install-close" class="faida-install-close" type="button" aria-label="Fermer">&times;</button>
+    </div>
+    <p id="faida-install-help" class="small text-muted mt-3 mb-0" hidden></p>
+    <div class="faida-install-actions">
+      <button id="faida-install-later" type="button" class="btn btn-outline-secondary">Plus tard</button>
+      <button id="faida-install-button" type="button" class="btn btn-primary">Installer</button>
+    </div>
+  </section>
+</div>
+
+<script src="/static/js/faida-install.js"></script>
