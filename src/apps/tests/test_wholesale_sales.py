@@ -373,7 +373,8 @@ def test_wholesale_sales_page_defaults_to_today_and_filters_by_date(app, session
     assert f'data-sale-id="{yesterday_sale.id}"' not in current_html
     assert f'data-sale-id="{other_sale.id}"' not in current_html
     assert f'value="{today.isoformat()}"' in current_html
-    assert "Marge des ventes du jour" in current_html
+    assert "Marge ventes · Aujourd’hui" in current_html
+    assert "Marge encaissée · Aujourd’hui" in current_html
     assert "$0.10" in current_html
 
     old_page = browser.get(
@@ -384,7 +385,7 @@ def test_wholesale_sales_page_defaults_to_today_and_filters_by_date(app, session
     assert f'data-sale-id="{yesterday_sale.id}"' in old_html
     assert f'data-sale-id="{today_sale.id}"' not in old_html
     assert f'value="{yesterday.isoformat()}"' in old_html
-    assert f"Marge des ventes du {yesterday.strftime('%d/%m/%Y')}" in old_html
+    assert f"Marge ventes · {yesterday.strftime('%d/%m/%Y')}" in old_html
     assert "$0.40" in old_html
 
     invalid_page = browser.get(

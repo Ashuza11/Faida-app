@@ -166,18 +166,23 @@ def build_wholesale_daily_report(
         status=TransactionStatus.ACTIVE,
     ).all()
     cash_collected = sum((_decimal(inflow.amount) for inflow in inflows), ZERO)
-    old_debt_collected = sum(
-        (
-            _decimal(inflow.amount)
-            for inflow in inflows
-            if inflow.allocation_kind == PaymentAllocationKind.PRIOR_DEBT
-        ),
-        ZERO,
-    )
+    current_sale_cash_collected = ZERO
+    old_debt_collected = ZERO
+    unclassified_cash_collected = ZERO
     collected_margin = ZERO
+    current_sale_collected_margin = ZERO
+    prior_debt_collected_margin = ZERO
+    unclassified_collected_margin = ZERO
     anomalous_collection_sale_ids = set()
     anomalous_collection_items = {}
     for inflow in inflows:
+        inflow_amount = _decimal(inflow.amount)
+        if inflow.allocation_kind == PaymentAllocationKind.CURRENT_SALE:
+            current_sale_cash_collected += inflow_amount
+        elif inflow.allocation_kind == PaymentAllocationKind.PRIOR_DEBT:
+            old_debt_collected += inflow_amount
+        else:
+            unclassified_cash_collected += inflow_amount
         if inflow.sale and inflow.sale.total_amount_due:
             unsafe_items = [
                 item for item in inflow.sale.sale_items
@@ -192,11 +197,18 @@ def build_wholesale_daily_report(
             sale_margin = sum(
                 (_decimal(item.margin_amount) for item in inflow.sale.sale_items), ZERO
             )
-            collected_margin += (
-                _decimal(inflow.amount)
+            allocated_margin = (
+                inflow_amount
                 * sale_margin
                 / _decimal(inflow.sale.total_amount_due)
             )
+            collected_margin += allocated_margin
+            if inflow.allocation_kind == PaymentAllocationKind.CURRENT_SALE:
+                current_sale_collected_margin += allocated_margin
+            elif inflow.allocation_kind == PaymentAllocationKind.PRIOR_DEBT:
+                prior_debt_collected_margin += allocated_margin
+            else:
+                unclassified_collected_margin += allocated_margin
 
     sales_for_day = Sale.query.filter_by(
         business_id=business.id,
@@ -267,6 +279,12 @@ def build_wholesale_daily_report(
         "sales_margin": sum((row["margin"] for row in rows.values()), ZERO),
         "cash_collected": cash_collected,
         "collected_margin": collected_margin,
+        "current_sale_cash_collected": current_sale_cash_collected,
+        "prior_debt_cash_collected": old_debt_collected,
+        "unclassified_cash_collected": unclassified_cash_collected,
+        "current_sale_collected_margin": current_sale_collected_margin,
+        "prior_debt_collected_margin": prior_debt_collected_margin,
+        "unclassified_collected_margin": unclassified_collected_margin,
         "new_debt": new_debt,
         "old_debt_collected": old_debt_collected,
         "remaining_debt": _decimal(debt_created_to_date)

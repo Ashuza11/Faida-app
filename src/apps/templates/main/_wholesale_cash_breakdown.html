@@ -1,0 +1,15 @@
+{% macro cash_breakdown(totals) %}
+  <div class="wholesale-metric-details mt-2 pt-2 border-top">
+    <div><span>Ventes directes</span><strong>${{ "{:.2f}".format(totals.current_sale_cash_collected) }}</strong></div>
+    <div><span>Dettes précédentes</span><strong>${{ "{:.2f}".format(totals.prior_debt_cash_collected) }}</strong></div>
+    {% if totals.unclassified_cash_collected %}<div><span>Anciens reçus</span><strong>${{ "{:.2f}".format(totals.unclassified_cash_collected) }}</strong></div>{% endif %}
+  </div>
+{% endmacro %}
+
+{% macro margin_breakdown(totals) %}
+  <div class="wholesale-metric-details mt-2 pt-2 border-top">
+    <div><span>Ventes directes</span><strong>${{ "{:.2f}".format(totals.current_sale_collected_margin) }}</strong></div>
+    <div><span>Dettes précédentes</span><strong>${{ "{:.2f}".format(totals.prior_debt_collected_margin) }}</strong></div>
+    {% if totals.unclassified_collected_margin %}<div><span>Anciens reçus</span><strong>${{ "{:.2f}".format(totals.unclassified_collected_margin) }}</strong></div>{% endif %}
+  </div>
+{% endmacro %}

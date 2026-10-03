@@ -1,5 +1,6 @@
 {% extends "layouts/base.html" %}
 {% import "includes/_filters.html" as filters %}
+{% import "main/_wholesale_cash_breakdown.html" as cash_details %}
 {% macro sale_correction(sale, payment, reversal_form) %}
   {% if sale.status.value == 'reversed' %}
     <span class="badge badge-danger">Annulée</span>
@@ -45,6 +46,9 @@
   .client-total small { display: block; color: #8898aa; }
   .client-transactions summary { cursor: pointer; color: #5e72e4; font-weight: 600; }
   .client-transaction { border-top: 1px solid #e9ecef; padding-top: .85rem; margin-top: .85rem; }
+  .wholesale-metric-details { font-size: .75rem; line-height: 1.35; }
+  .wholesale-metric-details div { display: flex; justify-content: space-between; gap: .5rem; }
+  .wholesale-metric-details strong { white-space: nowrap; }
   @media (max-width: 575.98px) {
     .wholesale-client-card .card-body { padding: 1rem; }
     .client-total { padding: .45rem; text-align: center; }
@@ -62,8 +66,8 @@
     <a class="btn btn-outline-primary" href="{{ url_for('main_bp.wholesale_dashboard') }}">Accueil</a>
   </div>
   <div class="row mb-4">
-    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge des ventes {{ 'du jour' if is_today else 'du ' ~ selected_date.strftime('%d/%m/%Y') }}</small>{% if daily_report.totals.sales_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div><small class="text-danger">Vente{{ 's' if daily_report.cost_anomalies.sale_ids|length != 1 }} #{{ daily_report.cost_anomalies.sale_ids|join(', #') }}</small>{% else %}<div class="h2 {{ 'text-success' if daily_report.totals.sales_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(daily_report.totals.sales_margin) }}</div>{% endif %}</div></div></div>
-    <div class="col-md-6"><div class="card shadow"><div class="card-body"><small>Marge du cash encaissé {{ "aujourd'hui" if is_today else 'le ' ~ selected_date.strftime('%d/%m/%Y') }}</small>{% if daily_report.totals.collected_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div><small class="text-danger">Ancienne{{ 's' if daily_report.cost_anomalies.collection_sale_ids|length != 1 }} vente{{ 's' if daily_report.cost_anomalies.collection_sale_ids|length != 1 }} #{{ daily_report.cost_anomalies.collection_sale_ids|join(', #') }}</small>{% else %}<div class="h2 {{ 'text-info' if daily_report.totals.collected_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(daily_report.totals.collected_margin) }}</div>{% endif %}</div></div></div>
+    <div class="col-md-6 mb-3"><div class="card shadow h-100"><div class="card-body"><small>Marge ventes · {{ 'Aujourd’hui' if is_today else selected_date.strftime('%d/%m/%Y') }}</small>{% if daily_report.totals.sales_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div><small class="text-danger">Vente{{ 's' if daily_report.cost_anomalies.sale_ids|length != 1 }} #{{ daily_report.cost_anomalies.sale_ids|join(', #') }}</small>{% else %}<div class="h2 {{ 'text-success' if daily_report.totals.sales_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(daily_report.totals.sales_margin) }}</div><small class="text-muted">Créée par les ventes de cette date</small>{% endif %}</div></div></div>
+    <div class="col-md-6 mb-3"><div class="card shadow h-100"><div class="card-body"><small>Marge encaissée · {{ 'Aujourd’hui' if is_today else selected_date.strftime('%d/%m/%Y') }}</small>{% if daily_report.totals.collected_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div><small class="text-danger">Ancienne{{ 's' if daily_report.cost_anomalies.collection_sale_ids|length != 1 }} vente{{ 's' if daily_report.cost_anomalies.collection_sale_ids|length != 1 }} #{{ daily_report.cost_anomalies.collection_sale_ids|join(', #') }}</small>{% else %}<div class="h2 {{ 'text-info' if daily_report.totals.collected_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(daily_report.totals.collected_margin) }}</div>{{ cash_details.margin_breakdown(daily_report.totals) }}{% endif %}</div></div></div>
   </div>
   {% set cost_report = daily_report %}{% include "main/_wholesale_cost_alert.html" %}
   <div class="row">

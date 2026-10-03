@@ -1,5 +1,19 @@
 {% extends "layouts/base.html" %}
+{% import "main/_wholesale_cash_breakdown.html" as cash_details %}
 {% block title %}Rapport grossiste{% endblock %}
+{% block stylesheets %}
+<style>
+  .wholesale-metric-card { height: calc(100% - 1rem); }
+  .wholesale-metric-card .card-body { padding: 1rem; }
+  .wholesale-metric-details { font-size: .75rem; line-height: 1.35; }
+  .wholesale-metric-details div { display: flex; justify-content: space-between; gap: .4rem; }
+  .wholesale-metric-details span { min-width: 0; }
+  .wholesale-metric-details strong { white-space: nowrap; }
+  @media (max-width: 575.98px) {
+    .wholesale-metric-card .h2 { font-size: 1.25rem; }
+  }
+</style>
+{% endblock stylesheets %}
 {% block content %}
 <div class="container-fluid mt-4">
   <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3" style="gap:12px;">
@@ -18,10 +32,10 @@
   </form>
   {% set cost_report = report %}{% include "main/_wholesale_cost_alert.html" %}
   <div class="row">
-    <div class="col-md-3"><div class="card shadow"><div class="card-body"><small>Ventes du jour</small><div class="h2">${{ "{:.2f}".format(report.totals.revenue) }}</div></div></div></div>
-    <div class="col-md-3"><div class="card shadow"><div class="card-body"><small>Marge sur ventes</small>{% if report.totals.sales_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div>{% else %}<div class="h2 {{ 'text-success' if report.totals.sales_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(report.totals.sales_margin) }}</div>{% endif %}</div></div></div>
-    <div class="col-md-3"><div class="card shadow"><div class="card-body"><small>Cash encaissé</small><div class="h2 text-info">${{ "{:.2f}".format(report.totals.cash_collected) }}</div></div></div></div>
-    <div class="col-md-3"><div class="card shadow"><div class="card-body"><small>Marge du cash encaissé</small>{% if report.totals.collected_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div>{% else %}<div class="h2 {{ 'text-primary' if report.totals.collected_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(report.totals.collected_margin) }}</div>{% endif %}</div></div></div>
+    <div class="col-6 col-lg-3 mb-3"><div class="card shadow wholesale-metric-card"><div class="card-body"><small>Ventes du jour</small><div class="h2">${{ "{:.2f}".format(report.totals.revenue) }}</div></div></div></div>
+    <div class="col-6 col-lg-3 mb-3"><div class="card shadow wholesale-metric-card"><div class="card-body"><small>Marge ventes</small>{% if report.totals.sales_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div>{% else %}<div class="h2 {{ 'text-success' if report.totals.sales_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(report.totals.sales_margin) }}</div><small class="text-muted">Créée par les ventes du jour</small>{% endif %}</div></div></div>
+    <div class="col-6 col-lg-3 mb-3"><div class="card shadow wholesale-metric-card"><div class="card-body"><small>Cash reçu</small><div class="h2 text-info">${{ "{:.2f}".format(report.totals.cash_collected) }}</div>{{ cash_details.cash_breakdown(report.totals) }}</div></div></div>
+    <div class="col-6 col-lg-3 mb-3"><div class="card shadow wholesale-metric-card"><div class="card-body"><small>Marge encaissée</small>{% if report.totals.collected_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div>{% else %}<div class="h2 {{ 'text-primary' if report.totals.collected_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(report.totals.collected_margin) }}</div>{{ cash_details.margin_breakdown(report.totals) }}{% endif %}</div></div></div>
   </div>
   <div class="card shadow mb-4"><div class="card-header"><h3 class="mb-0">Mouvements de stock</h3></div><div class="table-responsive"><table class="table">
     <thead><tr><th>Réseau</th><th>Ouverture</th><th>Acheté</th><th>Coût achat</th><th>Vendu</th><th>Clôture</th><th>Revenu</th><th>Marge</th></tr></thead><tbody>

@@ -40,7 +40,7 @@ def generate_wholesale_report_pdf(*, business, report) -> BytesIO:
         else f"${totals['collected_margin']:.2f}"
     )
     summary = Table([
-        ["Ventes", "Marge ventes", "Cash encaissé", "Marge cash", "Nouvelle dette", "Dette restante"],
+        ["Ventes", "Marge ventes", "Cash reçu", "Marge encaissée", "Nouvelle dette", "Dette restante"],
         [
             f"${totals['revenue']:.2f}",
             sales_margin_text,
@@ -51,7 +51,34 @@ def generate_wholesale_report_pdf(*, business, report) -> BytesIO:
         ],
     ])
     summary.setStyle(_table_style())
-    story.extend([summary, Spacer(1, 0.5 * cm)])
+    collection_breakdown = Table([
+        ["Détail des encaissements", "Cash", "Marge"],
+        [
+            "Ventes directes",
+            f"${totals['current_sale_cash_collected']:.2f}",
+            (
+                "À vérifier"
+                if totals["collected_margin_has_anomaly"]
+                else f"${totals['current_sale_collected_margin']:.2f}"
+            ),
+        ],
+        [
+            "Dettes précédentes",
+            f"${totals['prior_debt_cash_collected']:.2f}",
+            (
+                "À vérifier"
+                if totals["collected_margin_has_anomaly"]
+                else f"${totals['prior_debt_collected_margin']:.2f}"
+            ),
+        ],
+    ])
+    collection_breakdown.setStyle(_table_style())
+    story.extend([
+        summary,
+        Spacer(1, 0.3 * cm),
+        collection_breakdown,
+        Spacer(1, 0.5 * cm),
+    ])
     if report["cost_anomalies"]["details"]:
         story.append(Paragraph(
             "Les ventes et paiements sont enregistrés. Seules les marges "

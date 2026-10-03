@@ -103,6 +103,12 @@ def test_daily_report_separates_sale_and_cash_dates(session):
     assert sale_report["totals"]["cost"] == Decimal("4.750000000000")
     assert sale_report["totals"]["sales_margin"] == Decimal("0.750000000000")
     assert sale_report["totals"]["cash_collected"] == Decimal("2.00")
+    assert sale_report["totals"]["current_sale_cash_collected"] == Decimal("2.00")
+    assert sale_report["totals"]["prior_debt_cash_collected"] == 0
+    assert sale_report["totals"]["current_sale_collected_margin"].quantize(
+        Decimal("0.000001")
+    ) == Decimal("0.272727")
+    assert sale_report["totals"]["prior_debt_collected_margin"] == 0
     assert sale_report["totals"]["new_debt"] == Decimal("3.50")
     assert sale_report["totals"]["old_debt_collected"] == 0
     assert sale_report["totals"]["remaining_debt"] == Decimal("3.50")
@@ -118,10 +124,69 @@ def test_daily_report_separates_sale_and_cash_dates(session):
     assert collection_report["totals"]["revenue"] == 0
     assert collection_report["totals"]["cash_collected"] == Decimal("1.00")
     assert collection_report["totals"]["old_debt_collected"] == Decimal("1.00")
+    assert collection_report["totals"]["current_sale_cash_collected"] == 0
+    assert collection_report["totals"]["prior_debt_cash_collected"] == Decimal("1.00")
     assert collection_report["totals"]["remaining_debt"] == Decimal("2.50")
     assert collection_report["totals"]["collected_margin"].quantize(
         Decimal("0.000001")
     ) == Decimal("0.136364")
+    assert collection_report["totals"]["current_sale_collected_margin"] == 0
+    assert collection_report["totals"]["prior_debt_collected_margin"].quantize(
+        Decimal("0.000001")
+    ) == Decimal("0.136364")
+
+
+def test_daily_report_splits_mixed_receipt_between_sale_and_prior_debt(session):
+    owner, business, client = setup_report_business(session, 102)
+    old_day = date.today() - timedelta(days=1)
+    report_day = old_day + timedelta(days=1)
+    record_wholesale_purchase(
+        business=business,
+        purchased_by=owner,
+        network=NetworkType.AIRTEL,
+        quantity=1000,
+        custom_unit_cost=Decimal("0.00900"),
+        purchase_date=old_day,
+    )
+    record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=100,
+        cash_received=0,
+        sale_date=old_day,
+        custom_unit_price=Decimal("0.01000"),
+    )
+    record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=100,
+        cash_received=Decimal("1.50"),
+        sale_date=report_day,
+        custom_unit_price=Decimal("0.01100"),
+    )
+    session.flush()
+
+    report = build_wholesale_daily_report(
+        business=business, target_date=report_day
+    )
+
+    assert report["totals"]["sales_margin"] == Decimal("0.200000000000")
+    assert report["totals"]["cash_collected"] == Decimal("1.50")
+    assert report["totals"]["current_sale_cash_collected"] == Decimal("0.50")
+    assert report["totals"]["prior_debt_cash_collected"] == Decimal("1.00")
+    assert report["totals"]["current_sale_collected_margin"].quantize(
+        Decimal("0.000001")
+    ) == Decimal("0.090909")
+    assert report["totals"]["prior_debt_collected_margin"] == Decimal(
+        "0.100000000000"
+    )
+    assert report["totals"]["collected_margin"].quantize(
+        Decimal("0.000001")
+    ) == Decimal("0.190909")
 
 
 def test_daily_report_marks_corrupt_sale_cost_instead_of_presenting_margin(session):
@@ -214,6 +279,10 @@ def test_daily_report_is_business_isolated_and_route_renders(app, session):
     assert b"Afficher" not in response.data
     assert b"Filtrer" not in response.data
     assert b"$1.00" in response.data
+    assert b"Marge ventes" in response.data
+    assert b"Marge encaiss\xc3\xa9e" in response.data
+    assert b"Ventes directes" in response.data
+    assert b"Dettes pr\xc3\xa9c\xc3\xa9dentes" in response.data
 
     pdf = client_app.get(
         f"/businesses/wholesale/report.pdf?date={target.isoformat()}"
