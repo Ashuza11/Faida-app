@@ -16,7 +16,10 @@ from apps.payments import collect_client_debt
 from apps.opening_balances import save_opening_balances
 from apps.purchases import record_wholesale_purchase
 from apps.sales import record_wholesale_sale
-from apps.wholesale_reports import build_wholesale_daily_report
+from apps.wholesale_reports import (
+    build_wholesale_daily_report,
+    build_wholesale_dashboard_summary,
+)
 
 
 def setup_report_business(session, suffix):
@@ -87,6 +90,9 @@ def test_daily_report_separates_sale_and_cash_dates(session):
     sale_report = build_wholesale_daily_report(
         business=business, target_date=sale_day
     )
+    dashboard_summary = build_wholesale_dashboard_summary(
+        business=business, target_date=sale_day
+    )
     airtel = sale_report["networks"][NetworkType.AIRTEL.name]
     assert airtel["opening"] == 1000
     assert airtel["purchased"] == 1000
@@ -100,6 +106,11 @@ def test_daily_report_separates_sale_and_cash_dates(session):
     assert sale_report["totals"]["new_debt"] == Decimal("3.50")
     assert sale_report["totals"]["old_debt_collected"] == 0
     assert sale_report["totals"]["remaining_debt"] == Decimal("3.50")
+    assert dashboard_summary == {
+        "sales": Decimal("5.50"),
+        "debt": Decimal("2.50"),
+        "cash_collected": Decimal("2.00"),
+    }
 
     collection_report = build_wholesale_daily_report(
         business=business, target_date=collection_day

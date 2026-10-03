@@ -6,6 +6,7 @@ from apps.models import (
     Business,
     BusinessApprovalStatus,
     BusinessType,
+    Client,
     CurrencyCode,
     NetworkType,
     PricePreset,
@@ -15,6 +16,8 @@ from apps.models import (
     StockPurchase,
     User,
 )
+from apps.purchases import record_wholesale_purchase
+from apps.sales import record_wholesale_sale
 
 
 def make_user(session, *, suffix, role=RoleType.VENDEUR):
@@ -109,6 +112,31 @@ def test_wholesale_dashboard_uses_sidebar_actions_and_compact_header(app, sessio
         business_type=BusinessType.WHOLESALE,
         approval_status=BusinessApprovalStatus.APPROVED,
     )
+    session.flush()
+    retailer = Client(
+        name="Maison Guillaume",
+        vendeur_id=owner.id,
+        business_id=wholesale.id,
+    )
+    session.add(retailer)
+    record_wholesale_purchase(
+        business=wholesale,
+        purchased_by=owner,
+        network=NetworkType.AIRTEL,
+        quantity=1000,
+        custom_unit_cost=Decimal("0.00900"),
+        purchase_date=date.today(),
+    )
+    record_wholesale_sale(
+        business=wholesale,
+        sold_by=owner,
+        client=retailer,
+        network=NetworkType.AIRTEL,
+        quantity=500,
+        cash_received=Decimal("2.00"),
+        sale_date=date.today(),
+        custom_unit_price=Decimal("0.01100"),
+    )
     session.commit()
     client = app.test_client()
     login(client, owner)
@@ -125,6 +153,14 @@ def test_wholesale_dashboard_uses_sidebar_actions_and_compact_header(app, sessio
     assert 'id="navbar-wholesale"' in page
     for label in ("Vendre", "Acheter", "Dettes", "Rapport", "Changer mode"):
         assert label in page
+    for network in ("airtel", "africel", "orange", "vodacom"):
+        assert f"assets/img/theme/{network}.png" in page
+    assert "Ventes du jour" in page
+    assert "Dette du jour" in page
+    assert "Cash reçu aujourd'hui" in page
+    assert "$5.50" in page
+    assert "$3.50" in page
+    assert "$2.00" in page
     # Only the mode switch remains in the page header; operations live in the sidebar.
     content = page.rsplit('<div class="container-fluid mt-4">', 1)[1]
     header = content.split('<div class="row">', 1)[0]

@@ -156,7 +156,10 @@ from apps.sales import (
     sale_has_active_payment,
     wholesale_sale_has_active_payment,
 )
-from apps.wholesale_reports import build_wholesale_daily_report
+from apps.wholesale_reports import (
+    build_wholesale_daily_report,
+    build_wholesale_dashboard_summary,
+)
 from apps.wholesale_cashbook import (
     CashbookConversionError,
     CashbookEntryError,
@@ -311,10 +314,24 @@ def wholesale_dashboard():
         .order_by(Stock.network)
         .all()
     )
+    stocks_by_network = {stock.network: stock for stock in stocks}
+    network_stocks = [
+        {
+            "network": network,
+            "stock": stocks_by_network.get(network),
+        }
+        for network in NetworkType
+    ]
+    today = business_local_date()
+    daily_summary = build_wholesale_dashboard_summary(
+        business=business,
+        target_date=today,
+    )
     return render_template(
         "main/wholesale_dashboard.html",
         business=business,
-        stocks=stocks,
+        network_stocks=network_stocks,
+        daily_summary=daily_summary,
         segment="wholesale",
         sub_segment="dashboard",
     )

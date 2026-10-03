@@ -33,6 +33,42 @@ def _decimal(value) -> Decimal:
     return Decimal(str(value or 0))
 
 
+def build_wholesale_dashboard_summary(
+    *, business: Business, target_date: date
+) -> dict:
+    """Return the small set of daily cash metrics needed by the home screen."""
+    if business.business_type != BusinessType.WHOLESALE:
+        raise ValueError("Ce résumé est disponible uniquement en mode grossiste.")
+
+    sales = (
+        db.session.query(
+            func.sum(Sale.total_amount_due).label("revenue"),
+            func.sum(Sale.debt_amount).label("debt"),
+        )
+        .filter(
+            Sale.business_id == business.id,
+            Sale.sale_date == target_date,
+            Sale.status == TransactionStatus.ACTIVE,
+        )
+        .one()
+    )
+    cash_collected = (
+        db.session.query(func.sum(CashInflow.amount))
+        .filter(
+            CashInflow.business_id == business.id,
+            CashInflow.payment_date == target_date,
+            CashInflow.category == CashInflowCategory.SALE_COLLECTION,
+            CashInflow.status == TransactionStatus.ACTIVE,
+        )
+        .scalar()
+    )
+    return {
+        "sales": _decimal(sales.revenue),
+        "debt": _decimal(sales.debt),
+        "cash_collected": _decimal(cash_collected),
+    }
+
+
 def build_wholesale_daily_report(
     *, business: Business, target_date: date
 ) -> dict:
