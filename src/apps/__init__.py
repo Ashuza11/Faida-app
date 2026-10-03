@@ -24,6 +24,10 @@ def create_app(config_object=DebugConfig):
     app = Flask(__name__)
     app.config.from_object(config_object)
 
+    from .money import format_unit_price
+
+    app.jinja_env.filters["unit_price"] = format_unit_price
+
     # ... (logging configuration) ...
 
     # --- Initialize Extensions (This is where 'db' becomes a real object) ---

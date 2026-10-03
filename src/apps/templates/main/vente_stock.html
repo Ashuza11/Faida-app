@@ -226,7 +226,7 @@
                                         <td>
                                             {% for item in group.item_groups %}
                                                 <div>
-                                                    <strong>{{ item.network.value|capitalize }}:</strong> {{ item.quantity }} unités @ {{ "{:,.2f}".format(item.price_per_unit) }} FC
+                                                    <strong>{{ item.network.value|capitalize }}:</strong> {{ item.quantity }} unités @ {{ item.price_per_unit|unit_price(2) }} FC
                                                     - Sous-total: {{ "{:,.2f}".format(item.subtotal) }} FC
                                                 </div>
                                             {% else %}<span class="text-muted">Aucune vente active.</span>{% endfor %}
@@ -257,7 +257,7 @@
                                                         </div>
                                                     </div>
                                                     <div class="small my-2">
-                                                        {% for item in sale.sale_items %}<span class="d-block"><strong>{{ item.network.value|capitalize }}:</strong> {{ item.quantity }} unités @ {{ "{:,.2f}".format(item.price_per_unit_applied) }} FC = {{ "{:,.2f}".format(item.subtotal) }} FC</span>{% endfor %}
+                                                        {% for item in sale.sale_items %}<span class="d-block"><strong>{{ item.network.value|capitalize }}:</strong> {{ item.quantity }} unités @ {{ item.price_per_unit_applied|unit_price(2) }} FC = {{ "{:,.2f}".format(item.subtotal) }} FC</span>{% endfor %}
                                                     </div>
                                                     {% if sale.status.value == 'active' %}
                                                         <div class="d-flex flex-wrap" style="gap:6px;">

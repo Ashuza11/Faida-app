@@ -56,7 +56,7 @@
                             <li class="list-group-item">
                                 <strong>Réseau:</strong> {{ item.network.value|capitalize }}<br>
                                 <strong>Quantité:</strong> {{ item.quantity }} unités<br>
-                                <strong>Prix par unité appliqué:</strong> {{ "{:,.2f}".format(item.price_per_unit_applied) }} FC<br>
+                                <strong>Prix par unité appliqué:</strong> {{ item.price_per_unit_applied|unit_price(2) }} FC<br>
                                 <strong>Sous-total:</strong> {{ "{:,.2f}".format(item.subtotal) }} FC
                             </li>
                         {% endfor %}

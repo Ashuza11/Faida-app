@@ -513,22 +513,23 @@ def test_wholesale_purchase_route_accepts_custom_total_paid(app, session):
     page = browser.get("/businesses/wholesale/purchases")
     assert b"Montant total pay\xc3\xa9 ($)" in page.data
     assert b"Prix personnalis\xc3\xa9 par unit\xc3\xa9 ($)" not in page.data
+    assert b'step="0.000000000001"' in page.data
 
     response = browser.post(
         "/businesses/wholesale/purchases",
         data={
             "network": NetworkType.AIRTEL.name,
-            "quantity": "10650",
+            "quantity": "6500",
             "purchase_date": date.today().isoformat(),
             "price_choice": "custom",
-            "custom_total_cost": "100.00",
+            "custom_total_cost": "61.425",
         },
     )
 
     assert response.status_code == 302
     purchase = StockPurchase.query.one()
-    assert purchase.actual_total_cost == Decimal("100.000000000000")
-    assert purchase.buying_price_at_purchase == Decimal("0.009389671362")
+    assert purchase.actual_total_cost == Decimal("61.425000000000")
+    assert purchase.buying_price_at_purchase == Decimal("0.009450000000")
 
 
 def test_wholesale_purchase_groups_sum_active_rows_by_network(session):

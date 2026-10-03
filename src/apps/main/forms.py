@@ -266,7 +266,7 @@ class StockPurchaseForm(FlaskForm):
     # Field for custom BUYING price, validated conditionally
     custom_buying_price = DecimalField(
         "Prix d'achat personnalisé (FC)",
-        places=4,
+        places=12,
         validators=[
             Optional(),
             NumberRange(min=1, max=MAX_LEDGER_AMOUNT),
@@ -274,7 +274,7 @@ class StockPurchaseForm(FlaskForm):
         ],
         render_kw={
             "placeholder": "Entrer le prix d'achat personnalisé",
-            "step": "0.0001",
+            "step": "0.000000000001",
             "max": "9999999999.99",
         },
     )
@@ -299,7 +299,7 @@ class StockPurchaseForm(FlaskForm):
     # INTENDED SELLING price
     custom_intended_selling_price = DecimalField(
         "Prix de vente personnalisé (FC)",
-        places=4,
+        places=12,
         validators=[
             Optional(),
             NumberRange(min=0.01, max=MAX_LEDGER_AMOUNT),
@@ -307,7 +307,7 @@ class StockPurchaseForm(FlaskForm):
         ],
         render_kw={
             "placeholder": "Entrer le prix de vente personnalisé",
-            "step": "0.0001",
+            "step": "0.000000000001",
             "max": "9999999999.99",
         },
     )
@@ -356,7 +356,7 @@ class SaleItemForm(FlaskForm):
     )
     price_per_unit_applied = DecimalField(
         "Prix Unitaire Appliqué (FC)",
-        places=4,
+        places=12,
         validators=[
             Optional(),
             NumberRange(
@@ -365,7 +365,7 @@ class SaleItemForm(FlaskForm):
                 message="Le prix unitaire est invalide ou trop élevé."
             ),
         ],
-        render_kw={"step": "0.0001", "max": "9999999999.99"},
+        render_kw={"step": "0.000000000001", "max": "9999999999.99"},
     )
 
 
@@ -807,10 +807,10 @@ class WholesalePurchaseForm(FlaskForm):
         validators=[Optional(), NumberRange(
             min=Decimal("0.01"), max=MAX_LEDGER_AMOUNT
         )],
-        places=2,
+        places=12,
         render_kw={
             "placeholder": "Ex: 100.00",
-            "step": "0.01",
+            "step": "0.000000000001",
             "max": "9999999999.99",
         },
     )

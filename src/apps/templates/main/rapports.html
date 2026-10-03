@@ -201,7 +201,7 @@
               <tr>
                 <td><strong>{{ network.value | upper }}</strong></td>
                 <td>{{ "{:,.0f}".format(p.qty) }}</td>
-                <td>{{ "{:,.2f}".format(p.buying_price) }} FC</td>
+                <td>{{ p.buying_price|unit_price(2) }} FC</td>
                 <td>{{ "{:,.2f}".format(p.cost) }}</td>
                 <td>{{ "{:,.2f}".format(p.revenue) }}</td>
                 <td class="{% if p.profit >= 0 %}text-success{% else %}text-danger{% endif %} font-weight-bold">
@@ -349,7 +349,7 @@
                 <td>{{ loop.index }}</td>
                 <td><strong>{{ purchase.network.value | upper }}</strong></td>
                 <td>{{ "{:,.0f}".format(purchase.amount_purchased) }}</td>
-                <td>{{ "{:,.2f}".format(purchase.buying_price_at_purchase) }}</td>
+                <td>{{ purchase.buying_price_at_purchase|unit_price(2) }}</td>
                 <td>{{ "{:,.2f}".format(purchase.amount_purchased * purchase.buying_price_at_purchase) }}</td>
                 <td>{{ purchase.purchased_by.username }}</td>
                 <td>{{ purchase.created_at.strftime('%H:%M') }}</td>

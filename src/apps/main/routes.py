@@ -1082,7 +1082,26 @@ def wholesale_sales():
             business_id=business.id,
             sale_date=selected_date,
         )
-        .options(selectinload(Sale.client), selectinload(Sale.sale_items))
+    )
+    sale_search = request.args.get("search", "").strip()[:100]
+    if sale_search:
+        search_filters = [Client.name.ilike(f"%{sale_search}%")]
+        sale_number = sale_search.removeprefix("#").strip()
+        if sale_number.isdigit():
+            search_filters.append(Sale.id == int(sale_number))
+        matching_networks = [
+            network
+            for network in NetworkType
+            if sale_search.casefold() in network.name.casefold()
+            or sale_search.casefold() in network.value.casefold()
+        ]
+        if matching_networks:
+            search_filters.append(
+                Sale.sale_items.any(SaleItem.network.in_(matching_networks))
+            )
+        sales = sales.outerjoin(Sale.client).filter(or_(*search_filters))
+    sales = (
+        sales.options(selectinload(Sale.client), selectinload(Sale.sale_items))
         .order_by(Sale.created_at.desc())
         .all()
     )
@@ -1102,11 +1121,16 @@ def wholesale_sales():
             "label": preset.label,
             "unit_price": str(preset.unit_price),
         })
+    sale_groups_pagination = paginate_list(
+        build_wholesale_sale_groups(sales, payment_events),
+        per_page_config_key="SALES_PER_PAGE",
+    )
     return render_template(
         "main/wholesale_sales.html",
         business=business,
         form=form,
-        sale_groups=build_wholesale_sale_groups(sales, payment_events),
+        sale_groups_pagination=sale_groups_pagination,
+        sale_search=sale_search,
         daily_report=daily_report,
         selected_date=selected_date,
         is_today=date_context["is_today"],

@@ -125,9 +125,9 @@
                     {% set row = namespace(airtel='-', africel='-', orange='-', vodacom='-', set_by='-') %}
                     {% for e in history if e.balance_date == entry.balance_date %}
                       {% if is_wholesale %}
-                        {% set value = "{:,} · ${:,.2f} total · ${:,.8f}/u".format(e.quantity|int, e.actual_total_cost, e.unit_cost) + (" *" if e.is_cost_estimated else "") %}
+                        {% set value = "{:,}".format(e.quantity|int) ~ " · $" ~ (e.actual_total_cost|unit_price(2)) ~ " total · $" ~ (e.unit_cost|unit_price) ~ "/u" ~ (" *" if e.is_cost_estimated else "") %}
                       {% else %}
-                        {% set value = "{:,} @ {:,.4f}".format(e.quantity|int, e.unit_cost) + (" *" if e.is_cost_estimated else "") %}
+                        {% set value = "{:,}".format(e.quantity|int) ~ " @ " ~ (e.unit_cost|unit_price(2)) ~ (" *" if e.is_cost_estimated else "") %}
                       {% endif %}
                       {% if e.network.name == 'AIRTEL' %}{% set row.airtel = value %}{% endif %}
                       {% if e.network.name == 'AFRICEL' %}{% set row.africel = value %}{% endif %}

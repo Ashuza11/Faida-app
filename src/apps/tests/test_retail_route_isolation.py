@@ -761,7 +761,7 @@ def test_client_registration_adopts_matching_legacy_adhoc_sales(app, session):
     assert legacy_sale.client_name_adhoc is None
 
 
-def test_retail_sale_price_input_accepts_four_decimal_places(app, session):
+def test_retail_sale_price_input_accepts_precise_decimal_places(app, session):
     owner, retail, _, retail_client, _ = setup_ledgers(session)
     session.add(Stock(
         vendeur_id=owner.id,
@@ -779,7 +779,7 @@ def test_retail_sale_price_input_accepts_four_decimal_places(app, session):
 
     form_response = client.get("/vente_stock")
     assert form_response.status_code == 200
-    assert b'step="0.0001"' in form_response.data
+    assert b'step="0.000000000001"' in form_response.data
 
     response = client.post(
         "/vente_stock",

@@ -1,4 +1,5 @@
 {% extends "layouts/base.html" %}
+{% import "includes/_filters.html" as filters %}
 {% macro sale_correction(sale, payment, reversal_form) %}
   {% if sale.status.value == 'reversed' %}
     <span class="badge badge-danger">Annulée</span>
@@ -117,13 +118,26 @@
     <div class="col-lg-7">
       <div class="card shadow"><div class="card-header d-flex flex-wrap justify-content-between align-items-center" style="gap:10px;">
         <h3 class="mb-0">Ventes par client</h3>
+        {% if not editing_sale %}<span class="badge badge-primary">{{ sale_groups_pagination.total }} client{{ 's' if sale_groups_pagination.total != 1 }}</span>{% endif %}
+      </div><div class="card-body">
         {% if not editing_sale %}
-          <form method="get" action="{{ url_for('main_bp.wholesale_sales') }}" class="m-0">
-            <input type="date" name="date" value="{{ selected_date.isoformat() }}" class="form-control form-control-sm bg-white" aria-label="Date des ventes" onchange="this.form.submit()">
+          <form method="get" action="{{ url_for('main_bp.wholesale_sales') }}" class="mb-3">
+            <div class="form-row">
+              <div class="col-sm-5 mb-2 mb-sm-0">
+                <input type="date" name="date" value="{{ selected_date.isoformat() }}" class="form-control form-control-sm bg-white" aria-label="Date des ventes" onchange="this.form.submit()">
+              </div>
+              <div class="col-sm-7">
+                <div class="input-group input-group-sm">
+                  <input type="search" name="search" value="{{ sale_search }}" class="form-control" maxlength="100" placeholder="Client, n° vente ou réseau" aria-label="Rechercher une vente">
+                  <div class="input-group-append"><button class="btn btn-outline-primary" type="submit">Rechercher</button></div>
+                </div>
+              </div>
+            </div>
+            {% if sale_search %}<a class="small d-inline-block mt-2" href="{{ url_for('main_bp.wholesale_sales', date=selected_date.isoformat()) }}">Effacer la recherche</a>{% endif %}
           </form>
         {% endif %}
-      </div><div class="card-body">
-        {% for group in sale_groups %}
+        {% set displayed_sale_groups = sale_groups_pagination.items if sale_groups_pagination is defined else sale_groups %}
+        {% for group in displayed_sale_groups %}
           <article class="card wholesale-client-card shadow-sm mb-3" data-client-group="{{ group.key }}">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-start mb-2">
@@ -155,7 +169,7 @@
                 <div class="alert alert-info py-2 px-3 small">${{ "{:.2f}".format(group.cash_redirected_to_other_sales) }} reçu ici et appliqué aux anciennes dettes.</div>
               {% endif %}
 
-              <details class="client-transactions">
+              <details class="client-transactions"{% if sale_search %} open{% endif %}>
                 <summary>Voir {{ group.sales|length }} transaction{{ 's' if group.sales|length != 1 }}</summary>
                 {% for sale in group.sales %}
                   {% set payment = group.payment_details[sale.id] %}
@@ -179,9 +193,11 @@
             </div>
           </article>
         {% else %}
-          <p class="text-center text-muted mb-0">Aucune vente pour le {{ selected_date.strftime('%d/%m/%Y') }}.</p>
+          <p class="text-center text-muted mb-0">{% if sale_search %}Aucune vente ne correspond à « {{ sale_search }} » pour le {{ selected_date.strftime('%d/%m/%Y') }}.{% else %}Aucune vente pour le {{ selected_date.strftime('%d/%m/%Y') }}.{% endif %}</p>
         {% endfor %}
-      </div></div>
+      </div>
+      {% if sale_groups_pagination is defined %}{{ filters.render_pagination(sale_groups_pagination, 'main_bp.wholesale_sales') }}{% endif %}
+      </div>
     </div>
   </div>
 </div>

@@ -8,6 +8,8 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from apps.money import format_unit_price
+
 
 def generate_wholesale_report_pdf(*, business, report) -> BytesIO:
     output = BytesIO()
@@ -91,7 +93,7 @@ def generate_wholesale_report_pdf(*, business, report) -> BytesIO:
         has_cost_anomaly = group.network.name in report["cost_anomalies"]["networks"]
         price_rows.append([
             group.network.value.capitalize(),
-            f"${group.price_per_unit_applied:.5f}",
+            f"${format_unit_price(group.price_per_unit_applied)}",
             str(group.quantity),
             f"${group.revenue:.2f}",
             "À vérifier" if has_cost_anomaly else f"${group.cost:.2f}",

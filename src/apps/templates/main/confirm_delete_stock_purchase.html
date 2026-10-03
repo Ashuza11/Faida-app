@@ -35,7 +35,7 @@
               <ul class="list-group list-group-flush mb-4">
                 <li class="list-group-item"><strong>Réseau:</strong> {{ purchase.network.value }}</li>
                 <li class="list-group-item"><strong>Montant Acheté:</strong> {{ "{:,.2f}".format(purchase.amount_purchased) }}</li>
-                <li class="list-group-item"><strong>Prix de Vente Unitaire:</strong> {{ "{:,.2f}".format(purchase.selling_price_at_purchase) }}</li>
+                <li class="list-group-item"><strong>Prix de Vente Unitaire:</strong> {{ purchase.selling_price_at_purchase|unit_price(2) }}</li>
                 <li class="list-group-item"><strong>Date d'Achat:</strong> {{ purchase.created_at.strftime('%Y-%m-%d %H:%M') }}</li>
               </ul>
 

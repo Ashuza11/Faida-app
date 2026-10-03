@@ -151,7 +151,7 @@ def test_retail_purchase_accepts_four_decimal_custom_prices(app, session):
     )
 
     assert form_page.status_code == 200
-    assert form_page.data.count(b'step="0.0001"') >= 2
+    assert form_page.data.count(b'step="0.000000000001"') >= 2
     assert response.status_code == 302
     purchase = StockPurchase.query.one()
     assert purchase.buying_price_at_purchase == Decimal("22.207500000000")

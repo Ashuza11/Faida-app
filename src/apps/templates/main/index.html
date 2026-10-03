@@ -249,7 +249,7 @@
                     <th scope="row">{{ sale.seller.username }}</th>
                     <td>
                       {% for item in sale.sale_items %}
-                        {{ item.quantity }} unités @ {{ "%.2f" | format(item.price_per_unit_applied) }} FC - Sous-total: {{ "%.2f" | format(item.subtotal) }} FC ({{ item.network.value.capitalize() }})<br>
+                        {{ item.quantity }} unités @ {{ item.price_per_unit_applied|unit_price(2) }} FC - Sous-total: {{ "%.2f" | format(item.subtotal) }} FC ({{ item.network.value.capitalize() }})<br>
                       {% endfor %}
                     </td>
                     <td>{{ "%.2f" | format(sale.total_amount_due) }} FC</td>

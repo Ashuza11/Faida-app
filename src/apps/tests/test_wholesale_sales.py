@@ -265,8 +265,76 @@ def test_wholesale_sales_page_shows_exact_price_and_reconciled_subtotal(
     page = browser.get("/businesses/wholesale/sales")
     html = page.data.decode()
     assert page.status_code == 200
+    assert 'step="0.000000000001"' in html
     assert "Airtel</strong>: 2000 @ $0.009455 = $18.91" in html
     assert "Airtel: 2000 @ $0.009455 = $18.91" in html
+
+
+def test_wholesale_sales_page_paginates_groups_and_searches_transactions(
+    app, session
+):
+    owner, business, first_client, preset = setup_wholesale(session, suffix=508)
+    first_client.name = "Guillaume"
+    second_client = Client(
+        name="Bienvenue",
+        vendeur_id=owner.id,
+        business_id=business.id,
+    )
+    session.add(second_client)
+    session.flush()
+    today = business_local_date()
+    first_sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=first_client,
+        network=NetworkType.AIRTEL, quantity=100, cash_received=0,
+        sale_date=today, preset=preset,
+    )
+    second_sale = record_wholesale_sale(
+        business=business, sold_by=owner, client=second_client,
+        network=NetworkType.AIRTEL, quantity=100, cash_received=0,
+        sale_date=today, preset=preset,
+    )
+    first_sale.created_at = datetime(2026, 8, 27, 10, 0, tzinfo=timezone.utc)
+    second_sale.created_at = datetime(2026, 8, 27, 11, 0, tzinfo=timezone.utc)
+    session.commit()
+    app.config["SALES_PER_PAGE"] = 1
+    browser = app.test_client()
+    with browser.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    first_page = browser.get("/businesses/wholesale/sales")
+    first_html = first_page.data.decode()
+    assert first_page.status_code == 200
+    assert "2 clients" in first_html
+    assert 'data-client-group="c:' + str(second_client.id) in first_html
+    assert 'data-client-group="c:' + str(first_client.id) not in first_html
+    assert "page=2" in first_html
+
+    second_page = browser.get(
+        "/businesses/wholesale/sales", query_string={"page": 2}
+    )
+    second_html = second_page.data.decode()
+    assert 'data-client-group="c:' + str(first_client.id) in second_html
+    assert 'data-client-group="c:' + str(second_client.id) not in second_html
+
+    name_result = browser.get(
+        "/businesses/wholesale/sales",
+        query_string={"date": today.isoformat(), "search": "Guill"},
+    )
+    name_html = name_result.data.decode()
+    assert name_result.status_code == 200
+    assert 'data-sale-id="' + str(first_sale.id) + '"' in name_html
+    assert 'data-sale-id="' + str(second_sale.id) + '"' not in name_html
+    assert '<details class="client-transactions" open>' in name_html
+
+    number_result = browser.get(
+        "/businesses/wholesale/sales",
+        query_string={"date": today.isoformat(), "search": f"#{second_sale.id}"},
+    )
+    number_html = number_result.data.decode()
+    assert 'data-sale-id="' + str(second_sale.id) + '"' in number_html
+    assert 'data-sale-id="' + str(first_sale.id) + '"' not in number_html
 
 
 def test_wholesale_sales_page_defaults_to_today_and_filters_by_date(app, session):

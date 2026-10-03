@@ -96,7 +96,7 @@
                                 <tr>
                                     <td>{{ purchase.network.value|capitalize }}</td>
                                     <td>{{ purchase.amount_purchased }} unités</td>
-                                    <td>{{ "%.2f FC"|format(purchase.buying_price_at_purchase) }}</td>
+                                    <td>{{ purchase.buying_price_at_purchase|unit_price(2) }} FC</td>
                                     <td>{{ purchase.purchased_by.username }}</td>
                                     <td>{{ purchase.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
                                     <td class="text-right">

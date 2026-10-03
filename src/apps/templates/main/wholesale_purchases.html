@@ -56,8 +56,8 @@
 
                 <div class="row text-center mb-3">
                   <div class="col-4 px-1"><small class="d-block text-muted">Unités</small><strong>{{ group.total_units }}</strong></div>
-                  <div class="col-4 px-1"><small class="d-block text-muted">Coût total</small><strong>${{ "{:.2f}".format(group.display_total_cost) }}</strong></div>
-                  <div class="col-4 px-1"><small class="d-block text-muted">Coût moyen</small><strong>${{ "{:.8f}".format(group.average_unit_cost) }}</strong></div>
+                  <div class="col-4 px-1"><small class="d-block text-muted">Coût total</small><strong>${{ group.display_total_cost|unit_price(2) }}</strong></div>
+                  <div class="col-4 px-1"><small class="d-block text-muted">Coût moyen</small><strong>${{ group.average_unit_cost|unit_price }}</strong></div>
                 </div>
 
                 <details>
@@ -67,7 +67,7 @@
                     <div class="border-top pt-3 mt-3 {% if purchase.status.value == 'reversed' %}text-muted{% endif %}" data-purchase-id="{{ purchase.id }}">
                       <div class="d-flex flex-wrap justify-content-between mb-2" style="gap:8px;">
                         <strong>Achat #{{ row.display_number }}</strong>
-                        <span>{{ purchase.amount_purchased }} unités · ${{ "{:.2f}".format(purchase.actual_total_cost) }} · ${{ "{:.8f}".format(purchase.buying_price_at_purchase) }}/u</span>
+                        <span>{{ purchase.amount_purchased }} unités · ${{ purchase.actual_total_cost|unit_price(2) }} · ${{ purchase.buying_price_at_purchase|unit_price }}/u</span>
                       </div>
                       {% if purchase.status.value == 'reversed' %}
                         <span class="badge badge-danger">Annulé</span>
@@ -105,6 +105,11 @@
   const quantity = document.getElementById('purchaseQuantity');
   const customTotal = document.getElementById('customTotalCost');
   const customGroup = document.getElementById('customCostGroup');
+  function formatPrecise(value, minimumPlaces) {
+    const parts = Number(value).toFixed(12).split('.');
+    const fraction = parts[1].replace(/0+$/, '').padEnd(minimumPlaces, '0');
+    return `${parts[0]}.${fraction}`;
+  }
   function loadPrices() {
     const previous = price.value;
     price.innerHTML = '';
@@ -132,8 +137,8 @@
       total = units * Number(option.dataset.ratioAmount) / Number(option.dataset.ratioUnits);
       unitCost = units ? total / units : 0;
     }
-    document.getElementById('unitCostPreview').textContent = unitCost ? `$${unitCost.toFixed(8)}` : '—';
-    document.getElementById('totalCostPreview').textContent = total ? `$${total.toFixed(2)}` : '—';
+    document.getElementById('unitCostPreview').textContent = unitCost ? `$${formatPrecise(unitCost, 5)}` : '—';
+    document.getElementById('totalCostPreview').textContent = total ? `$${formatPrecise(total, 2)}` : '—';
     const warning = document.getElementById('purchaseInputWarning');
     const referenceItem = (presets[network.value] || [])[0];
     const reference = referenceItem
