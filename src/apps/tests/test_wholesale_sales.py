@@ -15,6 +15,7 @@ from apps.models import (
     PriceOperation,
     RoleType,
     Sale,
+    SaleItemHistory,
     Stock,
     TransactionStatus,
     User,
@@ -1170,38 +1171,46 @@ def test_price_client_and_date_edit_after_later_purchase_preserves_cost(session)
     ) == stock_state
 
 
-def test_sale_edit_is_blocked_after_later_purchase_changes_cost(session):
+def test_sale_edit_replays_inventory_after_later_purchase(session):
     owner, business, retailer, preset = setup_wholesale(session, suffix=56)
     sale = record_wholesale_sale(
         business=business, sold_by=owner, client=retailer,
-        network=NetworkType.AIRTEL, quantity=500, cash_received=0,
+        network=NetworkType.AIRTEL, quantity=500, cash_received=Decimal("2.00"),
         sale_date=date.today(), preset=preset,
     )
     session.flush()
-    later_purchase = record_wholesale_purchase(
+    record_wholesale_purchase(
         business=business, purchased_by=owner, network=NetworkType.AIRTEL,
         quantity=1000, custom_unit_cost=Decimal("0.01200"),
     )
     session.flush()
 
-    with pytest.raises(ValueError) as error:
-        replace_unpaid_wholesale_sale(
-            sale=sale, business=business, updated_by=owner, client=retailer,
-            sale_date=date.today(), items=[{
-                "network": NetworkType.AIRTEL,
-                "quantity": 300,
-                "custom_unit_price": Decimal("0.01000"),
-            }],
-        )
+    replace_unpaid_wholesale_sale(
+        sale=sale, business=business, updated_by=owner, client=retailer,
+        sale_date=date.today(), items=[{
+            "network": NetworkType.AIRTEL,
+            "quantity": 300,
+            "custom_unit_price": Decimal("0.01000"),
+        }],
+    )
+    session.flush()
 
-    message = str(error.value)
-    assert "quantité ou le réseau" in message
-    assert f"achat Airtel #{later_purchase.id}" in message
-    assert "Le prix et le client restent modifiables" in message
-    assert sale.sale_items[0].quantity == 500
-    assert Stock.query.filter_by(
+    assert sale.sale_items[0].quantity == 300
+    assert sale.sale_items[0].cost_per_unit_snapshot == Decimal("0.009000000000")
+    assert sale.sale_items[0].cost_total == Decimal("2.700000000000")
+    assert sale.cash_paid == Decimal("2.00")
+    assert sale.debt_amount == Decimal("1.00")
+    assert PaymentEvent.query.filter_by(
+        source_sale_id=sale.id,
+        status=TransactionStatus.ACTIVE,
+    ).one().amount == Decimal("2.00")
+    assert SaleItemHistory.query.filter_by(sale_id=sale.id).one().quantity == 500
+    stock = Stock.query.filter_by(
         business_id=business.id, network=NetworkType.AIRTEL
-    ).one().balance == 2500
+    ).one()
+    assert stock.balance == 2700
+    assert stock.inventory_value == Decimal("27.300000000000")
+    assert stock.average_cost_per_unit == Decimal("0.010111111111")
 
 
 def test_debt_collection_is_oldest_first_and_keeps_payment_date(session):

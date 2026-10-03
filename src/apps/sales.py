@@ -21,11 +21,13 @@ from apps.models import (
     SaleItem,
     SaleItemHistory,
     Stock,
+    StockOpeningBalance,
     StockPurchase,
     TransactionStatus,
     User,
 )
 from apps.money import (
+    INTERNAL_MONEY_QUANTUM,
     as_decimal,
     calculate_invoice_total,
     format_unit_price,
@@ -478,6 +480,243 @@ def sale_has_active_payment(sale: Sale) -> bool:
     )
 
 
+def _inventory_event_key(*, created_at, event_order, event_id):
+    """Build a timezone-neutral ordering key for recorded inventory events."""
+    if created_at.tzinfo is not None:
+        created_at = created_at.astimezone(timezone.utc).replace(tzinfo=None)
+    return created_at, event_order, event_id
+
+
+def _consume_replayed_stock(*, quantity, balance, inventory_value):
+    """Apply the same weighted-average consumption rules as live inventory."""
+    quantity = as_decimal(quantity)
+    balance = as_decimal(balance)
+    inventory_value = as_decimal(inventory_value)
+    if quantity > balance:
+        return None
+    unit_cost = quantize_unit_price(inventory_value / balance)
+    cost_total = (
+        inventory_value
+        if quantity == balance
+        else (quantity * unit_cost).quantize(INTERNAL_MONEY_QUANTUM)
+    )
+    remaining_balance = balance - quantity
+    remaining_value = max(Decimal("0"), inventory_value - cost_total)
+    if remaining_balance == 0:
+        remaining_value = Decimal("0")
+    return unit_cost, cost_total, remaining_balance, remaining_value
+
+
+def _snapshot_sale_items(*, sale, changed_by):
+    for item in sale.sale_items:
+        db.session.add(SaleItemHistory(
+            sale_id=sale.id,
+            vendeur_id=sale.vendeur_id,
+            business_id=sale.business_id,
+            changed_by_id=changed_by.id,
+            action="edit",
+            network=item.network,
+            quantity=item.quantity,
+            price_per_unit_applied=item.price_per_unit_applied,
+            subtotal=item.subtotal,
+        ))
+
+
+def _replay_inventory_after_sale_correction(
+    *, sale, business, prepared_items, is_wholesale
+):
+    """Rebuild affected inventory from the corrected sale through current state.
+
+    Current stock is first rolled back to the instant before the target sale.
+    The corrected sale and every later purchase/sale are then replayed in their
+    original recording order. This preserves weighted-average historical costs.
+    """
+    old_items_by_network = {item.network: item for item in sale.sale_items}
+    prepared_by_network = {item["network"]: item for item in prepared_items}
+    affected_networks = set(old_items_by_network) | set(prepared_by_network)
+
+    later_opening = (
+        StockOpeningBalance.query.filter(
+            StockOpeningBalance.business_id == business.id,
+            StockOpeningBalance.network.in_(affected_networks),
+            StockOpeningBalance.balance_date > sale.sale_date,
+        )
+        .order_by(StockOpeningBalance.balance_date, StockOpeningBalance.id)
+        .first()
+    )
+    if later_opening is not None:
+        raise ValueError(user_message(
+            "Un stock initial plus récent sépare cette vente du stock actuel.",
+            "Corrigez cette vente avec l'administrateur pour préserver l'inventaire.",
+        ))
+
+    stocks = (
+        Stock.query.filter(
+            Stock.business_id == business.id,
+            Stock.network.in_(affected_networks),
+        )
+        .order_by(Stock.id)
+        .with_for_update()
+        .all()
+    )
+    stocks_by_network = {stock.network: stock for stock in stocks}
+    missing_network = next(
+        (network for network in affected_networks if network not in stocks_by_network),
+        None,
+    )
+    if missing_network is not None:
+        raise ValueError(user_message(
+            f"Le stock {missing_network.value} n'est pas encore configuré.",
+            "Enregistrez d'abord un stock initial ou un achat.",
+        ))
+
+    target_key = _inventory_event_key(
+        created_at=sale.created_at,
+        event_order=1,
+        event_id=sale.id,
+    )
+    target_costs = {}
+    for network in sorted(affected_networks, key=lambda value: value.name):
+        stock = stocks_by_network[network]
+        purchases = (
+            StockPurchase.query.join(Stock)
+            .filter(
+                Stock.business_id == business.id,
+                StockPurchase.network == network,
+                StockPurchase.status == TransactionStatus.ACTIVE,
+                StockPurchase.created_at >= sale.created_at,
+            )
+            .all()
+        )
+        sale_items = (
+            SaleItem.query.join(Sale)
+            .filter(
+                Sale.business_id == business.id,
+                Sale.status == TransactionStatus.ACTIVE,
+                SaleItem.network == network,
+                Sale.created_at >= sale.created_at,
+            )
+            .all()
+        )
+        events = []
+        for purchase in purchases:
+            key = _inventory_event_key(
+                created_at=purchase.created_at,
+                event_order=0,
+                event_id=purchase.id,
+            )
+            if key >= target_key:
+                events.append((key, "purchase", purchase))
+        for item in sale_items:
+            key = _inventory_event_key(
+                created_at=item.sale.created_at,
+                event_order=1,
+                event_id=item.sale_id,
+            )
+            if key >= target_key:
+                events.append((key, "sale", item))
+        events.sort(key=lambda event: event[0])
+
+        balance = as_decimal(stock.balance)
+        inventory_value = as_decimal(stock.inventory_value)
+        for _, event_type, event in reversed(events):
+            if event_type == "sale":
+                balance += as_decimal(event.quantity)
+                inventory_value += as_decimal(event.cost_total)
+            else:
+                balance -= as_decimal(event.amount_purchased)
+                inventory_value -= as_decimal(event.actual_total_cost)
+        if balance < 0 or inventory_value < -INTERNAL_MONEY_QUANTUM:
+            raise ValueError(user_message(
+                f"L'historique du stock {network.value} est incohérent.",
+                "Contactez l'administrateur avant de modifier cette vente.",
+            ))
+        inventory_value = max(Decimal("0"), inventory_value)
+
+        corrected = prepared_by_network.get(network)
+        if corrected is not None:
+            result = _consume_replayed_stock(
+                quantity=corrected["quantity"],
+                balance=balance,
+                inventory_value=inventory_value,
+            )
+            if result is None:
+                raise ValueError(user_message(
+                    f"Stock {network.value} insuffisant à la date de la vente.",
+                    f"Disponible : {int(balance)} unités. Demandé : {corrected['quantity']} unités.",
+                ))
+            unit_cost, cost_total, balance, inventory_value = result
+            if is_wholesale:
+                require_plausible_wholesale_unit_cost(
+                    business_id=business.id,
+                    network=network,
+                    unit_cost=unit_cost,
+                )
+            else:
+                require_comparable_unit_prices(
+                    cost=unit_cost,
+                    selling_price=corrected["unit_price"],
+                )
+            target_costs[network] = (unit_cost, cost_total)
+
+        for key, event_type, event in events:
+            if key <= target_key:
+                continue
+            if event_type == "purchase":
+                balance += as_decimal(event.amount_purchased)
+                inventory_value = (
+                    inventory_value + as_decimal(event.actual_total_cost)
+                ).quantize(INTERNAL_MONEY_QUANTUM)
+                continue
+            result = _consume_replayed_stock(
+                quantity=event.quantity,
+                balance=balance,
+                inventory_value=inventory_value,
+            )
+            if result is None:
+                sale_number = (
+                    event.sale_id
+                    if is_wholesale
+                    else build_retail_sale_display_numbers([event.sale])[
+                        event.sale_id
+                    ]
+                )
+                raise ValueError(user_message(
+                    f"La correction rend une vente {network.value} plus récente impossible.",
+                    f"Vente concernée : #{sale_number}. Réduisez la quantité corrigée.",
+                ))
+            unit_cost, cost_total, balance, inventory_value = result
+            event.cost_per_unit_snapshot = unit_cost
+            event.cost_total = cost_total
+            event.margin_amount = as_decimal(event.subtotal) - cost_total
+            event.is_cost_estimated = False
+
+        stock.balance = balance
+        stock.inventory_value = inventory_value
+        stock.average_cost_per_unit = (
+            quantize_unit_price(inventory_value / balance)
+            if balance else Decimal("0")
+        )
+
+    for old_network, old_item in list(old_items_by_network.items()):
+        if old_network not in prepared_by_network:
+            sale.sale_items.remove(old_item)
+    for item in prepared_items:
+        sale_item = old_items_by_network.get(item["network"])
+        if sale_item is None:
+            sale_item = SaleItem(network=item["network"])
+            sale.sale_items.append(sale_item)
+        unit_cost, cost_total = target_costs[item["network"]]
+        sale_item.price_preset = item.get("preset")
+        sale_item.quantity = item["quantity"]
+        sale_item.price_per_unit_applied = item["unit_price"]
+        sale_item.subtotal = item["subtotal"]
+        sale_item.cost_per_unit_snapshot = unit_cost
+        sale_item.cost_total = cost_total
+        sale_item.margin_amount = item["subtotal"] - cost_total
+        sale_item.is_cost_estimated = False
+
+
 def wholesale_sale_has_active_payment(sale: Sale) -> bool:
     """Backward-compatible name used by the wholesale screens."""
     return sale_has_active_payment(sale)
@@ -505,6 +744,12 @@ def replace_retail_sale(
         raise PermissionError("Vous n'avez pas accès à ce mode.")
     if sale.business_id != business.id:
         raise PermissionError("Cette vente appartient à un autre mode.")
+    sale = (
+        Sale.query.filter_by(id=sale.id, business_id=business.id)
+        .with_for_update()
+        .one()
+    )
+    db.session.expire(sale, ["sale_items"])
     if sale.status != TransactionStatus.ACTIVE:
         raise ValueError("Une vente annulée ne peut pas être modifiée.")
     if client is not None and client.business_id != business.id:
@@ -552,23 +797,13 @@ def replace_retail_sale(
             )
         seen_networks.add(network)
         quantity = int(require_quantity(raw_item.get("quantity")))
-        stock = (
-            Stock.query.filter_by(business_id=business.id, network=network)
-            .with_for_update()
-            .one_or_none()
-        )
+        stock = Stock.query.filter_by(
+            business_id=business.id, network=network
+        ).one_or_none()
         if stock is None:
             raise ValueError(user_message(
                 f"Le stock {network.value} n'est pas encore configuré.",
                 "Enregistrez d'abord un stock d'ouverture ou un achat.",
-            ))
-        available = as_decimal(stock.balance)
-        if network in old_items_by_network:
-            available += old_items_by_network[network].quantity
-        if quantity > available:
-            raise ValueError(user_message(
-                f"Stock {network.value} insuffisant.",
-                f"Disponible pour cette correction : {int(available)} unités.",
             ))
         raw_price = raw_item.get("price_per_unit_applied")
         if raw_price in (None, ""):
@@ -578,10 +813,6 @@ def replace_retail_sale(
                 f"Saisissez le prix de vente pour {network.value.capitalize()}."
             )
         unit_price = require_ledger_amount(raw_price, label="Le prix de vente")
-        require_comparable_unit_prices(
-            cost=stock.average_cost_per_unit or stock.buying_price_per_unit,
-            selling_price=unit_price,
-        )
         subtotal = (Decimal(quantity) * unit_price).quantize(Decimal("0.01"))
         require_ledger_amount(subtotal, label="Le total de la vente")
         prepared.append({
@@ -612,71 +843,25 @@ def replace_retail_sale(
             for item in prepared
         )
     )
-    if not inventory_unchanged:
-        affected_networks = set(old_items_by_network)
-        affected_networks.update(item["network"] for item in prepared)
-        later_purchase = (
-            StockPurchase.query.join(Stock).filter(
-                Stock.business_id == business.id,
-                StockPurchase.status == TransactionStatus.ACTIVE,
-                StockPurchase.network.in_(affected_networks),
-                StockPurchase.created_at > sale.created_at,
-            ).order_by(StockPurchase.created_at.asc(), StockPurchase.id.asc()).first()
-        )
-        if later_purchase is not None:
-            raise ValueError(user_message(
-                "La quantité ou le réseau ne peut pas être modifié.",
-                f"Un achat {later_purchase.network.value.capitalize()} a été enregistré ensuite. Le prix reste modifiable.",
-            ))
-
-    for old_item in sale.sale_items:
-        db.session.add(SaleItemHistory(
-            sale_id=sale.id,
-            vendeur_id=sale.vendeur_id,
-            business_id=sale.business_id,
-            changed_by_id=updated_by.id,
-            action="edit",
-            network=old_item.network,
-            quantity=old_item.quantity,
-            price_per_unit_applied=old_item.price_per_unit_applied,
-            subtotal=old_item.subtotal,
-        ))
+    _snapshot_sale_items(sale=sale, changed_by=updated_by)
 
     if inventory_unchanged:
         for item in prepared:
             sale_item = old_items_by_network[item["network"]]
+            require_comparable_unit_prices(
+                cost=sale_item.cost_per_unit_snapshot,
+                selling_price=item["unit_price"],
+            )
             sale_item.price_per_unit_applied = item["unit_price"]
             sale_item.subtotal = item["subtotal"]
             sale_item.margin_amount = item["subtotal"] - sale_item.cost_total
     else:
-        for old_item in sale.sale_items:
-            stock = Stock.query.filter_by(
-                business_id=business.id, network=old_item.network
-            ).with_for_update().one()
-            restore_sale_cost(
-                stock=stock,
-                quantity=old_item.quantity,
-                cost_total=old_item.cost_total,
-            )
-        sale.sale_items.clear()
-        db.session.flush()
-        for item in prepared:
-            stock = Stock.query.filter_by(
-                business_id=business.id, network=item["network"]
-            ).with_for_update().one()
-            cost_per_unit, cost_total = consume_stock(
-                stock=stock, quantity=item["quantity"]
-            )
-            sale.sale_items.append(SaleItem(
-                network=item["network"],
-                quantity=item["quantity"],
-                price_per_unit_applied=item["unit_price"],
-                subtotal=item["subtotal"],
-                cost_per_unit_snapshot=cost_per_unit,
-                cost_total=cost_total,
-                margin_amount=item["subtotal"] - cost_total,
-                is_cost_estimated=False,
-            ))
+        _replay_inventory_after_sale_correction(
+            sale=sale,
+            business=business,
+            prepared_items=prepared,
+            is_wholesale=False,
+        )
 
     sale.client = client
     sale.client_name_adhoc = client_name_adhoc if client is None else None
@@ -696,6 +881,12 @@ def replace_unpaid_wholesale_sale(
     )
     if sale.business_id != business.id:
         raise PermissionError("Cette vente appartient à un autre mode.")
+    sale = (
+        Sale.query.filter_by(id=sale.id, business_id=business.id)
+        .with_for_update()
+        .one()
+    )
+    db.session.expire(sale, ["sale_items"])
     if sale.status != TransactionStatus.ACTIVE:
         raise ValueError("Une vente annulée ne peut pas être modifiée.")
     has_active_payment = wholesale_sale_has_active_payment(sale)
@@ -735,6 +926,7 @@ def replace_unpaid_wholesale_sale(
             for prepared in prepared_inputs
         )
     )
+    _snapshot_sale_items(sale=sale, changed_by=updated_by)
     if inventory_unchanged:
         total = Decimal("0")
         for prepared in prepared_inputs:
@@ -750,60 +942,16 @@ def replace_unpaid_wholesale_sale(
         sale.debt_amount = total - as_decimal(sale.cash_paid)
         return
 
-    affected_networks = {item.network for item in sale.sale_items}
-    affected_networks.update(item["network"] for item in prepared_inputs)
-    later_purchase = (
-        StockPurchase.query
-        .join(Stock)
-        .filter(
-            Stock.business_id == business.id,
-            StockPurchase.status == TransactionStatus.ACTIVE,
-            StockPurchase.network.in_(affected_networks),
-            StockPurchase.created_at > sale.created_at,
-        )
-        .order_by(StockPurchase.created_at.asc(), StockPurchase.id.asc())
-        .first()
-    )
-    if later_purchase is not None:
-        raise ValueError(
-            user_message(
-                "La quantité ou le réseau ne peut pas être modifié.",
-                (
-                    f"Un achat {later_purchase.network.value.capitalize()} "
-                    f"#{later_purchase.id} a été enregistré ensuite. "
-                    + (
-                        "Le prix reste modifiable."
-                        if has_active_payment
-                        else "Le prix et le client restent modifiables."
-                    )
-                ),
-            )
-        )
-
-    for old_item in sale.sale_items:
-        stock = (
-            Stock.query.filter_by(
-                business_id=business.id, network=old_item.network
-            )
-            .with_for_update()
-            .one()
-        )
-        restore_sale_cost(
-            stock=stock,
-            quantity=old_item.quantity,
-            cost_total=old_item.cost_total,
-        )
-    sale.sale_items.clear()
-    db.session.flush()
-
-    prepared_items, total = _consume_wholesale_sale_items(
-        business=business, items=items
+    _replay_inventory_after_sale_correction(
+        sale=sale,
+        business=business,
+        prepared_items=prepared_inputs,
+        is_wholesale=True,
     )
     sale.client = client
     sale.sale_date = sale_date
-    sale.total_amount_due = total
-    sale.debt_amount = total - as_decimal(sale.cash_paid)
-    sale.sale_items.extend(prepared_items)
+    sale.total_amount_due = corrected_total
+    sale.debt_amount = corrected_total - as_decimal(sale.cash_paid)
 
 
 def reverse_unpaid_sale(
