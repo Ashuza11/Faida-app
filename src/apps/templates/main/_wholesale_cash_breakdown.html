@@ -13,3 +13,10 @@
     {% if totals.unclassified_collected_margin %}<div><span>Anciens reçus</span><strong>${{ "{:.2f}".format(totals.unclassified_collected_margin) }}</strong></div>{% endif %}
   </div>
 {% endmacro %}
+
+{% macro sales_margin_breakdown(totals) %}
+  <div class="wholesale-metric-details mt-2 pt-2 border-top">
+    <div><span>Commerciale</span><strong>${{ "{:.2f}".format(totals.commercial_margin) }}</strong></div>
+    <div><span>Arrondi</span><strong>${{ "{:+.2f}".format(totals.rounding_adjustment) }}</strong></div>
+  </div>
+{% endmacro %}

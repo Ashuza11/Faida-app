@@ -79,6 +79,38 @@ def generate_wholesale_report_pdf(*, business, report) -> BytesIO:
         collection_breakdown,
         Spacer(1, 0.5 * cm),
     ])
+    margin_rows = [[
+        "Réseau", "Unités", "Prix vendu moyen", "Coût stock moyen",
+        "Marge commerciale", "Arrondi", "Marge totale",
+    ]]
+    for row in report["networks"].values():
+        if not row["sold"]:
+            continue
+        has_cost_anomaly = (
+            row["network"].name in report["cost_anomalies"]["networks"]
+        )
+        margin_rows.append([
+            row["network"].value.capitalize(),
+            f"{row['sold']:.0f}",
+            f"${format_unit_price(row['average_selling_price'])}",
+            f"${format_unit_price(row['average_cost_per_unit'])}",
+            "À vérifier" if has_cost_anomaly else f"${row['commercial_margin']:.2f}",
+            "À vérifier" if has_cost_anomaly else f"${row['rounding_adjustment']:+.2f}",
+            "À vérifier" if has_cost_anomaly else f"${row['margin']:.2f}",
+        ])
+    if len(margin_rows) == 1:
+        margin_rows.append(["—", "0", "$0.00000", "$0.00000", "$0.00", "$0.00", "$0.00"])
+    margin_table = Table(margin_rows, repeatRows=1)
+    margin_table.setStyle(_table_style())
+    story.extend([
+        Paragraph("Comprendre la marge", styles["Heading2"]),
+        Paragraph(
+            "Le coût utilisé est la moyenne exacte du stock disponible.",
+            styles["Normal"],
+        ),
+        margin_table,
+        Spacer(1, 0.5 * cm),
+    ])
     if report["cost_anomalies"]["details"]:
         story.append(Paragraph(
             "Les ventes et paiements sont enregistrés. Seules les marges "
@@ -130,7 +162,43 @@ def generate_wholesale_report_pdf(*, business, report) -> BytesIO:
         price_rows.append(["—", "—", "0", "$0.00", "$0.00", "$0.00"])
     price_table = Table(price_rows, repeatRows=1)
     price_table.setStyle(_table_style())
-    story.extend([Paragraph("Marge par prix de vente", styles["Heading2"]), price_table])
+    story.extend([
+        Paragraph("Marge par prix de vente", styles["Heading2"]),
+        price_table,
+        Spacer(1, 0.5 * cm),
+    ])
+
+    debt_rows = [
+        ["Calcul de la dette", "Montant"],
+        ["Dette au début", f"${totals['opening_debt']:.2f}"],
+        ["+ Nouvelle dette", f"${totals['new_debt']:.2f}"],
+        ["- Dette encaissée", f"${totals['old_debt_collected']:.2f}"],
+        ["  Jours précédents", f"${totals['prior_day_debt_collected']:.2f}"],
+        ["  Même jour", f"${totals['same_day_debt_collected']:.2f}"],
+        ["= Dette restante", f"${totals['remaining_debt']:.2f}"],
+    ]
+    debt_table = Table(debt_rows, repeatRows=1)
+    debt_table.setStyle(_table_style())
+    client_debt_rows = [["Dettes par client", "Montant"]]
+    client_debt_rows.extend([
+        [entry["client_name"], f"${entry['amount']:.2f}"]
+        for entry in report["client_debts"]
+    ])
+    client_debt_rows.append([
+        "Total clients", f"${totals['client_debt_total']:.2f}"
+    ])
+    client_debt_rows.append([
+        "Écart de contrôle",
+        f"${abs(totals['debt_reconciliation_difference']):.2f}",
+    ])
+    client_debt_table = Table(client_debt_rows, repeatRows=1)
+    client_debt_table.setStyle(_table_style())
+    story.extend([
+        Paragraph("Dettes et encaissements", styles["Heading2"]),
+        debt_table,
+        Spacer(1, 0.3 * cm),
+        client_debt_table,
+    ])
 
     document.build(story)
     output.seek(0)

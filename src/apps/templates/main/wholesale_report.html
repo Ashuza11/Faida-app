@@ -9,8 +9,14 @@
   .wholesale-metric-details div { display: flex; justify-content: space-between; gap: .4rem; }
   .wholesale-metric-details span { min-width: 0; }
   .wholesale-metric-details strong { white-space: nowrap; }
+  .margin-explanation-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+  .margin-explanation-row { display: flex; justify-content: space-between; gap: .75rem; padding: .35rem 0; }
+  .margin-explanation-row strong { white-space: nowrap; }
+  .debt-equation-row { display: flex; justify-content: space-between; gap: .75rem; padding: .45rem 0; }
+  .debt-equation-row strong { white-space: nowrap; }
   @media (max-width: 575.98px) {
     .wholesale-metric-card .h2 { font-size: 1.25rem; }
+    .margin-explanation-grid { grid-template-columns: 1fr; }
   }
 </style>
 {% endblock stylesheets %}
@@ -33,9 +39,32 @@
   {% set cost_report = report %}{% include "main/_wholesale_cost_alert.html" %}
   <div class="row">
     <div class="col-6 col-lg-3 mb-3"><div class="card shadow wholesale-metric-card"><div class="card-body"><small>Ventes du jour</small><div class="h2">${{ "{:.2f}".format(report.totals.revenue) }}</div></div></div></div>
-    <div class="col-6 col-lg-3 mb-3"><div class="card shadow wholesale-metric-card"><div class="card-body"><small>Marge ventes</small>{% if report.totals.sales_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div>{% else %}<div class="h2 {{ 'text-success' if report.totals.sales_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(report.totals.sales_margin) }}</div><small class="text-muted">Créée par les ventes du jour</small>{% endif %}</div></div></div>
+    <div class="col-6 col-lg-3 mb-3"><div class="card shadow wholesale-metric-card"><div class="card-body"><small>Marge ventes</small>{% if report.totals.sales_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div>{% else %}<div class="h2 {{ 'text-success' if report.totals.sales_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(report.totals.sales_margin) }}</div>{{ cash_details.sales_margin_breakdown(report.totals) }}{% endif %}</div></div></div>
     <div class="col-6 col-lg-3 mb-3"><div class="card shadow wholesale-metric-card"><div class="card-body"><small>Cash reçu</small><div class="h2 text-info">${{ "{:.2f}".format(report.totals.cash_collected) }}</div>{{ cash_details.cash_breakdown(report.totals) }}</div></div></div>
     <div class="col-6 col-lg-3 mb-3"><div class="card shadow wholesale-metric-card"><div class="card-body"><small>Marge encaissée</small>{% if report.totals.collected_margin_has_anomaly %}<div class="h2 text-warning">À vérifier</div>{% else %}<div class="h2 {{ 'text-primary' if report.totals.collected_margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(report.totals.collected_margin) }}</div>{{ cash_details.margin_breakdown(report.totals) }}{% endif %}</div></div></div>
+  </div>
+  <div class="card shadow mb-4">
+    <div class="card-header"><h3 class="mb-0">Comprendre la marge</h3><small class="text-muted">Le coût utilisé est la moyenne exacte du stock disponible.</small></div>
+    <div class="card-body">
+      <div class="margin-explanation-grid">
+        {% for row in report.networks.values() if row.sold > 0 %}
+          <article class="border rounded p-3">
+            <div class="d-flex justify-content-between align-items-center mb-2"><strong>{{ row.network.value.capitalize() }}</strong><span class="badge badge-primary">{{ "{:,.0f}".format(row.sold) }} unités</span></div>
+            <div class="margin-explanation-row"><span>Prix vendu moyen</span><strong>${{ row.average_selling_price|unit_price }}/u</strong></div>
+            <div class="margin-explanation-row"><span>Coût stock moyen</span><strong>${{ row.average_cost_per_unit|unit_price }}/u</strong></div>
+            {% if row.network.name in report.cost_anomalies.networks %}
+              <div class="alert alert-warning py-2 mb-0">Coût à vérifier.</div>
+            {% else %}
+              <div class="margin-explanation-row border-top mt-1 pt-2"><span>Marge commerciale</span><strong>${{ "{:.2f}".format(row.commercial_margin) }}</strong></div>
+              <div class="margin-explanation-row"><span>Ajustement d’arrondi</span><strong>${{ "{:+.2f}".format(row.rounding_adjustment) }}</strong></div>
+              <div class="margin-explanation-row border-top font-weight-bold"><span>Marge totale</span><strong>${{ "{:.2f}".format(row.margin) }}</strong></div>
+            {% endif %}
+          </article>
+        {% else %}
+          <p class="text-muted mb-0">Aucune vente pour cette date.</p>
+        {% endfor %}
+      </div>
+    </div>
   </div>
   <div class="card shadow mb-4"><div class="card-header"><h3 class="mb-0">Mouvements de stock</h3></div><div class="table-responsive"><table class="table">
     <thead><tr><th>Réseau</th><th>Ouverture</th><th>Acheté</th><th>Coût achat</th><th>Vendu</th><th>Clôture</th><th>Revenu</th><th>Marge</th></tr></thead><tbody>
@@ -46,9 +75,25 @@
       {% for group in report.price_groups %}<tr><td>{{ group.network.value.capitalize() }}</td><td>${{ group.price_per_unit_applied|unit_price }}</td><td>{{ group.quantity }}</td><td>${{ "{:.2f}".format(group.revenue) }}</td>{% if group.network.name in report.cost_anomalies.networks %}<td class="text-warning">À vérifier</td><td class="text-warning">À vérifier</td>{% else %}<td>${{ "{:.2f}".format(group.cost) }}</td><td class="{{ 'text-success' if group.margin >= 0 else 'text-danger' }}">${{ "{:.2f}".format(group.margin) }}</td>{% endif %}</tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Aucune vente pour cette date.</td></tr>{% endfor %}
     </tbody></table></div></div></div>
     <div class="col-lg-5"><div class="card shadow"><div class="card-header"><h3 class="mb-0">Dettes et encaissements</h3></div><div class="card-body">
-      <div class="d-flex justify-content-between py-2"><span>Nouvelle dette créée</span><strong>${{ "{:.2f}".format(report.totals.new_debt) }}</strong></div>
-      <div class="d-flex justify-content-between py-2"><span>Anciennes dettes encaissées</span><strong class="text-success">${{ "{:.2f}".format(report.totals.old_debt_collected) }}</strong></div>
-      <div class="d-flex justify-content-between border-top py-3"><span>Dette restante à cette date</span><strong class="text-danger">${{ "{:.2f}".format(report.totals.remaining_debt) }}</strong></div>
+      <div class="debt-equation-row"><span>Dette au début</span><strong>${{ "{:.2f}".format(report.totals.opening_debt) }}</strong></div>
+      <div class="debt-equation-row"><span>+ Nouvelle dette</span><strong>${{ "{:.2f}".format(report.totals.new_debt) }}</strong></div>
+      <div class="debt-equation-row"><span>− Dette encaissée</span><strong class="text-success">${{ "{:.2f}".format(report.totals.old_debt_collected) }}</strong></div>
+      <div class="small text-muted pl-3 pb-2">
+        <div class="d-flex justify-content-between"><span>Jours précédents</span><span>${{ "{:.2f}".format(report.totals.prior_day_debt_collected) }}</span></div>
+        <div class="d-flex justify-content-between"><span>Même jour</span><span>${{ "{:.2f}".format(report.totals.same_day_debt_collected) }}</span></div>
+        {% if report.totals.unclassified_debt_collected %}<div class="d-flex justify-content-between"><span>Anciens reçus</span><span>${{ "{:.2f}".format(report.totals.unclassified_debt_collected) }}</span></div>{% endif %}
+      </div>
+      <div class="debt-equation-row border-top pt-3"><span>= Dette restante</span><strong class="text-danger">${{ "{:.2f}".format(report.totals.remaining_debt) }}</strong></div>
+      {% if report.totals.debt_reconciliation_difference == 0 %}<div class="alert alert-success py-2 small">✓ Total vérifié avec les clients.</div>{% else %}<div class="alert alert-warning py-2 small">Écart de ${{ "{:.2f}".format(report.totals.debt_reconciliation_difference|abs) }} à vérifier.</div>{% endif %}
+      <details>
+        <summary class="text-primary font-weight-bold">Voir les dettes par client</summary>
+        <div class="mt-2">
+          {% for client_debt in report.client_debts %}
+            <div class="debt-equation-row border-top"><span>{% if client_debt.client_id %}<a href="{{ url_for('main_bp.wholesale_client_detail', client_id=client_debt.client_id) }}">{{ client_debt.client_name }}</a>{% else %}{{ client_debt.client_name }}{% endif %}</span><strong>${{ "{:.2f}".format(client_debt.amount) }}</strong></div>
+          {% else %}<p class="text-muted small mb-0">Aucune dette restante.</p>{% endfor %}
+          <div class="debt-equation-row border-top font-weight-bold"><span>Total clients</span><strong>${{ "{:.2f}".format(report.totals.client_debt_total) }}</strong></div>
+        </div>
+      </details>
     </div></div></div>
   </div>
 </div>
