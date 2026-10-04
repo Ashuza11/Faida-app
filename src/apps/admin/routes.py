@@ -19,8 +19,12 @@ from apps.models import (
     User, RoleType, InviteCode, Sale, Stock,
     StockPurchase, Client, DailyOverallReport, SaleItem, TransactionStatus
 )
-from apps.admin.forms import HistoricalSaleCostRepairForm
-from apps.businesses import approve_wholesale_business
+from apps.admin.forms import HistoricalSaleCostRepairForm, WholesaleRevocationForm
+from apps.businesses import (
+    WHOLESALE_REVOCATION_REASONS,
+    approve_wholesale_business,
+    revoke_wholesale_business,
+)
 from apps.decorators import platform_admin_required
 from apps.wholesale_costs import (
     repair_historical_sale_cost,
@@ -224,6 +228,8 @@ def vendeur_detail(vendeur_id):
         businesses=Business.query.filter_by(owner_user_id=vendeur.id)
         .order_by(Business.created_at)
         .all(),
+        wholesale_revocation_form=WholesaleRevocationForm(),
+        wholesale_revocation_reasons=WHOLESALE_REVOCATION_REASONS,
         segment='admin',
         sub_segment='vendeurs'
     )
@@ -264,6 +270,32 @@ def approve_wholesale(business_id):
         approve_wholesale_business(business=business, admin=current_user)
         db.session.commit()
         flash(f"Le mode grossiste {business.name} est approuvé.", "success")
+    return redirect(
+        url_for('admin_bp.vendeur_detail', vendeur_id=business.owner_user_id)
+    )
+
+
+@bp.route('/businesses/<int:business_id>/revoke-wholesale', methods=['POST'])
+@login_required
+@platform_admin_required
+def revoke_wholesale(business_id):
+    """Revoke wholesale access while retaining its complete ledger."""
+    business = db.get_or_404(Business, business_id)
+    form = WholesaleRevocationForm()
+    if not form.validate_on_submit():
+        flash("Choisissez un motif avant de retirer l'accès.", "danger")
+    else:
+        try:
+            revoke_wholesale_business(
+                business=business,
+                admin=current_user,
+                reason=form.reason.data,
+            )
+            db.session.commit()
+            flash(f"L'accès grossiste de {business.name} a été retiré.", "success")
+        except (ValueError, PermissionError) as error:
+            db.session.rollback()
+            flash(str(error), "danger")
     return redirect(
         url_for('admin_bp.vendeur_detail', vendeur_id=business.owner_user_id)
     )

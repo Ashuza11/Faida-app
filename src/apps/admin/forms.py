@@ -5,6 +5,18 @@ from wtforms import DecimalField, SelectField, TextAreaField
 from wtforms.validators import DataRequired, Length, NumberRange
 
 from apps.money import MAX_LEDGER_AMOUNT
+from apps.businesses import WHOLESALE_REVOCATION_REASONS
+
+
+class WholesaleRevocationForm(FlaskForm):
+    reason = SelectField(
+        "Motif",
+        choices=[
+            ("", "Choisir un motif"),
+            *WHOLESALE_REVOCATION_REASONS.items(),
+        ],
+        validators=[DataRequired(message="Choisissez un motif.")],
+    )
 
 
 class HistoricalSaleCostRepairForm(FlaskForm):

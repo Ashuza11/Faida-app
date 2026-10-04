@@ -18,6 +18,17 @@ from apps.models import (
 )
 
 
+WHOLESALE_REVOCATION_REASONS = {
+    "not_used": "Mode non utilisé",
+    "owner_request": "Demande du propriétaire",
+    "incorrect_information": "Informations incorrectes",
+    "verification_failed": "Vérification impossible",
+    "policy_violation": "Non-respect des règles",
+    "suspicious_activity": "Activité suspecte",
+    "security_risk": "Risque de sécurité",
+}
+
+
 def businesses_for_user(user: User):
     """Return active businesses explicitly granted to a user."""
     if user.is_platform_admin:
@@ -135,6 +146,34 @@ def approve_wholesale_business(*, business: Business, admin: User) -> None:
     business.approval_status = BusinessApprovalStatus.APPROVED
     business.approved_by_user_id = admin.id
     business.approved_at = datetime.now(timezone.utc)
+    business.revoked_by_user_id = None
+    business.revoked_at = None
+    business.revocation_reason = None
+
+
+def revoke_wholesale_business(
+    *, business: Business, admin: User, reason: str
+) -> None:
+    """Revoke wholesale access without deleting its accounting history."""
+    from datetime import datetime, timezone
+
+    if not admin.is_platform_admin:
+        raise PermissionError("Seul un administrateur peut retirer cet accès.")
+    if business.business_type != BusinessType.WHOLESALE:
+        raise ValueError("Seul le mode grossiste peut être désactivé ici.")
+    if business.approval_status != BusinessApprovalStatus.APPROVED:
+        raise ValueError("Ce mode grossiste n'est pas actuellement approuvé.")
+    if reason not in WHOLESALE_REVOCATION_REASONS:
+        raise ValueError("Sélectionnez un motif valide.")
+
+    business.approval_status = BusinessApprovalStatus.REJECTED
+    business.revoked_by_user_id = admin.id
+    business.revoked_at = datetime.now(timezone.utc)
+    business.revocation_reason = reason
+
+
+def wholesale_revocation_reason_label(reason: str | None) -> str | None:
+    return WHOLESALE_REVOCATION_REASONS.get(reason)
 
 
 def add_stockeur(*, business: Business, stockeur: User) -> BusinessMembership:

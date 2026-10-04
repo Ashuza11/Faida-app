@@ -1,7 +1,11 @@
 from datetime import date
 from decimal import Decimal
 
-from apps.businesses import add_stockeur, create_business
+from apps.businesses import (
+    add_stockeur,
+    create_business,
+    resolve_business_for_user,
+)
 from apps.models import (
     Business,
     BusinessApprovalStatus,
@@ -346,6 +350,94 @@ def test_platform_admin_approves_wholesale_request(app, session):
     assert wholesale.approval_status == BusinessApprovalStatus.APPROVED
     assert wholesale.approved_by_user_id == admin.id
     assert wholesale.approved_at is not None
+
+
+def test_admin_revokes_and_reactivates_wholesale_with_required_reason(app, session):
+    owner = make_user(session, suffix=70)
+    admin = make_user(session, suffix=71, role=RoleType.PLATFORM_ADMIN)
+    retail = create_business(
+        owner=owner, name="Retail access", business_type=BusinessType.RETAIL
+    )
+    wholesale = create_business(
+        owner=owner,
+        name="Wholesale access",
+        business_type=BusinessType.WHOLESALE,
+        approval_status=BusinessApprovalStatus.APPROVED,
+    )
+    session.commit()
+    browser = app.test_client()
+    login(browser, admin)
+
+    missing_reason = browser.post(
+        f"/admin/businesses/{wholesale.id}/revoke-wholesale",
+        data={"reason": ""},
+    )
+    assert missing_reason.status_code == 302
+    session.refresh(wholesale)
+    assert wholesale.approval_status == BusinessApprovalStatus.APPROVED
+
+    revoked = browser.post(
+        f"/admin/businesses/{wholesale.id}/revoke-wholesale",
+        data={"reason": "suspicious_activity"},
+    )
+    assert revoked.status_code == 302
+    session.refresh(wholesale)
+    assert wholesale.approval_status == BusinessApprovalStatus.REJECTED
+    assert wholesale.revocation_reason == "suspicious_activity"
+    assert wholesale.revoked_by_user_id == admin.id
+    assert wholesale.revoked_at is not None
+
+    assert resolve_business_for_user(user=owner) is retail
+    try:
+        resolve_business_for_user(user=owner, business_id=wholesale.id)
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError("A revoked wholesale mode must not remain accessible")
+
+    owner_browser = app.test_client()
+    login(owner_browser, owner)
+    modes_page = owner_browser.get("/businesses")
+    modes_html = modes_page.get_data(as_text=True)
+    assert "Accès grossiste retiré" in modes_html
+    assert "Motif : Activité suspecte" in modes_html
+    assert owner_browser.post(f"/businesses/{wholesale.id}/switch").status_code == 403
+
+    reactivated = browser.post(
+        f"/admin/businesses/{wholesale.id}/approve-wholesale"
+    )
+    assert reactivated.status_code == 302
+    session.refresh(wholesale)
+    assert wholesale.approval_status == BusinessApprovalStatus.APPROVED
+    assert wholesale.revocation_reason is None
+    assert wholesale.revoked_by_user_id is None
+    assert wholesale.revoked_at is None
+    assert resolve_business_for_user(user=owner, business_id=wholesale.id) is wholesale
+
+
+def test_admin_wholesale_page_offers_short_revocation_reasons(app, session):
+    owner = make_user(session, suffix=72)
+    admin = make_user(session, suffix=73, role=RoleType.PLATFORM_ADMIN)
+    create_business(
+        owner=owner,
+        name="Wholesale controls",
+        business_type=BusinessType.WHOLESALE,
+        approval_status=BusinessApprovalStatus.APPROVED,
+    )
+    session.commit()
+    browser = app.test_client()
+    login(browser, admin)
+
+    page = browser.get(f"/admin/vendeurs/{owner.id}")
+    html = page.get_data(as_text=True)
+    assert page.status_code == 200
+    assert "Choisir un motif" in html
+    assert "Mode non utilisé" in html
+    assert "Demande du propriétaire" in html
+    assert "Informations incorrectes" in html
+    assert "Non-respect des règles" in html
+    assert "Activité suspecte" in html
+    assert "Risque de sécurité" in html
 
 
 def test_retail_purchase_never_updates_same_network_wholesale_stock(app, session):

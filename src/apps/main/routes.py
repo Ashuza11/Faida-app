@@ -128,6 +128,7 @@ from apps.main.forms import (
     TransactionReversalForm,
 )
 from apps.businesses import (
+    WHOLESALE_REVOCATION_REASONS,
     add_stockeur,
     businesses_for_user,
     create_business,
@@ -237,6 +238,7 @@ def businesses():
         ),
         current_business=get_current_business(),
         form=WholesaleBusinessForm(),
+        wholesale_revocation_reasons=WHOLESALE_REVOCATION_REASONS,
         segment="businesses",
     )
 

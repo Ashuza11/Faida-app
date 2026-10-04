@@ -127,13 +127,31 @@
           {% elif business.approval_status.value == 'pending' %}
           <span class="badge badge-warning">En attente</span>
           {% else %}
-          <span class="badge badge-danger">Refusée</span>
+          <span class="badge badge-danger">{{ 'Accès retiré' if business.revocation_reason else 'Refusée' }}</span>
+          {% endif %}
+          {% if business.revocation_reason %}
+          <small class="d-block text-muted mt-1">
+            Motif : {{ wholesale_revocation_reasons.get(business.revocation_reason, 'Non précisé') }}
+            {% if business.revoked_at %}· {{ business.revoked_at.strftime('%d/%m/%Y') }}{% endif %}
+            {% if business.revoked_by %}· par {{ business.revoked_by.username }}{% endif %}
+          </small>
           {% endif %}
         </div>
-        {% if business.business_type.value == 'wholesale' and business.approval_status.value != 'approved' %}
-        <form method="post" action="{{ url_for('admin_bp.approve_wholesale', business_id=business.id) }}">
-          <button class="btn btn-sm btn-success" type="submit">Approuver</button>
-        </form>
+        {% if business.business_type.value == 'wholesale' %}
+          {% if business.approval_status.value == 'approved' %}
+          <form method="post" action="{{ url_for('admin_bp.revoke_wholesale', business_id=business.id) }}"
+                class="d-flex flex-column flex-sm-row align-items-stretch" style="gap:6px;"
+                onsubmit="return confirm('Retirer l’accès au mode grossiste ? Les données seront conservées.');">
+            {{ wholesale_revocation_form.csrf_token }}
+            {{ wholesale_revocation_form.reason(class='form-control form-control-sm', required=true) }}
+            <button class="btn btn-sm btn-danger m-0" type="submit">Retirer accès</button>
+          </form>
+          {% else %}
+          <form method="post" action="{{ url_for('admin_bp.approve_wholesale', business_id=business.id) }}">
+            {{ wholesale_revocation_form.csrf_token }}
+            <button class="btn btn-sm btn-success" type="submit">{{ 'Réactiver' if business.approval_status.value == 'rejected' else 'Approuver' }}</button>
+          </form>
+          {% endif %}
         {% endif %}
       </div>
       {% else %}

@@ -473,6 +473,15 @@ class Business(db.Model):
     approved_at: so.Mapped[Optional[datetime]] = so.mapped_column(
         sa.DateTime(timezone=True), nullable=True
     )
+    revoked_by_user_id: so.Mapped[Optional[int]] = so.mapped_column(
+        sa.ForeignKey("users.id"), nullable=True
+    )
+    revoked_at: so.Mapped[Optional[datetime]] = so.mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    revocation_reason: so.Mapped[Optional[str]] = so.mapped_column(
+        sa.String(64), nullable=True
+    )
     is_active: so.Mapped[bool] = so.mapped_column(default=True, nullable=False)
     created_at: so.Mapped[datetime] = so.mapped_column(
         sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -485,6 +494,9 @@ class Business(db.Model):
 
     owner: so.Mapped[User] = so.relationship(
         back_populates="owned_businesses", foreign_keys=[owner_user_id]
+    )
+    revoked_by: so.Mapped[Optional[User]] = so.relationship(
+        foreign_keys=[revoked_by_user_id]
     )
     memberships: so.Mapped[List["BusinessMembership"]] = so.relationship(
         back_populates="business", cascade="all, delete-orphan"
