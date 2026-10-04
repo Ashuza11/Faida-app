@@ -39,6 +39,7 @@ from apps.payments import (
     reverse_payment_event,
 )
 from apps.inventory import consume_stock
+from apps.retail_reports import build_retail_margin_report
 from apps.opening_balances import OpeningBalanceError, save_opening_balances
 from apps.dates import business_local_date
 from apps.retail_cash import (
@@ -2682,6 +2683,17 @@ def vente_stock():
                     or stock_item.buying_price_per_unit,
                     selling_price=final_unit_price,
                 )
+                current_cost = (
+                    stock_item.average_cost_per_unit
+                    or stock_item.buying_price_per_unit
+                    or Decimal("0")
+                )
+                if final_unit_price < current_cost and not form.confirm_loss.data:
+                    raise ValueError(user_message(
+                        f"Vente à perte sur {network_type.value.capitalize()} : "
+                        f"vente {final_unit_price} FC/u, coût {current_cost} FC/u.",
+                        "Cochez « Confirmer la vente à perte » pour continuer.",
+                    ))
 
                 # Calculate Line Totals
                 subtotal_raw = quantity * final_unit_price
@@ -2943,6 +2955,7 @@ def edit_sale(sale_id):
                     "quantity": entry.form.quantity.data,
                     "price_per_unit_applied": entry.form.price_per_unit_applied.data,
                 } for entry in form.sale_items.entries],
+                confirm_loss=form.confirm_loss.data,
             )
             db.session.commit()
             flash("Vente modifiée.", "success")
@@ -3535,79 +3548,14 @@ def rapports():
 
     # ── Live financial queries (always from transactions, keyed on sale_date) ──
 
-    # Buying prices per network for cost/profit calculation
-    stock_query = Stock.query
-    if business_id is not None:
-        stock_query = stock_query.filter_by(business_id=business_id)
-    elif vendeur_id:
-        stock_query = stock_query.filter_by(vendeur_id=vendeur_id)
-    stock_items = stock_query.all()
-    buying_price_map = {s.network: s.buying_price_per_unit for s in stock_items}
-
-    # Price breakdown: per network × selling price → qty + revenue
-    pb_q = (
-        db.session.query(
-            SaleItem.network,
-            SaleItem.price_per_unit_applied,
-            func.sum(SaleItem.quantity).label('qty'),
-            func.sum(SaleItem.subtotal).label('revenue'),
-            func.sum(SaleItem.cost_total).label('cost'),
-            func.sum(SaleItem.margin_amount).label('margin'),
-        )
-        .join(Sale)
-        .filter(
-            Sale.sale_date == target_date,
-            Sale.status == TransactionStatus.ACTIVE,
-        )
+    margin_report = build_retail_margin_report(
+        business_id=business_id, vendeur_id=vendeur_id, target_date=target_date
     )
-    if business_id is not None:
-        pb_q = pb_q.filter(Sale.business_id == business_id)
-    elif vendeur_id:
-        pb_q = pb_q.filter(Sale.vendeur_id == vendeur_id)
-    price_breakdown_rows = pb_q.group_by(
-        SaleItem.network, SaleItem.price_per_unit_applied
-    ).order_by(SaleItem.network, SaleItem.price_per_unit_applied).all()
-
-    # Build price_breakdown dict: {network_name: [{price, qty, revenue}, ...]}
-    price_breakdown = {}
-    for row in price_breakdown_rows:
-        key = row.network.name
-        if key not in price_breakdown:
-            price_breakdown[key] = []
-        price_breakdown[key].append({
-            "price": Decimal(str(row.price_per_unit_applied)),
-            "qty": int(row.qty or 0),
-            "revenue": Decimal(str(row.revenue or 0)),
-            "cost": Decimal(str(row.cost or 0)),
-            "margin": Decimal(str(row.margin or 0)),
-        })
-
-    # Profit per network
-    profit_data = {}
-    grand_profit = zero_money()
-    grand_revenue = zero_money()
-    grand_cost = zero_money()
-    for network in networks:
-        entries = price_breakdown.get(network.name, [])
-        total_qty = sum(e["qty"] for e in entries)
-        total_revenue = sum(e["revenue"] for e in entries)
-        total_cost = sum(e["cost"] for e in entries)
-        profit = sum(e["margin"] for e in entries)
-        buying_price = (
-            total_cost / Decimal(str(total_qty))
-            if total_qty else buying_price_map.get(network, Decimal("0.94"))
-        )
-        profit_data[network.name] = {
-            "network": network,
-            "qty": total_qty,
-            "revenue": total_revenue,
-            "cost": total_cost,
-            "profit": profit,
-            "buying_price": buying_price,
-        }
-        grand_revenue += total_revenue
-        grand_cost += total_cost
-        grand_profit += profit
+    price_breakdown = margin_report["price_breakdown"]
+    profit_data = margin_report["networks"]
+    grand_profit = margin_report["totals"]["profit"]
+    grand_revenue = margin_report["totals"]["revenue"]
+    grand_cost = margin_report["totals"]["cost"]
 
     # Cash & credit summary for the day
     cash_q = db.session.query(
@@ -3694,6 +3642,7 @@ def rapports():
         grand_profit=grand_profit,
         grand_revenue=grand_revenue,
         grand_cost=grand_cost,
+        margin_report=margin_report,
         cash_summary=cash_summary,
         debts_today=debts_today,
         # Lists

@@ -112,6 +112,7 @@ def generate_daily_report_pdf(
     grand_profit=None,
     grand_revenue=None,
     grand_cost=None,
+    margin_report: dict = None,
     debts_today: list = None,
     all_purchases: list = None,
     sales_today: list = None,
@@ -134,6 +135,7 @@ def generate_daily_report_pdf(
     grand_profit  = grand_profit  or zero
     grand_revenue = grand_revenue or zero
     grand_cost    = grand_cost    or zero
+    margin_report = margin_report or {}
     debts_today   = debts_today   or []
     all_purchases = all_purchases or []
     sales_today   = sales_today   or []
@@ -161,12 +163,13 @@ def generate_daily_report_pdf(
     story.append(Paragraph("Résumé de la Journée", styles['section']))
 
     kpi_data = [
-        ['Total Ventes', 'Cash Reçu', 'Crédit (Dettes)', 'Bénéfice Net'],
+        ['Total Ventes', 'Cash Reçu', 'Crédit (Dettes)', 'Marge ventes'],
         [
             format_number(cash_summary['total']) + ' FC',
             format_number(cash_summary['cash']) + ' FC',
             format_number(cash_summary['credit']) + ' FC',
-            format_number(grand_profit) + ' FC',
+            ('À vérifier' if margin_report.get('totals', {}).get('has_estimated_cost')
+             else format_number(grand_profit) + ' FC'),
         ],
         [
             f"{cash_summary['count']} vente(s)",
@@ -241,11 +244,11 @@ def generate_daily_report_pdf(
     story.append(jt_table)
     story.append(Spacer(1, 8))
 
-    # ── 3. BÉNÉFICE PAR RÉSEAU ───────────────────────────────────────────────
-    story.append(Paragraph("Bénéfice par Réseau", styles['section']))
+    # ── 3. MARGE PAR RÉSEAU ──────────────────────────────────────────────────
+    story.append(Paragraph("Marge des ventes par réseau", styles['section']))
 
     prof_headers = ['Réseau', 'Qté Vendue', "Prix d'Achat (FC)",
-                    'Coût Total (FC)', 'Revenu (FC)', 'Bénéfice (FC)']
+                    'Coût Total (FC)', 'Revenu (FC)', 'Marge (FC)']
     prof_data = [prof_headers]
     for nn in network_names:
         p = profit_data.get(nn, {})
@@ -255,7 +258,8 @@ def generate_daily_report_pdf(
             format_number(p.get('buying_price', 0)),
             format_number(p.get('cost', 0)),
             format_number(p.get('revenue', 0)),
-            format_number(p.get('profit', 0)),
+            ('À vérifier' if p.get('has_estimated_cost')
+             else format_number(p.get('profit', 0))),
         ])
     prof_data.append([
         'TOTAL',
@@ -263,7 +267,8 @@ def generate_daily_report_pdf(
         '—',
         format_number(grand_cost),
         format_number(grand_revenue),
-        format_number(grand_profit),
+        ('À vérifier' if margin_report.get('totals', {}).get('has_estimated_cost')
+         else format_number(grand_profit)),
     ])
 
     prof_col_w = [avail_w * r for r in (0.14, 0.13, 0.17, 0.18, 0.18, 0.20)]
@@ -281,6 +286,20 @@ def generate_daily_report_pdf(
         prof_style.add('FONTNAME',  (5, i), (5, i), 'Helvetica-Bold')
     prof_table.setStyle(prof_style)
     story.append(prof_table)
+
+    totals = margin_report.get('totals', {})
+    if totals:
+        story.append(Paragraph(
+            "Marge commerciale: " + format_number(totals.get('commercial_margin', 0))
+            + " FC — Arrondi facture: "
+            + format_number(totals.get('rounding_adjustment', 0)) + " FC",
+            styles['cell'],
+        ))
+    if margin_report.get('estimated_sales'):
+        story.append(Paragraph(
+            "À vérifier: certains coûts historiques sont estimés; la marge correspondante n'est pas définitive.",
+            styles['cell'],
+        ))
 
     # ── Multi-price breakdown (right after profit table) ─────────────────────
     has_breakdown = any(price_breakdown.get(nn) for nn in network_names)
@@ -303,7 +322,8 @@ def generate_daily_report_pdf(
                     format_number(e['qty'], 0),
                     format_number(e.get('cost', 0)),
                     format_number(e['revenue']),
-                    format_number(e.get('margin', 0)),
+                    ('À vérifier' if e.get('has_estimated_cost')
+                     else format_number(e.get('margin', 0))),
                 ])
             pb_col_w = [avail_w * r for r in (0.18, 0.12, 0.18, 0.18, 0.18)]
             pb_t = Table(pb_rows, colWidths=pb_col_w)

@@ -151,6 +151,14 @@
                                 {% if editing_sale_has_payment %}<div class="alert alert-info py-2 small">Le client, la date et le paiement restent liés au reçu. Vous pouvez corriger les articles et les prix.</div>{% endif %}
                             </div>
 
+                            <div class="alert alert-warning py-2 mt-3 mb-0">
+                                <div class="custom-control custom-checkbox">
+                                    {{ form.confirm_loss(class="custom-control-input", id="confirm-loss") }}
+                                    {{ form.confirm_loss.label(class="custom-control-label", for="confirm-loss") }}
+                                </div>
+                                <small class="d-block mt-1">Cochez seulement si le prix de vente est inférieur au coût moyen du stock.</small>
+                            </div>
+
                             <div class="d-flex flex-column flex-sm-row justify-content-end mt-3" style="gap:8px;">
                                 {% if editing_sale %}<a href="{{ url_for('main_bp.vente_stock', date=editing_sale.sale_date.isoformat()) }}" class="btn btn-secondary">Retour</a>{% endif %}
                                 {{ form.submit(class="btn btn-primary" + ("" if editing_sale else " btn-block"), value="Enregistrer" if editing_sale else "Vendre") }}

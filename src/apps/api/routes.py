@@ -344,6 +344,21 @@ def create_sale():
                 or stock_item.buying_price_per_unit,
                 selling_price=final_unit_price,
             )
+            current_cost = (
+                stock_item.average_cost_per_unit
+                or stock_item.buying_price_per_unit
+                or Decimal("0")
+            )
+            confirm_loss = payload.get("confirm_loss") is True
+            if final_unit_price < current_cost and not confirm_loss:
+                return jsonify({
+                    "error": (
+                        f"Vente à perte sur {network_enum.value.capitalize()} : "
+                        f"vente {final_unit_price}/u, coût {current_cost}/u. "
+                        "Confirmez la vente à perte pour continuer."
+                    ),
+                    "requires_loss_confirmation": True,
+                }), 409
             subtotal = (Decimal(quantity) * final_unit_price).quantize(Decimal("0.01"))
             require_ledger_amount(subtotal, label="Le total de la vente")
             cost_per_unit, cost_total = consume_stock(

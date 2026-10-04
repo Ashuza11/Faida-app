@@ -732,6 +732,7 @@ def replace_retail_sale(
     adhoc_customer_key: str | None,
     sale_date: date,
     items,
+    confirm_loss: bool = False,
 ) -> None:
     """Correct a retail sale without replacing its receipts or audit identity."""
     if business.business_type != BusinessType.RETAIL:
@@ -852,6 +853,14 @@ def replace_retail_sale(
                 cost=sale_item.cost_per_unit_snapshot,
                 selling_price=item["unit_price"],
             )
+            if (
+                item["unit_price"] < as_decimal(sale_item.cost_per_unit_snapshot)
+                and not confirm_loss
+            ):
+                raise ValueError(user_message(
+                    f"Vente à perte sur {item['network'].value.capitalize()}.",
+                    "Cochez « Confirmer la vente à perte » pour continuer.",
+                ))
             sale_item.price_per_unit_applied = item["unit_price"]
             sale_item.subtotal = item["subtotal"]
             sale_item.margin_amount = item["subtotal"] - sale_item.cost_total
@@ -862,6 +871,17 @@ def replace_retail_sale(
             prepared_items=prepared,
             is_wholesale=False,
         )
+        if not confirm_loss:
+            loss_item = next((
+                item for item in sale.sale_items
+                if as_decimal(item.price_per_unit_applied)
+                < as_decimal(item.cost_per_unit_snapshot)
+            ), None)
+            if loss_item is not None:
+                raise ValueError(user_message(
+                    f"Vente à perte sur {loss_item.network.value.capitalize()}.",
+                    "Cochez « Confirmer la vente à perte » pour continuer.",
+                ))
 
     sale.client = client
     sale.client_name_adhoc = client_name_adhoc if client is None else None

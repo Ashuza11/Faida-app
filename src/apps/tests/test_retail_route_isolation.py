@@ -380,7 +380,7 @@ def test_new_retail_records_receive_active_business_key(app, session):
     edit_response = client.get(f"/edit_sale/{created_sale.id}")
     assert edit_response.status_code == 200
     assert b"Modifier la vente #2" in edit_response.data
-    assert b"Confirmer" not in edit_response.data
+    assert "Confirmer la vente à perte" in edit_response.get_data(as_text=True)
 
     detail_response = client.get(f"/view_sale_details/{created_sale.id}")
     assert detail_response.status_code == 200

@@ -421,6 +421,7 @@ class SaleForm(FlaskForm):
         ],
         render_kw={"step": "0.01", "max": "9999999999.99"},
     )
+    confirm_loss = BooleanField("Confirmer la vente à perte")
     submit = SubmitField("Vendre")
 
     def validate(self, extra_validators=None):

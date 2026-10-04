@@ -106,10 +106,14 @@
         <div class="card-body">
           <div class="row">
             <div class="col">
-              <h5 class="card-title text-uppercase text-muted mb-0">Bénéfice Net</h5>
-              <span class="h3 font-weight-bold mb-0 {% if grand_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
-                {{ "{:,.2f}".format(grand_profit) }} FC
-              </span>
+              <h5 class="card-title text-uppercase text-muted mb-0">Marge ventes</h5>
+              {% if margin_report.totals.has_estimated_cost %}
+                <span class="h3 font-weight-bold mb-0 text-warning">À vérifier</span>
+              {% else %}
+                <span class="h3 font-weight-bold mb-0 {% if grand_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                  {{ "{:,.2f}".format(grand_profit) }} FC
+                </span>
+              {% endif %}
             </div>
             <div class="col-auto"><div class="icon icon-shape bg-gradient-info text-white rounded-circle shadow"><i class="fas fa-chart-line"></i></div></div>
           </div>
@@ -181,7 +185,7 @@
     <div class="col-xl-8">
       <div class="card shadow">
         <div class="card-header border-0">
-          <h3 class="mb-0">Bénéfice par Réseau</h3>
+          <h3 class="mb-0">Comprendre la marge</h3>
         </div>
         <div class="table-responsive">
           <table class="table align-items-center table-flush">
@@ -192,7 +196,9 @@
                 <th>Prix d'Achat</th>
                 <th>Coût Total (FC)</th>
                 <th>Revenu (FC)</th>
-                <th>Bénéfice (FC)</th>
+                <th>Marge commerciale</th>
+                <th>Arrondi facture</th>
+                <th>Marge finale</th>
               </tr>
             </thead>
             <tbody>
@@ -204,8 +210,10 @@
                 <td>{{ p.buying_price|unit_price(2) }} FC</td>
                 <td>{{ "{:,.2f}".format(p.cost) }}</td>
                 <td>{{ "{:,.2f}".format(p.revenue) }}</td>
+                <td>{{ "{:,.2f}".format(p.commercial_margin) }}</td>
+                <td>{{ "{:+,.2f}".format(p.rounding_adjustment) }}</td>
                 <td class="{% if p.profit >= 0 %}text-success{% else %}text-danger{% endif %} font-weight-bold">
-                  {{ "{:,.2f}".format(p.profit) }}
+                  {% if p.has_estimated_cost %}<span class="text-warning">À vérifier</span>{% else %}{{ "{:,.2f}".format(p.profit) }}{% endif %}
                 </td>
               </tr>
               {% endfor %}
@@ -215,7 +223,9 @@
                 <td>—</td>
                 <td>{{ "{:,.2f}".format(grand_cost) }}</td>
                 <td>{{ "{:,.2f}".format(grand_revenue) }}</td>
-                <td>{{ "{:,.2f}".format(grand_profit) }}</td>
+                <td>{{ "{:,.2f}".format(margin_report.totals.commercial_margin) }}</td>
+                <td>{{ "{:+,.2f}".format(margin_report.totals.rounding_adjustment) }}</td>
+                <td>{% if margin_report.totals.has_estimated_cost %}À vérifier{% else %}{{ "{:,.2f}".format(grand_profit) }}{% endif %}</td>
               </tr>
             </tbody>
           </table>
@@ -256,7 +266,7 @@
                       <td>{{ "{:,.2f}".format(entry.cost) }}</td>
                       <td>{{ "{:,.2f}".format(entry.revenue) }}</td>
                       <td class="{% if entry.margin >= 0 %}text-success{% else %}text-danger{% endif %} font-weight-bold">
-                        {{ "{:,.2f}".format(entry.margin) }}
+                        {% if entry.has_estimated_cost %}<span class="text-warning">À vérifier</span>{% else %}{{ "{:,.2f}".format(entry.margin) }}{% endif %}
                       </td>
                     </tr>
                     {% endfor %}
@@ -272,6 +282,26 @@
       </div>
     </div>
   </div>
+
+  {% if margin_report.estimated_sales or margin_report.losses %}
+  <div class="row mt-3">
+    <div class="col-12">
+      {% if margin_report.estimated_sales %}
+      <div class="alert alert-warning py-2">
+        <strong>Coût historique à vérifier.</strong>
+        La marge n'est pas définitive pour
+        {% for affected in margin_report.estimated_sales %}vente #{{ affected.sale_id }} · {{ affected.client }}{% if not loop.last %}, {% endif %}{% endfor %}.
+      </div>
+      {% endif %}
+      {% if margin_report.losses %}
+      <div class="alert alert-danger py-2 mb-0">
+        <strong>Vente sous le coût du stock.</strong>
+        {% for loss in margin_report.losses %}#{{ loss.sale_id }} {{ loss.client }} · {{ loss.network.value|capitalize }} : {{ loss.selling_price|unit_price(4) }} vendu, {{ loss.cost_price|unit_price(4) }} coût{% if not loop.last %}; {% endif %}{% endfor %}.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
 
   {# ═══════════════════════════════════════════════════
      4. LISTE DES DETTES DU JOUR

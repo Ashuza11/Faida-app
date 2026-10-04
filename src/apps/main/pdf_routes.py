@@ -26,6 +26,7 @@ from apps.businesses import get_current_business
 from apps.models import BusinessType
 from apps.wholesale_pdf import generate_wholesale_report_pdf
 from apps.wholesale_reports import build_wholesale_daily_report
+from apps.retail_reports import build_retail_margin_report
 
 # Create a NEW blueprint for PDF routes
 pdf_bp = Blueprint('pdf_bp', __name__)
@@ -171,76 +172,15 @@ def download_report_pdf():
         - grand_totals["final_stock"]
     )
 
-    # --- 6. Profit / Price-breakdown data ---
-    stock_query = Stock.query
-    if business_id is not None:
-        stock_query = stock_query.filter_by(business_id=business_id)
-    elif vendeur_id:
-        stock_query = stock_query.filter_by(vendeur_id=vendeur_id)
-    stock_items = stock_query.all()
-    buying_price_map = {s.network: s.buying_price_per_unit for s in stock_items}
-
-    pb_q = (
-        db.session.query(
-            SaleItem.network,
-            SaleItem.price_per_unit_applied,
-            func.sum(SaleItem.quantity).label('qty'),
-            func.sum(SaleItem.subtotal).label('revenue'),
-            func.sum(SaleItem.cost_total).label('cost'),
-            func.sum(SaleItem.margin_amount).label('margin'),
-        )
-        .join(Sale)
-        .filter(
-            Sale.sale_date == target_date,
-            Sale.status == TransactionStatus.ACTIVE,
-        )
+    # --- 6. Canonical reconciled margin data (shared with the web report) ---
+    margin_report = build_retail_margin_report(
+        business_id=business_id, vendeur_id=vendeur_id, target_date=target_date
     )
-    if business_id is not None:
-        pb_q = pb_q.filter(Sale.business_id == business_id)
-    elif vendeur_id:
-        pb_q = pb_q.filter(Sale.vendeur_id == vendeur_id)
-    price_breakdown_rows = pb_q.group_by(
-        SaleItem.network, SaleItem.price_per_unit_applied
-    ).order_by(SaleItem.network, SaleItem.price_per_unit_applied).all()
-
-    price_breakdown = {}
-    for row in price_breakdown_rows:
-        key = row.network.name
-        if key not in price_breakdown:
-            price_breakdown[key] = []
-        price_breakdown[key].append({
-            "price": Decimal(str(row.price_per_unit_applied)),
-            "qty": int(row.qty or 0),
-            "revenue": Decimal(str(row.revenue or 0)),
-            "cost": Decimal(str(row.cost or 0)),
-            "margin": Decimal(str(row.margin or 0)),
-        })
-
-    profit_data = {}
-    grand_profit = zero_money()
-    grand_revenue = zero_money()
-    grand_cost = zero_money()
-    for network in networks:
-        entries = price_breakdown.get(network.name, [])
-        total_qty = sum(e["qty"] for e in entries)
-        total_revenue = sum(e["revenue"] for e in entries)
-        total_cost = sum(e["cost"] for e in entries)
-        profit = sum(e["margin"] for e in entries)
-        buying_price = (
-            total_cost / Decimal(str(total_qty))
-            if total_qty else buying_price_map.get(network, Decimal("0.94"))
-        )
-        profit_data[network.name] = {
-            "network": network,
-            "qty": total_qty,
-            "revenue": total_revenue,
-            "cost": total_cost,
-            "profit": profit,
-            "buying_price": buying_price,
-        }
-        grand_revenue += total_revenue
-        grand_cost += total_cost
-        grand_profit += profit
+    price_breakdown = margin_report["price_breakdown"]
+    profit_data = margin_report["networks"]
+    grand_profit = margin_report["totals"]["profit"]
+    grand_revenue = margin_report["totals"]["revenue"]
+    grand_cost = margin_report["totals"]["cost"]
 
     # --- 7. Cash summary ---
     cash_q = db.session.query(
@@ -299,6 +239,7 @@ def download_report_pdf():
             grand_profit=grand_profit,
             grand_revenue=grand_revenue,
             grand_cost=grand_cost,
+            margin_report=margin_report,
             debts_today=debts_today,
             all_purchases=all_purchases,
             sales_today=sales_today,
