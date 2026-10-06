@@ -73,6 +73,48 @@ def test_opening_balance_sets_exact_quantity_and_inventory_cost(session):
     assert total_cost == Decimal("202.500000000000")
 
 
+def test_retail_opening_balance_sets_separate_selling_price(session):
+    owner, business = setup_retail(session, suffix=14)
+    updates = empty_updates()
+    updates[NetworkType.AIRTEL] = (
+        1000,
+        Decimal("20.25"),
+        Decimal("22.2075"),
+    )
+
+    entries = save_opening_balances(
+        business=business,
+        recorded_by=owner,
+        balance_date=date.today(),
+        updates=updates,
+    )
+    session.flush()
+
+    stock = Stock.query.filter_by(
+        business_id=business.id, network=NetworkType.AIRTEL
+    ).one()
+    assert entries[0].unit_cost == Decimal("20.250000000000")
+    assert entries[0].selling_price_per_unit == Decimal("22.207500000000")
+    assert stock.average_cost_per_unit == Decimal("20.250000000000")
+    assert stock.selling_price_per_unit == Decimal("22.207500000000")
+
+
+def test_retail_opening_balance_requires_selling_price_when_explicit(session):
+    owner, business = setup_retail(session, suffix=15)
+    updates = empty_updates()
+    updates[NetworkType.ORANGE] = (500, Decimal("20"), None)
+
+    with pytest.raises(OpeningBalanceError, match="prix de vente"):
+        save_opening_balances(
+            business=business,
+            recorded_by=owner,
+            balance_date=date.today(),
+            updates=updates,
+        )
+
+    assert StockOpeningBalance.query.filter_by(business_id=business.id).count() == 0
+
+
 def test_blank_network_is_unchanged_and_explicit_zero_clears_one_network(session):
     owner, business = setup_retail(session, suffix=2)
     initial = empty_updates()
@@ -261,7 +303,8 @@ def test_selected_date_loads_existing_values_in_retail_form(app, session):
         vendeur_id=owner.id, business_id=business.id,
         network=NetworkType.ORANGE, balance_date=target,
         quantity=500, unit_cost=Decimal("21"),
-        actual_total_cost=Decimal("10500"), is_cost_estimated=False,
+        actual_total_cost=Decimal("10500"),
+        selling_price_per_unit=Decimal("22.2075"), is_cost_estimated=False,
         set_by_id=owner.id,
     ))
     session.commit()
@@ -277,6 +320,7 @@ def test_selected_date_loads_existing_values_in_retail_form(app, session):
     assert f'value="{target.isoformat()}"'.encode() in response.data
     assert b'value="500"' in response.data
     assert b'value="21.000000000000"' in response.data
+    assert b'value="22.207500000000"' in response.data
     assert b"30 derni\xc3\xa8res dates" in response.data
 
 
@@ -299,6 +343,7 @@ def test_current_stock_fallback_is_not_labeled_as_yesterday(app, session):
 
     assert "Stock actuel estimé".encode() in response.data
     assert "Solde d'hier".encode() not in response.data
+    assert b'value="25.000000000000"' in response.data
 
 
 def test_opening_route_refreshes_existing_archived_report(app, session):
@@ -325,6 +370,7 @@ def test_opening_route_refreshes_existing_archived_report(app, session):
             "balance_date": target.isoformat(),
             "airtel": "300",
             "airtel_cost": "20",
+            "airtel_selling_price": "22.2075",
             "submit": "Enregistrer",
         },
     )

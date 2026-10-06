@@ -898,7 +898,6 @@ class StockPurchase(db.Model):
     actual_total_cost: so.Mapped[Decimal] = so.mapped_column(
         sa.Numeric(24, 12), nullable=False, default=Decimal("0.00")
     )
-
     amount_purchased: so.Mapped[int] = so.mapped_column(
         sa.Integer, nullable=False)
 
@@ -1010,6 +1009,9 @@ class StockOpeningBalance(db.Model):
     )
     actual_total_cost: so.Mapped[Decimal] = so.mapped_column(
         sa.Numeric(24, 12), nullable=False, default=Decimal("0.00")
+    )
+    selling_price_per_unit: so.Mapped[Optional[Decimal]] = so.mapped_column(
+        sa.Numeric(24, 12), nullable=True
     )
     is_cost_estimated: so.Mapped[bool] = so.mapped_column(
         sa.Boolean, nullable=False, default=False

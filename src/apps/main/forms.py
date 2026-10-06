@@ -679,6 +679,14 @@ class StockOpeningBalanceForm(FlaskForm):
         places=12,
         render_kw={"placeholder": "Ex: 20", "step": "0.000000000001"},
     )
+    airtel_selling_price = DecimalField(
+        "Prix de vente/unité Airtel (FC)",
+        validators=[Optional(), NumberRange(
+            min=Decimal("0.000000000001"), max=MAX_LEDGER_AMOUNT
+        )],
+        places=12,
+        render_kw={"placeholder": "Ex: 22.2075", "step": "0.000000000001"},
+    )
     africel = IntegerField(
         "Africel (unités)",
         validators=[Optional(), NumberRange(min=0, max=MAX_QUANTITY)],
@@ -691,6 +699,14 @@ class StockOpeningBalanceForm(FlaskForm):
         )],
         places=12,
         render_kw={"placeholder": "Ex: 20", "step": "0.000000000001"},
+    )
+    africel_selling_price = DecimalField(
+        "Prix de vente/unité Africell (FC)",
+        validators=[Optional(), NumberRange(
+            min=Decimal("0.000000000001"), max=MAX_LEDGER_AMOUNT
+        )],
+        places=12,
+        render_kw={"placeholder": "Ex: 22.2075", "step": "0.000000000001"},
     )
     orange = IntegerField(
         "Orange (unités)",
@@ -705,6 +721,14 @@ class StockOpeningBalanceForm(FlaskForm):
         places=12,
         render_kw={"placeholder": "Ex: 20", "step": "0.000000000001"},
     )
+    orange_selling_price = DecimalField(
+        "Prix de vente/unité Orange (FC)",
+        validators=[Optional(), NumberRange(
+            min=Decimal("0.000000000001"), max=MAX_LEDGER_AMOUNT
+        )],
+        places=12,
+        render_kw={"placeholder": "Ex: 22.2075", "step": "0.000000000001"},
+    )
     vodacom = IntegerField(
         "Vodacom (unités)",
         validators=[Optional(), NumberRange(min=0, max=MAX_QUANTITY)],
@@ -717,6 +741,14 @@ class StockOpeningBalanceForm(FlaskForm):
         )],
         places=12,
         render_kw={"placeholder": "Ex: 20", "step": "0.000000000001"},
+    )
+    vodacom_selling_price = DecimalField(
+        "Prix de vente/unité Vodacom (FC)",
+        validators=[Optional(), NumberRange(
+            min=Decimal("0.000000000001"), max=MAX_LEDGER_AMOUNT
+        )],
+        places=12,
+        render_kw={"placeholder": "Ex: 22.2075", "step": "0.000000000001"},
     )
     submit = SubmitField("Enregistrer")
 

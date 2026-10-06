@@ -21,6 +21,7 @@ from apps.money import (
     INTERNAL_MONEY_QUANTUM,
     as_decimal,
     quantize_unit_price,
+    require_comparable_unit_prices,
     require_ledger_amount,
     require_quantity,
 )
@@ -50,7 +51,8 @@ def save_opening_balances(
     exact_totals = exact_totals or {}
     changed = []
     for network, raw_values in updates.items():
-        raw_quantity, raw_unit_cost = raw_values
+        raw_quantity, raw_unit_cost = raw_values[:2]
+        raw_selling_price = raw_values[2] if len(raw_values) > 2 else None
         raw_total_cost = exact_totals.get(network)
         if (
             raw_quantity is None
@@ -125,6 +127,23 @@ def save_opening_balances(
                 )
             except ValueError as error:
                 raise OpeningBalanceError(str(error)) from error
+        selling_price = None
+        if business.business_type == BusinessType.RETAIL and len(raw_values) > 2:
+            if quantity > 0 and raw_selling_price is None:
+                raise OpeningBalanceError(
+                    f"Indiquez le prix de vente du stock {network.value}."
+                )
+            if raw_selling_price is not None:
+                try:
+                    selling_price = quantize_unit_price(require_ledger_amount(
+                        raw_selling_price, label="Le prix de vente"
+                    ))
+                    if quantity > 0:
+                        require_comparable_unit_prices(
+                            cost=unit_cost, selling_price=selling_price
+                        )
+                except ValueError as error:
+                    raise OpeningBalanceError(str(error)) from error
         if quantity > 0 and raw_total_cost is None:
             total_cost = (quantity * unit_cost).quantize(INTERNAL_MONEY_QUANTUM)
         try:
@@ -162,6 +181,8 @@ def save_opening_balances(
             as_decimal(entry.unit_cost) != unit_cost,
             as_decimal(entry.actual_total_cost) != total_cost,
             entry.is_cost_estimated != remains_estimated,
+            selling_price is not None
+            and as_decimal(entry.selling_price_per_unit) != selling_price,
         ))
         if not is_changed:
             continue
@@ -182,9 +203,11 @@ def save_opening_balances(
         entry.quantity = quantity
         entry.unit_cost = unit_cost
         entry.actual_total_cost = total_cost
+        if selling_price is not None:
+            entry.selling_price_per_unit = selling_price
         entry.is_cost_estimated = remains_estimated
         entry.set_by_id = recorded_by.id
-        changed.append((network, entry))
+        changed.append((network, entry, selling_price))
 
     if not changed:
         value_name = (
@@ -197,11 +220,14 @@ def save_opening_balances(
         )
     db.session.flush()
     if balance_date == current_date:
-        for network, entry in changed:
+        for network, entry, selling_price in changed:
             _reconcile_today_stock(
-                business=business, network=network, opening=entry
+                business=business,
+                network=network,
+                opening=entry,
+                selling_price=selling_price,
             )
-    return [entry for _, entry in changed]
+    return [entry for _, entry, _ in changed]
 
 
 def opening_quantity_for_date(*, business_id, network, target_date):
@@ -293,7 +319,7 @@ def _ensure_history_is_safe(
             )
 
 
-def _reconcile_today_stock(*, business, network, opening):
+def _reconcile_today_stock(*, business, network, opening, selling_price=None):
     purchased_quantity, purchased_cost = (
         db.session.query(
             func.coalesce(func.sum(StockPurchase.amount_purchased), 0),
@@ -320,7 +346,7 @@ def _reconcile_today_stock(*, business, network, opening):
             vendeur_id=business.owner_user_id,
             business_id=business.id,
             network=network,
-            selling_price_per_unit=opening.unit_cost,
+            selling_price_per_unit=selling_price or opening.unit_cost,
         )
         db.session.add(stock)
     stock.balance = balance
@@ -331,3 +357,5 @@ def _reconcile_today_stock(*, business, network, opening):
     )
     if as_decimal(purchased_quantity) == 0 and as_decimal(opening.quantity) > 0:
         stock.buying_price_per_unit = quantize_unit_price(opening.unit_cost)
+    if selling_price is not None:
+        stock.selling_price_per_unit = selling_price

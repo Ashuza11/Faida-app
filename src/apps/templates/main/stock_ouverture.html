@@ -81,6 +81,12 @@
                     <label class="form-control-label">{% if is_wholesale %}Valeur totale (USD){% else %}Coût par unité ({{ currency_label }}){% endif %}</label>
                     {{ cost_field(class="form-control" + (" is-invalid" if cost_field.errors else ""), id="field_" + field_name + "_cost", placeholder=cost_placeholder) }}
                     {% for e in cost_field.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+                    {% if not is_wholesale %}
+                      {% set selling_field = form[field_name + '_selling_price'] %}
+                      <label class="form-control-label mt-2">Prix de vente par unité ({{ currency_label }})</label>
+                      {{ selling_field(class="form-control" + (" is-invalid" if selling_field.errors else ""), id="field_" + field_name + "_selling_price", placeholder="Ex: 22.2075") }}
+                      {% for e in selling_field.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+                    {% endif %}
                   </div>
                 </div>
                 {% endfor %}
@@ -127,7 +133,7 @@
                       {% if is_wholesale %}
                         {% set value = "{:,}".format(e.quantity|int) ~ " · $" ~ (e.actual_total_cost|unit_price(2)) ~ " total · $" ~ (e.unit_cost|unit_price) ~ "/u" ~ (" *" if e.is_cost_estimated else "") %}
                       {% else %}
-                        {% set value = "{:,}".format(e.quantity|int) ~ " @ " ~ (e.unit_cost|unit_price(2)) ~ (" *" if e.is_cost_estimated else "") %}
+                        {% set value = "{:,}".format(e.quantity|int) ~ " · coût " ~ (e.unit_cost|unit_price(4)) ~ (" *" if e.is_cost_estimated else "") ~ (" · vente " ~ (e.selling_price_per_unit|unit_price(4)) if e.selling_price_per_unit is not none else "") %}
                       {% endif %}
                       {% if e.network.name == 'AIRTEL' %}{% set row.airtel = value %}{% endif %}
                       {% if e.network.name == 'AFRICEL' %}{% set row.africel = value %}{% endif %}

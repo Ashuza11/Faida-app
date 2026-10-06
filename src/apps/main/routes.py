@@ -2448,12 +2448,26 @@ def stock_ouverture():
                 balance_date=selected_date,
             ).all()
             existing_map = {ob.network.name.lower(): ob for ob in existing}
+            stock_map = {
+                stock.network.name.lower(): stock
+                for stock in Stock.query.filter_by(business_id=business_id).all()
+            }
             for field_name in ('airtel', 'africel', 'orange', 'vodacom'):
                 entry = existing_map.get(field_name)
                 if entry is not None:
                     getattr(form, field_name).data = int(entry.quantity)
                     if not entry.is_cost_estimated:
                         getattr(form, f"{field_name}_cost").data = entry.unit_cost
+                stock = stock_map.get(field_name)
+                stored_selling_price = (
+                    entry.selling_price_per_unit
+                    if entry is not None and entry.selling_price_per_unit is not None
+                    else stock.selling_price_per_unit if stock is not None else None
+                )
+                if stored_selling_price is not None:
+                    getattr(form, f"{field_name}_selling_price").data = (
+                        stored_selling_price
+                    )
 
     if form.validate_on_submit():
         if not vendeur_id:
@@ -2464,10 +2478,22 @@ def stock_ouverture():
             return redirect(url_for('main_bp.stock_ouverture'))
 
         updates = {
-            NetworkType.AIRTEL: (form.airtel.data, form.airtel_cost.data),
-            NetworkType.AFRICEL: (form.africel.data, form.africel_cost.data),
-            NetworkType.ORANGE: (form.orange.data, form.orange_cost.data),
-            NetworkType.VODACOM: (form.vodacom.data, form.vodacom_cost.data),
+            NetworkType.AIRTEL: (
+                form.airtel.data, form.airtel_cost.data,
+                form.airtel_selling_price.data,
+            ),
+            NetworkType.AFRICEL: (
+                form.africel.data, form.africel_cost.data,
+                form.africel_selling_price.data,
+            ),
+            NetworkType.ORANGE: (
+                form.orange.data, form.orange_cost.data,
+                form.orange_selling_price.data,
+            ),
+            NetworkType.VODACOM: (
+                form.vodacom.data, form.vodacom_cost.data,
+                form.vodacom_selling_price.data,
+            ),
         }
 
         try:
