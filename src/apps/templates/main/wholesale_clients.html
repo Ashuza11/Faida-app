@@ -8,27 +8,68 @@
   </div>
   <div class="card shadow">
     <div class="card-header">
-      <h3 class="mb-3">Clients détaillants</h3>
-      <form method="get" action="{{ url_for('main_bp.wholesale_clients') }}" role="search">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Dettes impayées</h3>
+        <span class="badge badge-primary" id="debt-visible-count">{{ clients|length }}</span>
+      </div>
+      <div role="search">
         <div class="input-group">
-          <input type="search" name="search" value="{{ debt_search }}" class="form-control" maxlength="100" placeholder="Nom ou numéro du client" aria-label="Rechercher un client endetté">
-          <div class="input-group-append"><button class="btn btn-primary" type="submit"><i class="fas fa-search mr-1"></i> Rechercher</button></div>
+          <input type="search" id="debt-client-search" value="{{ debt_search }}" class="form-control" maxlength="100" placeholder="Nom ou numéro du client" aria-label="Rechercher un client endetté" autocomplete="off">
+          <div class="input-group-append"><button class="btn btn-outline-secondary" id="clear-debt-search" type="button" aria-label="Effacer la recherche"><i class="fas fa-times"></i></button></div>
         </div>
-        {% if debt_search %}<a class="small d-inline-block mt-2" href="{{ url_for('main_bp.wholesale_clients') }}">Effacer la recherche</a>{% endif %}
-      </form>
+        <small class="text-muted">Les résultats apparaissent dès le premier caractère.</small>
+      </div>
     </div>
     <div class="table-responsive">
     <table class="table align-items-center">
       <thead><tr><th>Client</th><th>Ventes</th><th>Total acheté</th><th>Total payé</th><th>Dette</th><th></th></tr></thead>
-      <tbody>{% for client in clients %}{% set total = totals.get(client.id) %}<tr>
+      <tbody>{% for client in clients %}{% set total = totals.get(client.id) %}<tr data-debt-client-row data-search="{{ client.name }} {{ client.phone_airtel or '' }} {{ client.phone_africel or '' }} {{ client.phone_orange or '' }} {{ client.phone_vodacom or '' }} {% for phone in client.phones if phone.is_active %}{{ phone.normalized_phone }} {% endfor %}{% for conflict in client.phone_conflicts %}{{ conflict.normalized_phone }} {% endfor %}">
         <td><strong>{{ client.name }}</strong><br><small class="text-muted">Client #{{ client.id }}</small></td>
         <td>{{ total.sale_count if total else 0 }}</td>
         <td>${{ "{:.2f}".format(total.purchased if total else 0) }}</td>
         <td>${{ "{:.2f}".format(total.paid if total else 0) }}</td>
         <td class="{% if total and total.debt > 0 %}text-danger font-weight-bold{% endif %}">${{ "{:.2f}".format(total.debt if total else 0) }}</td>
         <td><a class="btn btn-sm btn-primary" href="{{ url_for('main_bp.wholesale_client_detail', client_id=client.id) }}">Voir</a></td>
-      </tr>{% else %}<tr><td colspan="6" class="text-center text-muted">{% if debt_search %}Aucun client endetté ne correspond à « {{ debt_search }} ».{% else %}Aucun détaillant enregistré.{% endif %}</td></tr>{% endfor %}</tbody>
+      </tr>{% endfor %}
+      <tr id="debt-search-empty" class="{% if clients %}d-none{% endif %}"><td colspan="6" class="text-center text-muted">{% if clients %}Aucun client avec une dette impayée ne correspond à cette recherche.{% else %}Aucune dette impayée.{% endif %}</td></tr></tbody>
     </table>
   </div></div>
 </div>
 {% endblock %}
+{% block javascripts %}
+{{ super() }}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var input = document.getElementById('debt-client-search');
+  var clearButton = document.getElementById('clear-debt-search');
+  var rows = Array.prototype.slice.call(document.querySelectorAll('[data-debt-client-row]'));
+  var emptyState = document.getElementById('debt-search-empty');
+  var visibleCount = document.getElementById('debt-visible-count');
+
+  function normalizeSearch(value) {
+    return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
+  }
+
+  function filterDebtors() {
+    var query = normalizeSearch(input.value.trim());
+    var matches = 0;
+    rows.forEach(function (row) {
+      var isMatch = !query || normalizeSearch(row.dataset.search).indexOf(query) !== -1;
+      row.classList.toggle('d-none', !isMatch);
+      if (isMatch) matches += 1;
+    });
+    emptyState.classList.toggle('d-none', matches !== 0);
+    visibleCount.textContent = matches;
+    clearButton.classList.toggle('d-none', !input.value);
+  }
+
+  input.addEventListener('input', filterDebtors);
+  clearButton.addEventListener('click', function () {
+    input.value = '';
+    filterDebtors();
+    input.focus();
+  });
+  filterDebtors();
+});
+</script>
+{% endblock javascripts %}

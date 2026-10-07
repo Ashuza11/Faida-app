@@ -90,17 +90,15 @@ def test_wholesale_debt_search_finds_debtor_by_name_or_phone(app, session):
     browser = app.test_client()
     login(browser, owner, business)
 
-    name_result = browser.get(
-        "/businesses/wholesale/clients?search=Daniel"
-    ).get_data(as_text=True)
-    assert debtor.name in name_result
-    assert settled.name not in name_result
+    page = browser.get("/businesses/wholesale/clients").get_data(as_text=True)
 
-    phone_result = browser.get(
-        "/businesses/wholesale/clients?search=0972067057"
-    ).get_data(as_text=True)
-    assert debtor.name in phone_result
-    assert "Aucun client endetté" not in phone_result
+    assert debtor.name in page
+    assert settled.name not in page
+    assert 'id="debt-client-search"' in page
+    assert "Les résultats apparaissent dès le premier caractère." in page
+    assert 'data-search="Daniel Centre' in page
+    assert "+243972067057" in page
+    assert "input.addEventListener('input', filterDebtors)" in page
 
 
 def test_wholesale_owner_registers_many_numbers_for_one_client(app, session):

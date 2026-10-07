@@ -79,7 +79,6 @@ from apps.models import (
     User,
     RoleType,
     Client,
-    ClientPhone,
     StockPurchase,
     NetworkType,
     Stock,
@@ -1411,44 +1410,25 @@ def wholesale_clients():
         abort(403)
 
     debt_search = request.args.get("search", "").strip()[:100]
-    clients_query = Client.query.filter_by(business_id=business.id)
-    if debt_search:
-        name_pattern = f"%{debt_search}%"
-        phone_terms = {debt_search}
-        if any(character.isdigit() for character in debt_search):
-            phone_terms.add(normalize_phone(debt_search))
-        phone_filters = [
-            ClientPhone.normalized_phone.ilike(f"%{phone_term}%")
-            for phone_term in phone_terms
-            if phone_term
-        ]
-        legacy_phone_filters = [
-            phone_column.ilike(name_pattern)
-            for phone_column in (
-                Client.phone_airtel,
-                Client.phone_africel,
-                Client.phone_orange,
-                Client.phone_vodacom,
-            )
-        ]
-        debtor_client_ids = db.session.query(Sale.client_id).filter(
-            Sale.business_id == business.id,
-            Sale.client_id.isnot(None),
-            Sale.status == TransactionStatus.ACTIVE,
-            Sale.debt_amount > Decimal("0"),
+    debtor_client_ids = db.session.query(Sale.client_id).filter(
+        Sale.business_id == business.id,
+        Sale.client_id.isnot(None),
+        Sale.status == TransactionStatus.ACTIVE,
+        Sale.debt_amount > Decimal("0"),
+    ).distinct()
+    clients = (
+        Client.query
+        .options(
+            selectinload(Client.phones),
+            selectinload(Client.phone_conflicts),
         )
-        clients_query = clients_query.filter(
+        .filter(
+            Client.business_id == business.id,
             Client.id.in_(debtor_client_ids),
-            or_(
-                Client.name.ilike(name_pattern),
-                Client.phones.any(and_(
-                    ClientPhone.is_active.is_(True),
-                    or_(*phone_filters),
-                )),
-                *legacy_phone_filters,
-            ),
         )
-    clients = clients_query.order_by(Client.name, Client.id).all()
+        .order_by(Client.name, Client.id)
+        .all()
+    )
     totals = {
         row.client_id: row
         for row in db.session.query(
@@ -1460,7 +1440,7 @@ def wholesale_clients():
         )
         .filter(
             Sale.business_id == business.id,
-            Sale.client_id.isnot(None),
+            Sale.client_id.in_(debtor_client_ids),
             Sale.status == TransactionStatus.ACTIVE,
         )
         .group_by(Sale.client_id)
