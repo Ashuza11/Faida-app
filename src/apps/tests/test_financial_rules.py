@@ -4,7 +4,14 @@ from decimal import Decimal
 import pytest
 
 from apps.businesses import create_business
-from apps.models import BusinessType, Client, RoleType, Sale, User
+from apps.models import (
+    BusinessType,
+    Client,
+    RoleType,
+    Sale,
+    TransactionStatus,
+    User,
+)
 from apps.main.forms import get_clients_with_debt
 from apps.payments import apply_payment_to_sale
 from apps.main.utils import (
@@ -254,3 +261,15 @@ def test_registered_clients_with_same_name_remain_distinct(session):
     choices = get_clients_with_debt(vendeur_id=vendeur.id)
 
     assert {key for key, _ in choices} == {f"c:{first.id}", f"c:{second.id}"}
+
+
+def test_debt_choices_exclude_reversed_sales(session):
+    vendeur = make_vendeur(session)
+    active = make_sale(session, vendeur, adhoc="Actif", total="3000")
+    reversed_sale = make_sale(session, vendeur, adhoc="Annulé", total="5000")
+    reversed_sale.status = TransactionStatus.REVERSED
+    session.flush()
+
+    choices = get_clients_with_debt(vendeur_id=vendeur.id)
+
+    assert {key for key, _ in choices} == {f"a:legacy-sale-{active.id}"}

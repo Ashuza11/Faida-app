@@ -1015,6 +1015,7 @@ def test_retail_debt_payment_cannot_reach_wholesale_debt(app, session):
 
     response = client.post(
         "/sorties_cash/encaisser_dette",
+        query_string={"scope": "all"},
         data={
             "client_key": f"c:{retail_client.id}",
             "amount_paid": "30.00",
@@ -1172,6 +1173,83 @@ def test_equal_name_adhoc_payment_and_cancellation_stay_sale_scoped(app, session
     assert first.debt_amount == Decimal("50.00")
     assert second.debt_amount == Decimal("50.00")
     assert event.status == TransactionStatus.REVERSED
+
+
+def test_debt_collection_filters_clients_by_sale_date_and_offers_all(app, session):
+    owner, retail, _, today_client, _ = setup_ledgers(session)
+    yesterday_client = Client(
+        name="Dette ancienne",
+        vendeur_id=owner.id,
+        business_id=retail.id,
+    )
+    session.add(yesterday_client)
+    session.flush()
+    session.add(Sale(
+        seller_id=owner.id,
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        client=yesterday_client,
+        sale_date=date.today() - timedelta(days=1),
+        total_amount_due=Decimal("75"),
+        cash_paid=Decimal("0"),
+        debt_amount=Decimal("75"),
+    ))
+    session.commit()
+    browser = app.test_client()
+    login_to_business(browser, owner, retail)
+
+    today_page = browser.get(
+        f"/sorties_cash/encaisser_dette?date={date.today().isoformat()}"
+    ).get_data(as_text=True)
+    assert today_client.name in today_page
+    assert yesterday_client.name not in today_page
+    assert "Toutes les dettes (2)" in today_page
+
+    all_page = browser.get(
+        "/sorties_cash/encaisser_dette?scope=all"
+    ).get_data(as_text=True)
+    assert today_client.name in all_page
+    assert yesterday_client.name in all_page
+    assert "Filtrer par date" in all_page
+
+
+def test_legacy_adhoc_debt_shown_in_selector_can_be_paid(app, session):
+    owner, retail, _, _, _ = setup_ledgers(session)
+    legacy_sale = Sale(
+        seller_id=owner.id,
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        client_name_adhoc="Client historique",
+        adhoc_customer_key=None,
+        sale_date=date.today(),
+        total_amount_due=Decimal("80"),
+        cash_paid=Decimal("0"),
+        debt_amount=Decimal("80"),
+    )
+    session.add(legacy_sale)
+    session.commit()
+    browser = app.test_client()
+    login_to_business(browser, owner, retail)
+
+    selector = browser.get("/sorties_cash/encaisser_dette")
+    assert f'value="a:legacy-sale-{legacy_sale.id}"'.encode() in selector.data
+
+    response = browser.post(
+        "/sorties_cash/encaisser_dette",
+        data={
+            "client_key": f"a:legacy-sale-{legacy_sale.id}",
+            "amount_paid": "80",
+            "payment_date": date.today().isoformat(),
+            "description": "Paiement dette historique",
+            "submit": "Payer",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Aucune dette trouvée" not in response.get_data(as_text=True)
+    session.refresh(legacy_sale)
+    assert legacy_sale.debt_amount == Decimal("0")
 
 
 def test_legacy_payment_is_visible_but_cannot_be_guessed_or_cancelled(app, session):

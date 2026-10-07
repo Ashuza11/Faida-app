@@ -26,6 +26,7 @@ from apps.models import (
     CurrencyCode,
     NetworkType,
     Sale,
+    TransactionStatus,
     CashOutflowCategory,
     RoleType,
     User,
@@ -452,7 +453,10 @@ def get_clients_with_debt(vendeur_id=None, business_id=None, sale_date=None):
                        "a:{sale_id}" for one ad-hoc debt.
     If sale_date is given, restrict to sales made on that date.
     """
-    query = Sale.query.filter(Sale.debt_amount > Decimal("0.00"))
+    query = Sale.query.filter(
+        Sale.debt_amount > Decimal("0.00"),
+        Sale.status == TransactionStatus.ACTIVE,
+    )
     if business_id is not None:
         query = query.filter(Sale.business_id == business_id)
     elif vendeur_id is not None:

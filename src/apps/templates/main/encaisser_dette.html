@@ -28,9 +28,14 @@
                     {% endif %}
                   </h3>
                   <p class="text-muted text-sm mb-0 mt-1">
-                    {{ debt_count_today }} client(s) en dette pour cette date
-                    {% if total_debt_count > debt_count_today %}
-                      — <a href="{{ url_for('main_bp.encaisser_dette') }}">Voir tous ({{ total_debt_count }})</a>
+                    {% if show_all_debts %}
+                      {{ visible_debt_count }} client(s) avec une dette impayée
+                      — <a href="{{ url_for('main_bp.encaisser_dette', date=selected_date) }}">Filtrer par date</a>
+                    {% else %}
+                      {{ visible_debt_count }} client(s) avec une dette créée le {{ selected_date }}
+                      {% if total_debt_count > visible_debt_count %}
+                        — <a href="{{ url_for('main_bp.encaisser_dette', scope='all') }}">Toutes les dettes ({{ total_debt_count }})</a>
+                      {% endif %}
                     {% endif %}
                   </p>
                 </div>
@@ -42,24 +47,32 @@
                            style="width:145px;height:34px;"
                            onchange="this.form.submit()">
                   </form>
-                  {% if not is_today %}
+                  {% if not is_today or show_all_debts %}
                     <a href="{{ url_for('main_bp.encaisser_dette') }}" class="btn btn-sm btn-outline-secondary">Aujourd'hui</a>
                   {% endif %}
-                  <a href="{{ url_for('main_bp.sorties_cash') }}" class="btn btn-sm btn-outline-primary">Retour</a>
+                  <a href="{{ url_for('main_bp.sorties_cash', date=selected_date) }}" class="btn btn-sm btn-outline-primary">Retour</a>
                 </div>
               </div>
             </div>
             <div class="card-body">
-              {% if debt_count_today == 0 %}
+              {% if visible_debt_count == 0 %}
               <div class="alert alert-info">
-                Aucune dette trouvée pour le {{ selected_date }}.
-                {% if not is_today %}
-                  <a href="{{ url_for('main_bp.encaisser_dette') }}">Voir les dettes d'aujourd'hui</a>
+                {% if show_all_debts %}
+                  Aucune dette impayée.
+                {% else %}
+                  Aucun client avec une dette créée le {{ selected_date }}.
+                  {% if total_debt_count %}
+                    <a href="{{ url_for('main_bp.encaisser_dette', scope='all') }}">Voir toutes les dettes</a>
+                  {% endif %}
                 {% endif %}
               </div>
               {% endif %}
-              <form method="post" action="{{ url_for('main_bp.encaisser_dette', date=selected_date) }}">
+              <form method="post" action="{{ url_for('main_bp.encaisser_dette', date=selected_date, scope='all' if show_all_debts else 'date') }}">
                 {{ form.hidden_tag() }}
+
+                <p class="text-muted text-sm">
+                  Le paiement est appliqué aux plus anciennes dettes de ce client.
+                </p>
 
                 {% for field in form if field.widget.input_type != 'hidden' and field.name != 'submit' %}
                   <div class="form-group{% if field.errors %} has-danger{% endif %}">
@@ -86,7 +99,7 @@
 
                 <hr class="my-4" />
                 <div class="d-flex flex-column flex-sm-row justify-content-end" style="gap:8px;">
-                  <a href="{{ url_for('main_bp.sorties_cash') }}" class="btn btn-secondary">Annuler</a>
+                  <a href="{{ url_for('main_bp.sorties_cash', date=selected_date) }}" class="btn btn-secondary">Annuler</a>
                   {{ form.submit(class="btn btn-primary") }}
                 </div>
               </form>

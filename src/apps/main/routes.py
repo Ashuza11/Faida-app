@@ -3330,16 +3330,18 @@ def encaisser_dette():
     ctx = get_date_context()
     filter_date = ctx['selected_date']
     filter_date_str = ctx['date_str']
+    debt_scope = request.args.get("scope", "date")
+    show_all_debts = debt_scope == "all"
     _vendeur_id = get_current_vendeur_id()
     business = get_current_business()
 
     form = DebtCollectionForm()
-    # Always show the complete client balance: old debt must not disappear just
-    # because it originated on another business date.
+    # The default selector is tied to the chosen sale date. The explicit all
+    # view remains available for collecting older outstanding debts.
     form.client_key.choices = get_clients_with_debt(
         vendeur_id=_vendeur_id,
         business_id=business.id,
-        sale_date=None,
+        sale_date=None if show_all_debts else filter_date,
     )
 
     if request.method == "GET" and not form.payment_date.data:
@@ -3366,10 +3368,23 @@ def encaisser_dette():
                 unpaid_q = unpaid_q.filter(Sale.client_id == int(client_key[2:]))
             elif client_key.startswith("a:"):
                 adhoc_key = client_key[2:]
-                unpaid_q = unpaid_q.filter(
-                    Sale.client_id.is_(None),
-                    Sale.adhoc_customer_key == adhoc_key,
-                )
+                if adhoc_key.startswith("legacy-sale-"):
+                    try:
+                        legacy_sale_id = int(adhoc_key.removeprefix("legacy-sale-"))
+                    except ValueError:
+                        raise ValueError(user_message(
+                            "Le client sélectionné n'a pas pu être identifié.",
+                            "Actualisez la page puis réessayez.",
+                        )) from None
+                    unpaid_q = unpaid_q.filter(
+                        Sale.client_id.is_(None),
+                        Sale.id == legacy_sale_id,
+                    )
+                else:
+                    unpaid_q = unpaid_q.filter(
+                        Sale.client_id.is_(None),
+                        Sale.adhoc_customer_key == adhoc_key,
+                    )
             else:
                 raise ValueError(user_message(
                     "Le client sélectionné n'a pas pu être identifié.",
@@ -3448,7 +3463,9 @@ def encaisser_dette():
                 f"{paid_count} vente(s) soldée(s).",
                 "success",
             )
-            return redirect(url_for("main_bp.sorties_cash"))
+            return redirect(url_for(
+                "main_bp.sorties_cash", date=payment_date.isoformat()
+            ))
 
         except InvalidOperation:
             flash("Montant invalide.", "danger")
@@ -3465,7 +3482,11 @@ def encaisser_dette():
             ), "danger")
 
     # Count unique clients with any outstanding debt (for the "Voir toutes" link)
-    all_debt_choices = get_clients_with_debt(vendeur_id=_vendeur_id, sale_date=None)
+    all_debt_choices = get_clients_with_debt(
+        vendeur_id=_vendeur_id,
+        business_id=business.id,
+        sale_date=None,
+    )
     total_debt_count = len(all_debt_choices)
 
     return render_template(
@@ -3477,7 +3498,8 @@ def encaisser_dette():
         selected_date=filter_date_str,
         is_today=ctx['is_today'],
         total_debt_count=total_debt_count,
-        debt_count_today=len(form.client_key.choices),
+        visible_debt_count=len(form.client_key.choices),
+        show_all_debts=show_all_debts,
     )
 
 
