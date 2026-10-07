@@ -7,12 +7,13 @@ from apps import db
 from apps.client_identities import normalized_client_name
 from apps.dates import business_local_datetime
 from apps.inventory import consume_stock, restore_sale_cost
-from apps.payments import apply_payment_to_sale
+from apps.payments import apply_payment_to_sale, reverse_payment_event
 from apps.models import (
     Business,
     BusinessApprovalStatus,
     BusinessType,
     Client,
+    CashInflow,
     NetworkType,
     PaymentEvent,
     PriceOperation,
@@ -41,6 +42,10 @@ from apps.wholesale_costs import (
     require_plausible_wholesale_selling_price,
     require_plausible_wholesale_unit_cost,
 )
+
+
+class LaterSaleStockConflict(ValueError):
+    """Historical replay cannot preserve a later sale after a correction."""
 
 
 def build_retail_sale_display_numbers(sales) -> dict[int, int]:
@@ -522,6 +527,119 @@ def _snapshot_sale_items(*, sale, changed_by):
         ))
 
 
+def _apply_corrected_sale_items(
+    *, sale, old_items_by_network, prepared_items, target_costs
+):
+    """Replace sale lines after their inventory costs have been calculated."""
+    prepared_by_network = {item["network"]: item for item in prepared_items}
+    for old_network, old_item in list(old_items_by_network.items()):
+        if old_network not in prepared_by_network:
+            sale.sale_items.remove(old_item)
+    for item in prepared_items:
+        sale_item = old_items_by_network.get(item["network"])
+        if sale_item is None:
+            sale_item = SaleItem(network=item["network"])
+            sale.sale_items.append(sale_item)
+        unit_cost, cost_total = target_costs[item["network"]]
+        sale_item.price_preset = item.get("preset")
+        sale_item.quantity = item["quantity"]
+        sale_item.price_per_unit_applied = item["unit_price"]
+        sale_item.subtotal = item["subtotal"]
+        sale_item.cost_per_unit_snapshot = unit_cost
+        sale_item.cost_total = cost_total
+        sale_item.margin_amount = item["subtotal"] - cost_total
+        sale_item.is_cost_estimated = False
+
+
+def _apply_current_stock_sale_correction(
+    *, sale, business, prepared_items, is_wholesale
+):
+    """Exchange a sale's networks against current stock in one transaction.
+
+    This is the safe fallback when the exact historical replay would invalidate
+    an intervening sale. It mirrors reversing the wrong sale now and recording
+    the corrected stock movement now, while preserving the invoice and audit ID.
+    """
+    old_items_by_network = {item.network: item for item in sale.sale_items}
+    prepared_by_network = {item["network"]: item for item in prepared_items}
+    affected_networks = set(old_items_by_network) | set(prepared_by_network)
+    stocks = (
+        Stock.query.filter(
+            Stock.business_id == business.id,
+            Stock.network.in_(affected_networks),
+        )
+        .order_by(Stock.id)
+        .with_for_update()
+        .all()
+    )
+    stocks_by_network = {stock.network: stock for stock in stocks}
+    missing_network = next(
+        (network for network in affected_networks if network not in stocks_by_network),
+        None,
+    )
+    if missing_network is not None:
+        raise ValueError(user_message(
+            f"Le stock {missing_network.value} n'est pas encore configuré.",
+            "Enregistrez d'abord un stock initial ou un achat.",
+        ))
+
+    balances = {
+        network: as_decimal(stock.balance)
+        for network, stock in stocks_by_network.items()
+    }
+    values = {
+        network: as_decimal(stock.inventory_value)
+        for network, stock in stocks_by_network.items()
+    }
+    for old_item in old_items_by_network.values():
+        balances[old_item.network] += as_decimal(old_item.quantity)
+        values[old_item.network] += as_decimal(old_item.cost_total)
+
+    target_costs = {}
+    for network in sorted(affected_networks, key=lambda value: value.name):
+        corrected = prepared_by_network.get(network)
+        if corrected is None:
+            continue
+        result = _consume_replayed_stock(
+            quantity=corrected["quantity"],
+            balance=balances[network],
+            inventory_value=values[network],
+        )
+        if result is None:
+            raise ValueError(user_message(
+                f"Stock {network.value} insuffisant pour cette correction.",
+                f"Disponible maintenant : {int(balances[network])} unités. "
+                f"Demandé : {corrected['quantity']} unités.",
+            ))
+        unit_cost, cost_total, balances[network], values[network] = result
+        if is_wholesale:
+            require_plausible_wholesale_unit_cost(
+                business_id=business.id,
+                network=network,
+                unit_cost=unit_cost,
+            )
+        else:
+            require_comparable_unit_prices(
+                cost=unit_cost,
+                selling_price=corrected["unit_price"],
+            )
+        target_costs[network] = (unit_cost, cost_total)
+
+    for network, stock in stocks_by_network.items():
+        stock.balance = balances[network]
+        stock.inventory_value = values[network]
+        stock.average_cost_per_unit = (
+            quantize_unit_price(values[network] / balances[network])
+            if balances[network] else Decimal("0")
+        )
+    _apply_corrected_sale_items(
+        sale=sale,
+        old_items_by_network=old_items_by_network,
+        prepared_items=prepared_items,
+        target_costs=target_costs,
+    )
+
+
 def _replay_inventory_after_sale_correction(
     *, sale, business, prepared_items, is_wholesale
 ):
@@ -576,6 +694,8 @@ def _replay_inventory_after_sale_correction(
         event_id=sale.id,
     )
     target_costs = {}
+    later_item_costs = []
+    stock_updates = {}
     for network in sorted(affected_networks, key=lambda value: value.name):
         stock = stocks_by_network[network]
         purchases = (
@@ -681,40 +801,34 @@ def _replay_inventory_after_sale_correction(
                         event.sale_id
                     ]
                 )
-                raise ValueError(user_message(
+                raise LaterSaleStockConflict(user_message(
                     f"La correction rend une vente {network.value} plus récente impossible.",
-                    f"Vente concernée : #{sale_number}. Réduisez la quantité corrigée.",
+                    f"Vente concernée : #{sale_number}.",
                 ))
             unit_cost, cost_total, balance, inventory_value = result
-            event.cost_per_unit_snapshot = unit_cost
-            event.cost_total = cost_total
-            event.margin_amount = as_decimal(event.subtotal) - cost_total
-            event.is_cost_estimated = False
+            later_item_costs.append((event, unit_cost, cost_total))
 
+        stock_updates[network] = (balance, inventory_value)
+
+    for event, unit_cost, cost_total in later_item_costs:
+        event.cost_per_unit_snapshot = unit_cost
+        event.cost_total = cost_total
+        event.margin_amount = as_decimal(event.subtotal) - cost_total
+        event.is_cost_estimated = False
+    for network, (balance, inventory_value) in stock_updates.items():
+        stock = stocks_by_network[network]
         stock.balance = balance
         stock.inventory_value = inventory_value
         stock.average_cost_per_unit = (
             quantize_unit_price(inventory_value / balance)
             if balance else Decimal("0")
         )
-
-    for old_network, old_item in list(old_items_by_network.items()):
-        if old_network not in prepared_by_network:
-            sale.sale_items.remove(old_item)
-    for item in prepared_items:
-        sale_item = old_items_by_network.get(item["network"])
-        if sale_item is None:
-            sale_item = SaleItem(network=item["network"])
-            sale.sale_items.append(sale_item)
-        unit_cost, cost_total = target_costs[item["network"]]
-        sale_item.price_preset = item.get("preset")
-        sale_item.quantity = item["quantity"]
-        sale_item.price_per_unit_applied = item["unit_price"]
-        sale_item.subtotal = item["subtotal"]
-        sale_item.cost_per_unit_snapshot = unit_cost
-        sale_item.cost_total = cost_total
-        sale_item.margin_amount = item["subtotal"] - cost_total
-        sale_item.is_cost_estimated = False
+    _apply_corrected_sale_items(
+        sale=sale,
+        old_items_by_network=old_items_by_network,
+        prepared_items=prepared_items,
+        target_costs=target_costs,
+    )
 
 
 def wholesale_sale_has_active_payment(sale: Sale) -> bool:
@@ -865,12 +979,20 @@ def replace_retail_sale(
             sale_item.subtotal = item["subtotal"]
             sale_item.margin_amount = item["subtotal"] - sale_item.cost_total
     else:
-        _replay_inventory_after_sale_correction(
-            sale=sale,
-            business=business,
-            prepared_items=prepared,
-            is_wholesale=False,
-        )
+        try:
+            _replay_inventory_after_sale_correction(
+                sale=sale,
+                business=business,
+                prepared_items=prepared,
+                is_wholesale=False,
+            )
+        except LaterSaleStockConflict:
+            _apply_current_stock_sale_correction(
+                sale=sale,
+                business=business,
+                prepared_items=prepared,
+                is_wholesale=False,
+            )
         if not confirm_loss:
             loss_item = next((
                 item for item in sale.sale_items
@@ -962,12 +1084,20 @@ def replace_unpaid_wholesale_sale(
         sale.debt_amount = total - as_decimal(sale.cash_paid)
         return
 
-    _replay_inventory_after_sale_correction(
-        sale=sale,
-        business=business,
-        prepared_items=prepared_inputs,
-        is_wholesale=True,
-    )
+    try:
+        _replay_inventory_after_sale_correction(
+            sale=sale,
+            business=business,
+            prepared_items=prepared_inputs,
+            is_wholesale=True,
+        )
+    except LaterSaleStockConflict:
+        _apply_current_stock_sale_correction(
+            sale=sale,
+            business=business,
+            prepared_items=prepared_inputs,
+            is_wholesale=True,
+        )
     sale.client = client
     sale.sale_date = sale_date
     sale.total_amount_due = corrected_total
@@ -1043,4 +1173,47 @@ def reverse_unpaid_wholesale_sale(
         business=business,
         reversed_by=reversed_by,
         reason=reason,
+    )
+
+
+def reverse_sale_with_linked_payments(
+    *, sale: Sale, business: Business, reversed_by: User
+) -> None:
+    """Cancel an auditable sale and its linked receipts atomically."""
+    if sale.business_id != business.id:
+        raise PermissionError("Cette vente appartient à un autre mode.")
+    if sale.status != TransactionStatus.ACTIVE:
+        raise ValueError("Cette vente est déjà annulée.")
+
+    linked_payments = (
+        PaymentEvent.query
+        .outerjoin(CashInflow, CashInflow.payment_event_id == PaymentEvent.id)
+        .filter(
+            PaymentEvent.business_id == business.id,
+            PaymentEvent.status == TransactionStatus.ACTIVE,
+            db.or_(
+                PaymentEvent.source_sale_id == sale.id,
+                db.and_(
+                    CashInflow.sale_id == sale.id,
+                    CashInflow.status == TransactionStatus.ACTIVE,
+                ),
+            ),
+        )
+        .order_by(PaymentEvent.id)
+        .distinct()
+        .all()
+    )
+    for payment_event in linked_payments:
+        reverse_payment_event(
+            payment_event=payment_event,
+            business=business,
+            reversed_by=reversed_by,
+            reason=f"Annulé avec la vente #{sale.id}",
+        )
+
+    reverse_unpaid_sale(
+        sale=sale,
+        business=business,
+        reversed_by=reversed_by,
+        reason="Annulation confirmée",
     )

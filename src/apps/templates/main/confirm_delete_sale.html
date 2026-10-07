@@ -15,7 +15,7 @@
                     </div>
                     <div class="card-body">
                         <p class="lead">Confirmez l'annulation de cette vente.</p>
-                        {% if sale.cash_paid > 0 %}<div class="alert alert-warning"><strong>Paiement actif</strong><small class="d-block mt-1">Ouvrez les détails de la vente et annulez le reçu concerné avant de continuer.</small></div>{% endif %}
+                        <div class="alert alert-info"><strong>Annulation en une étape</strong><small class="d-block mt-1">Les paiements liés seront annulés automatiquement et les dettes concernées seront rétablies.</small></div>
                         <p><strong>Détails de la vente:</strong></p>
                         <ul>
                             <li><strong>Numéro de vente:</strong> {{ sale_display_number }}</li>
@@ -33,13 +33,9 @@
 
                         <form method="POST" action="{{ url_for('main_bp.delete_sale', sale_id=sale.id) }}">
                             {# Render the CSRF token using the form object #}
-                            {{ confirm_form.csrf_token }} 
-                            <div class="form-group">
-                                {{ confirm_form.reason.label }}
-                                {{ confirm_form.reason(class="form-control") }}
-                            </div>
+                            {{ confirm_form.csrf_token }}
                             <div class="text-right mb-3">
-                                <button type="submit" class="btn btn-danger">Confirmer</button>
+                                <button type="submit" class="btn btn-danger">Confirmer l'annulation</button>
                                 <a href="{{ url_for('main_bp.vente_stock') }}" class="btn btn-secondary">Retour</a>
                             </div>
                         </form>

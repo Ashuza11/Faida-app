@@ -126,6 +126,7 @@ from apps.main.forms import (
     WholesalePaymentCorrectionForm,
     WholesaleCashEntryForm,
     TransactionReversalForm,
+    TransactionConfirmationForm,
 )
 from apps.businesses import (
     WHOLESALE_REVOCATION_REASONS,
@@ -153,8 +154,7 @@ from apps.sales import (
     record_wholesale_sale,
     replace_retail_sale,
     replace_unpaid_wholesale_sale,
-    reverse_unpaid_sale,
-    reverse_unpaid_wholesale_sale,
+    reverse_sale_with_linked_payments,
     sale_has_active_payment,
     wholesale_sale_has_active_payment,
 )
@@ -1138,7 +1138,7 @@ def wholesale_sales():
         selected_date=selected_date,
         is_today=date_context["is_today"],
         preset_data=preset_data,
-        reversal_form=TransactionReversalForm(),
+        reversal_form=TransactionConfirmationForm(),
         segment="wholesale",
         sub_segment="sales",
     )
@@ -1225,7 +1225,7 @@ def wholesale_sale_edit(sale_id):
         selected_date=today,
         is_today=True,
         preset_data=preset_data,
-        reversal_form=TransactionReversalForm(),
+        reversal_form=TransactionConfirmationForm(),
         segment="wholesale",
         sub_segment="sales",
     )
@@ -1239,20 +1239,19 @@ def reverse_wholesale_sale_route(sale_id):
     if business is None or business.business_type != BusinessType.WHOLESALE:
         return redirect(url_for("main_bp.businesses"))
     sale = db.get_or_404(Sale, sale_id)
-    form = TransactionReversalForm()
+    form = TransactionConfirmationForm()
     if not form.validate_on_submit():
-        flash("Indiquez brièvement pourquoi vous annulez cette vente.", "danger")
+        flash("La confirmation n'a pas pu être vérifiée. Réessayez.", "danger")
         return redirect(url_for("main_bp.wholesale_sales"))
     try:
-        reverse_unpaid_wholesale_sale(
+        reverse_sale_with_linked_payments(
             sale=sale,
             business=business,
             reversed_by=current_user,
-            reason=form.reason.data,
         )
         db.session.commit()
         flash("Vente annulée.", "success")
-    except (ValueError, PermissionError) as error:
+    except (ValueError, PermissionError, RuntimeError) as error:
         db.session.rollback()
         flash(str(error), "danger")
     return redirect(url_for("main_bp.wholesale_sales"))
@@ -1515,7 +1514,7 @@ def wholesale_client_detail(client_id):
         business=business,
         client=client,
         form=form,
-        reversal_form=TransactionReversalForm(),
+        reversal_form=TransactionConfirmationForm(),
         sales=sales,
         payments=payments,
         total_purchased=total_purchased,
@@ -1538,9 +1537,9 @@ def reverse_wholesale_payment_route(payment_event_id):
         return redirect(url_for("main_bp.businesses"))
     payment_event = db.get_or_404(PaymentEvent, payment_event_id)
     client_id = payment_event.client_id
-    form = TransactionReversalForm()
+    form = TransactionConfirmationForm()
     if not form.validate_on_submit():
-        flash("Indiquez brièvement pourquoi vous annulez ce paiement.", "danger")
+        flash("La confirmation n'a pas pu être vérifiée. Réessayez.", "danger")
         return redirect(
             url_for("main_bp.wholesale_client_detail", client_id=client_id)
         )
@@ -1549,7 +1548,7 @@ def reverse_wholesale_payment_route(payment_event_id):
             payment_event=payment_event,
             business=business,
             reversed_by=current_user,
-            reason=form.reason.data,
+            reason="Annulation confirmée",
         )
         db.session.commit()
         flash("Paiement annulé.", "success")
@@ -3037,18 +3036,17 @@ def delete_sale(sale_id):
     sale = db.get_or_404(Sale, sale_id)
     ensure_access(sale)
     business = get_current_business()
-    confirm_form = TransactionReversalForm()
+    confirm_form = TransactionConfirmationForm()
 
     if request.method == "POST":
 
         try:
             if not confirm_form.validate_on_submit():
-                raise ValueError("Indiquez brièvement pourquoi vous annulez cette vente.")
-            reverse_unpaid_sale(
+                raise ValueError("La confirmation n'a pas pu être vérifiée. Réessayez.")
+            reverse_sale_with_linked_payments(
                 sale=sale,
                 business=business,
                 reversed_by=current_user,
-                reason=confirm_form.reason.data,
             )
             db.session.commit()
             flash(
@@ -3057,7 +3055,7 @@ def delete_sale(sale_id):
             )
             return redirect(url_for("main_bp.vente_stock"))
 
-        except (ValueError, PermissionError) as error:
+        except (ValueError, PermissionError, RuntimeError) as error:
             db.session.rollback()
             flash(str(error), "danger")
             return redirect(url_for("main_bp.vente_stock"))
@@ -3118,7 +3116,7 @@ def view_sale_details(sale_id):
         sale_display_number=build_retail_sale_display_numbers([sale])[sale.id],
         payment_events=payment_events,
         legacy_allocations=legacy_allocations,
-        reversal_form=TransactionReversalForm(),
+        reversal_form=TransactionConfirmationForm(),
         segment="stock",
         sub_segment="vente_stock",
     )
@@ -3132,18 +3130,18 @@ def reverse_retail_payment_route(payment_event_id):
     if business is None or business.business_type != BusinessType.RETAIL:
         return redirect(url_for("main_bp.businesses"))
     payment_event = db.get_or_404(PaymentEvent, payment_event_id)
-    form = TransactionReversalForm()
+    form = TransactionConfirmationForm()
     redirect_sale_id = payment_event.source_sale_id
     if redirect_sale_id is None and payment_event.allocations:
         redirect_sale_id = payment_event.allocations[0].sale_id
     try:
         if not form.validate_on_submit():
-            raise ValueError("Indiquez brièvement pourquoi vous annulez ce paiement.")
+            raise ValueError("La confirmation n'a pas pu être vérifiée. Réessayez.")
         reverse_payment_event(
             payment_event=payment_event,
             business=business,
             reversed_by=current_user,
-            reason=form.reason.data,
+            reason="Annulation confirmée",
         )
         db.session.commit()
         flash(user_message(

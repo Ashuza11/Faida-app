@@ -272,7 +272,7 @@ def test_replay_rejects_stock_that_did_not_exist_at_original_sale_time(session):
     assert stock.inventory_value == Decimal("2800.000000000000")
 
 
-def test_replay_identifies_later_retail_sale_that_would_lack_stock(session):
+def test_replay_reports_current_stock_when_correction_still_cannot_fit(session):
     owner, business, client = setup_retail_inventory(session, suffix=4)
     target = record_retail_sale_for_test(
         business=business,
@@ -308,8 +308,65 @@ def test_replay_identifies_later_retail_sale_that_would_lack_stock(session):
             }],
         )
 
-    assert "vente airtel plus récente impossible" in str(error.value).lower()
-    assert "Vente concernée : #2" in str(error.value)
+    assert "stock airtel insuffisant pour cette correction" in str(error.value).lower()
+    assert "Disponible maintenant : 30 unités" in str(error.value)
     session.rollback()
     session.refresh(later_sale)
     assert later_sale.sale_items[0].quantity == 70
+
+
+def test_retail_correction_uses_current_stock_when_historical_replay_conflicts(
+    session,
+):
+    owner, business, client = setup_retail_inventory(session, suffix=5)
+    target = record_retail_sale_for_test(
+        business=business,
+        owner=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=20,
+        unit_price=Decimal("25"),
+    )
+    later_sale = record_retail_sale_for_test(
+        business=business,
+        owner=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=70,
+        unit_price=Decimal("25"),
+    )
+    original_later_cost = later_sale.sale_items[0].cost_total
+    record_retail_purchase(
+        business=business,
+        purchased_by=owner,
+        network=NetworkType.AIRTEL,
+        quantity=100,
+        unit_cost=Decimal("20"),
+        intended_selling_price=Decimal("25"),
+    )
+    session.flush()
+
+    replace_retail_sale(
+        sale=target,
+        business=business,
+        updated_by=owner,
+        client=client,
+        client_name_adhoc=None,
+        adhoc_customer_key=None,
+        sale_date=target.sale_date,
+        items=[{
+            "network": NetworkType.AIRTEL,
+            "quantity": 40,
+            "price_per_unit_applied": Decimal("25"),
+        }],
+    )
+    session.flush()
+
+    stock = Stock.query.filter_by(
+        business_id=business.id,
+        network=NetworkType.AIRTEL,
+    ).one()
+    assert target.sale_items[0].quantity == 40
+    assert stock.balance == 90
+    assert later_sale.sale_items[0].cost_total == original_later_cost
+    assert SaleItemHistory.query.filter_by(sale_id=target.id).one().quantity == 20

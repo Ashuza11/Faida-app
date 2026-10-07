@@ -30,6 +30,7 @@ from apps.sales import (
     build_wholesale_sale_groups,
     record_wholesale_sale,
     replace_unpaid_wholesale_sale,
+    reverse_sale_with_linked_payments,
     reverse_unpaid_wholesale_sale,
 )
 from apps.wholesale_reports import build_wholesale_daily_report
@@ -834,6 +835,84 @@ def test_paid_wholesale_sale_must_not_be_reversed(session):
     assert sale.status == TransactionStatus.ACTIVE
 
 
+def test_sale_cancellation_reverses_linked_payment_in_one_step(session):
+    owner, business, client, _ = setup_wholesale(session, suffix=221)
+    older = record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=500,
+        cash_received=0,
+        sale_date=date.today(),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    corrected = record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=500,
+        cash_received=Decimal("7.00"),
+        sale_date=date.today(),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    payment = PaymentEvent.query.one()
+    stock = Stock.query.filter_by(
+        business_id=business.id, network=NetworkType.AIRTEL
+    ).one()
+    balance_before_cancellation = stock.balance
+
+    reverse_sale_with_linked_payments(
+        sale=corrected,
+        business=business,
+        reversed_by=owner,
+    )
+    session.flush()
+
+    assert corrected.status == TransactionStatus.REVERSED
+    assert corrected.reversal_reason == "Annulation confirmée"
+    assert payment.status == TransactionStatus.REVERSED
+    assert payment.reversal_reason == f"Annulé avec la vente #{corrected.id}"
+    assert older.cash_paid == 0
+    assert older.debt_amount == Decimal("5.00")
+    assert stock.balance == balance_before_cancellation + 500
+
+
+def test_wholesale_sale_route_cancels_paid_sale_without_typed_reason(app, session):
+    owner, business, client, _ = setup_wholesale(session, suffix=222)
+    sale = record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=client,
+        network=NetworkType.AIRTEL,
+        quantity=500,
+        cash_received=Decimal("1.00"),
+        sale_date=date.today(),
+        custom_unit_price=Decimal("0.01000"),
+    )
+    session.commit()
+    payment = PaymentEvent.query.filter_by(source_sale_id=sale.id).one()
+    browser = app.test_client()
+    with browser.session_transaction() as browser_session:
+        browser_session["_user_id"] = str(owner.id)
+        browser_session["_fresh"] = True
+        browser_session["active_business_id"] = business.id
+
+    response = browser.post(
+        f"/businesses/wholesale/sales/{sale.id}/reverse",
+        data={},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    session.refresh(sale)
+    session.refresh(payment)
+    assert sale.status == TransactionStatus.REVERSED
+    assert payment.status == TransactionStatus.REVERSED
+    assert "Vente annulée".encode() in response.data
+
+
 def test_wholesale_sale_rejects_another_business_client(session):
     owner, business, _, preset = setup_wholesale(session, suffix=3)
     other_owner, other_business, other_client, _ = setup_wholesale(session, suffix=4)
@@ -1109,6 +1188,8 @@ def test_wholesale_sales_page_explains_active_and_redirected_payments(app, sessi
     assert b"$1.00 appliqu\xc3\xa9 aux anciennes dettes" in page.data
     assert b"$1.00 re\xc3\xa7u via d'autres paiements" in page.data
     assert b"Voir les paiements" in page.data
+    assert b"Annuler vente" in page.data
+    assert b'name="reason"' not in page.data
     assert f"/businesses/wholesale/sales/{second_sale.id}/edit".encode() in page.data
     assert b"Paiement \xc3\xa0 annuler d'abord" not in page.data
 
@@ -1280,6 +1361,78 @@ def test_sale_edit_replays_inventory_after_later_purchase(session):
     assert stock.balance == 2700
     assert stock.inventory_value == Decimal("27.300000000000")
     assert stock.average_cost_per_unit == Decimal("0.010111111111")
+
+
+def test_wholesale_network_correction_uses_available_current_stock(session):
+    owner, business, retailer, preset = setup_wholesale(session, suffix=561)
+    record_wholesale_purchase(
+        business=business,
+        purchased_by=owner,
+        network=NetworkType.ORANGE,
+        quantity=1000,
+        custom_unit_cost=Decimal("0.00900"),
+    )
+    target = record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=retailer,
+        network=NetworkType.AIRTEL,
+        quantity=500,
+        cash_received=Decimal("2.00"),
+        sale_date=date.today(),
+        preset=preset,
+    )
+    later_orange_sale = record_wholesale_sale(
+        business=business,
+        sold_by=owner,
+        client=retailer,
+        network=NetworkType.ORANGE,
+        quantity=900,
+        cash_received=0,
+        sale_date=date.today(),
+        custom_unit_price=Decimal("0.00950"),
+    )
+    original_later_cost = later_orange_sale.sale_items[0].cost_total
+    record_wholesale_purchase(
+        business=business,
+        purchased_by=owner,
+        network=NetworkType.ORANGE,
+        quantity=1000,
+        custom_unit_cost=Decimal("0.00900"),
+    )
+    session.flush()
+
+    replace_unpaid_wholesale_sale(
+        sale=target,
+        business=business,
+        updated_by=owner,
+        client=retailer,
+        sale_date=target.sale_date,
+        items=[{
+            "network": NetworkType.ORANGE,
+            "quantity": 500,
+            "custom_unit_price": Decimal("0.00950"),
+        }],
+    )
+    session.flush()
+
+    airtel = Stock.query.filter_by(
+        business_id=business.id, network=NetworkType.AIRTEL
+    ).one()
+    orange = Stock.query.filter_by(
+        business_id=business.id, network=NetworkType.ORANGE
+    ).one()
+    assert [(item.network, item.quantity) for item in target.sale_items] == [
+        (NetworkType.ORANGE, 500)
+    ]
+    assert airtel.balance == 2000
+    assert orange.balance == 600
+    assert later_orange_sale.sale_items[0].cost_total == original_later_cost
+    assert target.cash_paid == Decimal("2.00")
+    assert PaymentEvent.query.filter_by(
+        source_sale_id=target.id,
+        status=TransactionStatus.ACTIVE,
+    ).one().amount == Decimal("2.00")
 
 
 def test_debt_collection_is_oldest_first_and_keeps_payment_date(session):

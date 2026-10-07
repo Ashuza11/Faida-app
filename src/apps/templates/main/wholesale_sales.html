@@ -22,13 +22,11 @@
     {% else %}
       <small class="d-block text-muted">Contactez l'administrateur pour corriger cette ancienne vente.</small>
     {% endif %}
-  {% else %}
-    <form method="post" action="{{ url_for('main_bp.reverse_wholesale_sale_route', sale_id=sale.id) }}" onsubmit="return confirm('Annuler cette vente remettra les unités en stock et annulera sa dette. Continuer ?');">
+  {% endif %}
+  {% if not payment.has_blocking_payment or payment.blocking_payment_count > 0 %}
+    <form class="mt-2" method="post" action="{{ url_for('main_bp.reverse_wholesale_sale_route', sale_id=sale.id) }}" onsubmit="return confirm('{% if payment.blocking_payment_count > 0 %}Annuler cette vente et ses paiements liés ? Les dettes concernées seront rétablies.{% else %}Annuler cette vente ? Les unités seront remises en stock.{% endif %}');">
       {{ reversal_form.csrf_token }}
-      <div class="input-group input-group-sm">
-        <input class="form-control" name="reason" minlength="3" maxlength="255" required placeholder="Raison">
-        <div class="input-group-append"><button class="btn btn-outline-danger" type="submit">Annuler vente</button></div>
-      </div>
+      <button class="btn btn-sm btn-outline-danger" type="submit">Annuler vente</button>
     </form>
   {% endif %}
   {% endif %}

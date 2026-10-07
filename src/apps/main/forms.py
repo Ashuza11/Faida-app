@@ -977,6 +977,10 @@ class TransactionReversalForm(FlaskForm):
     submit = SubmitField("Confirmer")
 
 
+class TransactionConfirmationForm(FlaskForm):
+    """CSRF-protected confirmation without forcing users to type a reason."""
+
+
 # Form for confirming deletion of a sale
 class DeleteConfirmForm(FlaskForm):
     submit = SubmitField("Supprimer", validators=[DataRequired()])

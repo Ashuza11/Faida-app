@@ -390,6 +390,8 @@ def test_new_retail_records_receive_active_business_key(app, session):
     cancel_page = client.get(f"/delete_sale/{created_sale.id}")
     assert cancel_page.status_code == 200
     assert "Numéro de vente:</strong> 2".encode() in cancel_page.data
+    assert b'name="reason"' not in cancel_page.data
+    assert "Annulation en une étape".encode() in cancel_page.data
 
     update_response = client.post(
         f"/edit_sale/{created_sale.id}",
@@ -421,7 +423,7 @@ def test_new_retail_records_receive_active_business_key(app, session):
         business_id=retail.id, network=NetworkType.AIRTEL
     ).one()
     assert created_sale.status == TransactionStatus.REVERSED
-    assert created_sale.reversal_reason == "Quantité incorrecte"
+    assert created_sale.reversal_reason == "Annulation confirmée"
     assert stock.balance == Decimal("100")
     assert Sale.query.filter_by(id=created_sale.id).count() == 1
 
@@ -1002,6 +1004,52 @@ def test_retail_payment_cannot_be_reversed_after_its_cash_is_spent(app, session)
         allocation.status == TransactionStatus.ACTIVE
         for allocation in payment.allocations
     )
+
+
+def test_retail_sale_cancellation_reverses_payment_without_reason(app, session):
+    owner, retail, _, retail_client, _ = setup_ledgers(session)
+    session.add(Stock(
+        vendeur_id=owner.id,
+        business_id=retail.id,
+        network=NetworkType.AIRTEL,
+        balance=Decimal("100"),
+        buying_price_per_unit=Decimal("20"),
+        selling_price_per_unit=Decimal("25"),
+        inventory_value=Decimal("2000"),
+        average_cost_per_unit=Decimal("20"),
+    ))
+    session.commit()
+    browser = app.test_client()
+    login_to_business(browser, owner, retail)
+    browser.post(
+        "/vente_stock",
+        data={
+            "client_choice": "existing",
+            "existing_client_id": str(retail_client.id),
+            "sale_items-0-network": NetworkType.AIRTEL.name,
+            "sale_items-0-quantity": "10",
+            "sale_items-0-price_per_unit_applied": "25",
+            "cash_paid": "100",
+            "sale_date": date.today().isoformat(),
+            "submit": "Vendre",
+        },
+    )
+    sale = Sale.query.filter_by(
+        client_id=retail_client.id,
+        total_amount_due=Decimal("250"),
+    ).one()
+    payment = PaymentEvent.query.filter_by(source_sale_id=sale.id).one()
+
+    response = browser.post(
+        f"/delete_sale/{sale.id}", data={}, follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    session.refresh(sale)
+    session.refresh(payment)
+    assert sale.status == TransactionStatus.REVERSED
+    assert payment.status == TransactionStatus.REVERSED
+    assert "Vente annulée".encode() in response.data
 
 
 def test_retail_debt_payment_cannot_reach_wholesale_debt(app, session):
