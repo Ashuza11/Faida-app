@@ -5,6 +5,7 @@ from apps.models import (
     Client,
     NetworkType,
     RoleType,
+    Sale,
     User,
 )
 
@@ -44,6 +45,62 @@ def test_wholesale_menu_exposes_separate_clients_and_debts(app, session):
     assert response.status_code == 200
     assert b">Clients<" in response.data
     assert b">Dettes<" in response.data
+
+
+def test_wholesale_debt_search_finds_debtor_by_name_or_phone(app, session):
+    owner, business = setup_wholesale(session)
+    debtor = Client(
+        name="Daniel Centre",
+        vendeur_id=owner.id,
+        business_id=business.id,
+    )
+    settled = Client(
+        name="Daniel Sans Dette",
+        vendeur_id=owner.id,
+        business_id=business.id,
+    )
+    session.add_all([debtor, settled])
+    session.flush()
+    from apps.client_identities import replace_client_phones
+    replace_client_phones(
+        client=debtor,
+        phone_entries=[(NetworkType.AIRTEL, "0972067057")],
+    )
+    session.add_all([
+        Sale(
+            seller_id=owner.id,
+            vendeur_id=owner.id,
+            business_id=business.id,
+            client=debtor,
+            total_amount_due=10,
+            cash_paid=2,
+            debt_amount=8,
+        ),
+        Sale(
+            seller_id=owner.id,
+            vendeur_id=owner.id,
+            business_id=business.id,
+            client=settled,
+            total_amount_due=10,
+            cash_paid=10,
+            debt_amount=0,
+        ),
+    ])
+    session.commit()
+    browser = app.test_client()
+    login(browser, owner, business)
+
+    name_result = browser.get(
+        "/businesses/wholesale/clients?search=Daniel"
+    ).get_data(as_text=True)
+    assert debtor.name in name_result
+    assert settled.name not in name_result
+
+    phone_result = browser.get(
+        "/businesses/wholesale/clients?search=0972067057"
+    ).get_data(as_text=True)
+    assert debtor.name in phone_result
+    assert "Aucun client endetté" not in phone_result
 
 
 def test_wholesale_owner_registers_many_numbers_for_one_client(app, session):

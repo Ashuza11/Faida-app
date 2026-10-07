@@ -79,6 +79,7 @@ from apps.models import (
     User,
     RoleType,
     Client,
+    ClientPhone,
     StockPurchase,
     NetworkType,
     Stock,
@@ -1409,11 +1410,45 @@ def wholesale_clients():
     if business.owner_user_id != current_user.id:
         abort(403)
 
-    clients = (
-        Client.query.filter_by(business_id=business.id)
-        .order_by(Client.name, Client.id)
-        .all()
-    )
+    debt_search = request.args.get("search", "").strip()[:100]
+    clients_query = Client.query.filter_by(business_id=business.id)
+    if debt_search:
+        name_pattern = f"%{debt_search}%"
+        phone_terms = {debt_search}
+        if any(character.isdigit() for character in debt_search):
+            phone_terms.add(normalize_phone(debt_search))
+        phone_filters = [
+            ClientPhone.normalized_phone.ilike(f"%{phone_term}%")
+            for phone_term in phone_terms
+            if phone_term
+        ]
+        legacy_phone_filters = [
+            phone_column.ilike(name_pattern)
+            for phone_column in (
+                Client.phone_airtel,
+                Client.phone_africel,
+                Client.phone_orange,
+                Client.phone_vodacom,
+            )
+        ]
+        debtor_client_ids = db.session.query(Sale.client_id).filter(
+            Sale.business_id == business.id,
+            Sale.client_id.isnot(None),
+            Sale.status == TransactionStatus.ACTIVE,
+            Sale.debt_amount > Decimal("0"),
+        )
+        clients_query = clients_query.filter(
+            Client.id.in_(debtor_client_ids),
+            or_(
+                Client.name.ilike(name_pattern),
+                Client.phones.any(and_(
+                    ClientPhone.is_active.is_(True),
+                    or_(*phone_filters),
+                )),
+                *legacy_phone_filters,
+            ),
+        )
+    clients = clients_query.order_by(Client.name, Client.id).all()
     totals = {
         row.client_id: row
         for row in db.session.query(
@@ -1436,6 +1471,7 @@ def wholesale_clients():
         business=business,
         clients=clients,
         totals=totals,
+        debt_search=debt_search,
         segment="wholesale",
         sub_segment="clients",
     )
